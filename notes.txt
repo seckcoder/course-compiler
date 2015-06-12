@@ -1,0 +1,21 @@
+There is a special variable named 'input' that holds an integer
+that is the input to the program.
+
+S_0
+
+e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
+
+S_1
+
+e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
+    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+    | null | (cons e e) | (car e) | (cdr e)
+
+S_2
+
+e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
+    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+    | null | (cons e e) | (car e) | (cdr e)
+    | (e e ...)
+    | (lambda (x ...) e)
+
