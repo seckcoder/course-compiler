@@ -1,21 +1,84 @@
 There is a special variable named 'input' that holds an integer
 that is the input to the program.
 
-S_0
+--------------------------------------------------------------------------------
+Integers, expressions, and variables
 
-e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
+e ::= n | x | (+ e e) | (- e) | (let: ([x : Integer e] ...) e)
 
-S_1
+--------------------------------------------------------------------------------
+Register Allocation
 
-e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
+--------------------------------------------------------------------------------
+Vectors and type checking
+
+T ::= Integer | (Vectorof T)
+e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
+    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
+--------------------------------------------------------------------------------
+Conditional control flow and Booleans
+
+T ::= Integer | Boolean | (Vectorof T)
+e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
+    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
     | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
-    | null | (cons e e) | (car e) | (cdr e)
 
-S_2
+--------------------------------------------------------------------------------
+Functions
+
+T ::= Integer | Boolean | (Vectorof T) | (-> T T ...)
+e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
+    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
+    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+    | (lambda: ([x : T] ...) e) | (e e ...)
+
+--------------------------------------------------------------------------------
+Garbage Collection
+
+--------------------------------------------------------------------------------
+Type dynamic
+
+T ::= Integer | Boolean | (Vectorof T) | (-> T T ...) | Dyn
+G ::= Integer | Boolean | (Vectorof Dyn) | (-> Dyn Dyn ...)
+e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
+    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
+    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+    | (lambda: ([x : T] ...) e) | (e e ...)
+    | (inject e G) | (project e G) | (isa? G e)
+
+--------------------------------------------------------------------------------
+Dynamic typing
 
 e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
+    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
     | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
-    | null | (cons e e) | (car e) | (cdr e)
-    | (e e ...)
+    | (lambda (x ...) e) | (e e ...)
+
+--------------------------------------------------------------------------------
+Gradual typing
+
+T ::= Integer | Boolean | (Vectorof T) | (-> T T ...) | Dyn
+e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
+    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
+    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+    | (lambda: ([x : T] ...) e) | (e e ...)
     | (lambda (x ...) e)
+    | (let ([x e] ...) e)
+    | (ann e T)
+
+--------------------------------------------------------------------------------
+Lists and mutation
+
+T ::= Integer | Boolean | (Vectorof T) | (-> T T ...) | Dyn | (Listof T)
+e ::= ...
+    | (eq? e e)
+    | null | (mcons e e) | (mcar e) | (mcdr e) | (set-mcar! e e) |
+      (set-mcdr! e e)
+
+--------------------------------------------------------------------------------
+Parametric Polymorphism
+
+
+--------------------------------------------------------------------------------
+Optimization (Function inlining, constant folding, etc.)
 
