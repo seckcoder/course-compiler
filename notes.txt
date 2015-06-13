@@ -13,27 +13,35 @@ Register Allocation
 Vectors and type checking
 
 T ::= Integer | (Vectorof T)
-e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
+e ::= ...
     | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
 --------------------------------------------------------------------------------
 Conditional control flow and Booleans
 
 T ::= Integer | Boolean | (Vectorof T)
-e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
-    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
+e ::= ...
     | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
 
 --------------------------------------------------------------------------------
 Functions
 
-T ::= Integer | Boolean | (Vectorof T) | (-> T T ...)
-e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
-    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
-    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
-    | (lambda: ([x : T] ...) e) | (e e ...)
+p ::= (program d ... e)
+d ::= (define (f [x : T] ...) e)
+e ::= ...
+    | (f e ...)
 
 --------------------------------------------------------------------------------
 Garbage Collection
+
+
+
+--------------------------------------------------------------------------------
+First-Class Functions
+
+T ::= Integer | Boolean | (Vectorof T) | (T ... -> T)
+e ::= ...
+    | (lambda: ([x : T] ...) e) 
+    | (e e ...)
 
 --------------------------------------------------------------------------------
 Type dynamic
@@ -48,6 +56,7 @@ e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
 
 --------------------------------------------------------------------------------
 Dynamic typing
+(side project)
 
 e ::= n | x | (+ e e) | (- e) | (let ([x e] ...) e)
     | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
@@ -62,9 +71,8 @@ e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
     | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
     | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
     | (lambda: ([x : T] ...) e) | (e e ...)
-    | (lambda (x ...) e)
-    | (let ([x e] ...) e)
-    | (ann e T)
+    | (lambda (x ...) e) | (let ([x e] ...) e)
+    | (ann e T) | (static e) | (dynamic e)
 
 --------------------------------------------------------------------------------
 Lists and mutation
