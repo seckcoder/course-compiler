@@ -1,28 +1,16 @@
 #lang racket
 (require racket/set)
+(require "utilities.rkt")
 
-(define assert
-  (lambda (msg b)
-    (if (not b)
-	(begin
-	  (display "ERROR: ")
-	  (display msg)
-	  (newline))
-	(void))))
-
-(define (gen-dispatcher mt)
-  (lambda (e . rest)
-    (match e
-       [`(,tag ,args ...)
-	(apply (hash-ref mt tag) (append rest args))]
-       [else
-	(error "no match in dispatcher for " e)]
-       )))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Convert S0 sexp to an explicitly tagged AST
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (sexp->ast sexp)
   (match sexp
      [(? symbol?) `(var ,sexp)]
      [(? integer?) `(int ,sexp)]
+     [`(read) `(prim read ,read)]
      [`(+ ,e1 ,e2) `(prim add ,+ ,(sexp->ast e1) ,(sexp->ast e2))]
      [`(- ,e1 ,e2) `(prim sub ,- ,(sexp->ast e1) ,(sexp->ast e2))]
      [`(- ,e) `(prim neg ,- ,(sexp->ast e))]
@@ -60,7 +48,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define uniquify-mt (make-hash))
-(define uniquify (gen-dispatcher uniquify-mt))
+(define uniquify (make-dispatcher uniquify-mt))
 (hash-set!
  uniquify-mt 'var
  (lambda (env x) `(var ,(cdr (assq x env)))))
@@ -99,59 +87,70 @@
 ;; atomic   a  ::= n | x
 ;; expr     e  ::= a | (prim op a ...)
 ;; stmt     s  ::= (assign x e) | (return a)
-;; program  p  ::= (program xs ss)
+;; program  p  ::= (program (x ...) (s ...))
 ;;
 ;; flatten : expr -> atomic x (stmt list) x (var set)
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define flatten-mt (make-hash))
-(define flatten (gen-dispatcher flatten-mt))
+(define flatten (make-dispatcher flatten-mt))
 
 (hash-set!
  flatten-mt 'var
- (lambda (x) (values `(var ,x) '() (set))))
+ (lambda (need-atomic x) (values `(var ,x) '())))
 (hash-set!
  flatten-mt 'int
- (lambda (n) (values `(int ,n) '() (set))))
+ (lambda (need-atomic n) (values `(int ,n) '())))
 (hash-set!
  flatten-mt 'prim
- (lambda (nm op . es)
-   (let loop ([es (reverse es)] [new-es '()] [ss '()] [xs (set)])
-     (cond [(null? es)
-	    (let* ([tmp (gensym 'tmp)]
-		   [stmt `(assign ,tmp (prim ,nm ,op ,@new-es))])
-	      (values `(var ,tmp) (append ss (list stmt)) 
-		      (set-add xs tmp)))]
-	   [else
-	    (let-values ([(new-e e-ss e-xs) (flatten (car es))])
-	      (loop (cdr es) (cons new-e new-es) (append e-ss ss) 
-		    (set-union e-xs xs)))]))))
+ (lambda (need-atomic nm op . es)
+   ;; flatten the argument expressions 'es'
+   (let-values ([(new-es sss) (map2 (lambda (e) (flatten e #t)) es)])
+     (let ([ss (append* sss)]
+	   ;; recreate the prim with the new arguments
+	   [prim-apply `(prim ,nm ,op ,@new-es)])
+       (cond [need-atomic
+	      ;; create a temporary and assign the prim to it
+	      (let* ([tmp (gensym 'tmp)]
+		     [stmt `(assign ,tmp ,prim-apply)])
+		(values `(var ,tmp) (append ss (list stmt))))]
+	     [else ;; return the recreated prim, pass along ss and xs
+	      (values prim-apply ss)])))))
 (hash-set! 
  flatten-mt 'let
- (lambda (b body)
+ (lambda (need-atomic b body)
    (match b
       [`([,x ,e])
-       (let-values ([(new-e e-ss e-xs) (flatten e)]
-		    [(new-body body-ss body-xs) (flatten body)])
+       (let-values ([(new-e e-ss) (flatten e #f)]
+		    [(new-body body-ss) (flatten body #f)])
 	 (values new-body
-		 (append e-ss (list `(assign ,x ,new-e)) body-ss)
-		 (set-union e-xs body-xs (set x))))]
+		 (append e-ss (list `(assign ,x ,new-e)) body-ss)))]
       [else 
        (error "unmatched binding in flatten let" b)]
       )))
 (hash-set! 
  flatten-mt 'program
  (lambda (e)
-   (let-values ([(new-e ss xs) (flatten e)])
-     `(program ,(set->list xs) ,(append ss (list `(return ,new-e)))))))
+   (let-values ([(new-e ss) (flatten e #f)])
+     (let ([xs (list->set (map (lambda (s) 
+				 (match s [`(assign ,x ,e) x])) ss))])
+       `(program ,(set->list xs)
+		 ,(append ss (list `(return ,new-e))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Instruction Selection, C0 => x86
+;;
+;; This version of instruction selection is non-optimal in that it
+;; always puts the RHS of an assignment into register rax before
+;; moving it to the destination.
+;; 
+;; We introduce a smarter algorithm later as part of register allocation.
+;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define instruction-selection-mt (make-hash))
-(define instruction-selection (gen-dispatcher instruction-selection-mt))
+(define instruction-selection (make-dispatcher instruction-selection-mt))
 
 (define (atomic->x86 env a)
   (match a
@@ -174,13 +173,15 @@
    (format "\tmovq\t~a,%rax\n" (atomic->x86 env `(int ,n)))))
 (hash-set!
  instruction-selection-mt 'return
- (lambda (env a) 
-   (format "\tmovq\t~a, %rax\n" (atomic->x86 env a))))
+ (lambda (env e) 
+   (instruction-selection e env)))
 (hash-set!
  instruction-selection-mt 'prim
  (lambda (env name op . as)
    (let ([as (map (lambda (a) (atomic->x86 env a)) as)])
      (match name
+	['read
+	 (format "\tcallq\t_read_int\n")]
         ['add 
 	 (string-append
 	  (format "\tmovq\t~a,%rax\n" (first as))
@@ -199,8 +200,7 @@
  (lambda (env x e)
    (string-append
     (instruction-selection e env)
-    (format "\tmovq\t%rax,~a\n" (atomic->x86 env `(var ,x)))
-    )))
+    (format "\tmovq\t%rax,~a\n\n" (atomic->x86 env `(var ,x))))))
 
 (define variable-size 8)
 (define first-offset 16)
@@ -215,66 +215,33 @@
 		  [else
 		   (loop (cdr xs)
 			 (cons (cons (car xs) next-offset) env)
-			 (+ next-offset variable-size))]))])
+			 (+ next-offset variable-size))]))]
+	 [stack-space (+ 16 (* (length xs) variable-size))])
     (string-append
      (format "\t.globl _main\n")
      (format "_main:\n")
      (format "\tpushq\t%rbp\n")
      (format "\tmovq\t%rsp, %rbp\n")
+     (format "\tsubq\t$~a, %rsp\n" stack-space)
+     "\n"
      (string-append* (map (lambda (s) (instruction-selection s env)) ss))
+     "\n"
+     (format "\taddq\t$~a, %rsp\n" stack-space)
      (format "\tpopq\t%rbp\n")
      (format "\tretq\n")
      )
    )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Testing
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (test prog)
-  (let* ([ast0 (sexp->ast prog)]
-	 [result (interp '() ast0)]
-	 [ast1 (uniquify ast0 '())]
-	 [ast2 (flatten ast1)]
-	 )
-    (assert "uniquified program produced incorrect result"
-	    (equal? result (interp '() ast1)))
-    (assert "flattened program produced incorrect result"
-	    (equal? result (interp '() ast2)))
-    ))
-    
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Main
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define debug-state #f)
-(define (debug label val)
-  (if debug-state
-      (begin
-	(printf "~a:\n" label)
-	(display val)
-	(newline))
-      (void)))
-
-(let* ([in-file-name (vector-ref (current-command-line-arguments) 0)]
-       [file-base (string-trim in-file-name ".scm")]
-       [in-file (open-input-file in-file-name)]
-       [out-file-name (string-append file-base ".s")]
-       [out-file (open-output-file #:exists 'replace out-file-name)]
-       [sexp (read in-file)])
-  (define ast `(program ,(sexp->ast sexp)))
-  (debug "ast" ast)
-
-  (define uniq-ast (uniquify ast '()))
-  (debug "uniq-ast" uniq-ast)
-
-  (define flat-ast (flatten uniq-ast))
-  (debug "flat-ast" flat-ast)
-
-  (define x86 (instruction-selection flat-ast '()))
-  (debug "x86" x86)
-
-  (write-string x86 out-file)
-  (newline out-file)
-  )
+(define int-exp-passes
+  (list (cons "sexp->ast" (lambda (sexp) `(program ,(sexp->ast sexp))))
+	(cons "uniquify" (lambda (ast) (uniquify ast '())))
+	(cons "flatten" flatten)
+	(cons "instruction selection" 
+	      (lambda (flat-ast) (instruction-selection flat-ast '())))
+	))
+(compile int-exp-passes)
 

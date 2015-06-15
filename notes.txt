@@ -1,13 +1,28 @@
-There is a special variable named 'input' that holds an integer
-that is the input to the program.
-
 --------------------------------------------------------------------------------
 Integers, expressions, and variables
+Language S_0:
+e ::= n | x | (+ e e) | (- e e) | (- e) | (read) | (let ([x e]) e)
 
-e ::= n | x | (+ e e) | (- e) | (let: ([x : Integer e] ...) e)
+  * uniquify
+  * flatten to C0
+    atomic   a  ::= n | x
+    expr     e  ::= a | (prim op a ...)
+    stmt     s  ::= (assign x e) | (return a)
+    program  p  ::= (program (x ...) (s ...))
+  * instruction selection to x86
+
+--------------------------------------------------------------------------------
+Parsing? Racket has "Parser Tools: lex and yacc-style Parsing"
+  and there's an example of doing S_0 by Dan King
+  https://gist.github.com/danking/1068185
 
 --------------------------------------------------------------------------------
 Register Allocation
+
+reserve rax for spill code
+ -> can use same code as prior to register allocation!
+
+perform a single-pass of register allocation
 
 --------------------------------------------------------------------------------
 Vectors and type checking
@@ -47,11 +62,8 @@ e ::= ...
 Type dynamic
 
 T ::= Integer | Boolean | (Vectorof T) | (-> T T ...) | Dyn
-G ::= Integer | Boolean | (Vectorof Dyn) | (-> Dyn Dyn ...)
-e ::= n | x | (+ e e) | (- e) | (let: ([x : T e] ...) e)
-    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
-    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
-    | (lambda: ([x : T] ...) e) | (e e ...)
+G ::= Integer | Boolean | Vector | Function
+e ::= ...
     | (inject e G) | (project e G) | (isa? G e)
 
 --------------------------------------------------------------------------------
