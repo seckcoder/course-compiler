@@ -23,4 +23,4 @@
   (display "tests passed")(newline)
   )
 
-(test-compiler "int_exp.rkt" "s0" (range 1 11))
+(test-compiler "int_exp_compiler.rkt" "s0" (range 1 11))
