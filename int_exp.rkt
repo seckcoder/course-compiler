@@ -1,8 +1,9 @@
 #lang racket
 (require racket/set)
 (require "utilities.rkt")
+(require "interp.rkt")
 
-(provide int-exp-passes sexp->ast interp 
+(provide int-exp-passes sexp->ast  
 	 uniquify-mt flatten-mt instruction-selection-mt)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -21,29 +22,6 @@
       (let ([new-e (sexp->ast e)])
 	`(let ([,x ,new-e]) ,(sexp->ast body)))]
      [else (error "sexp->ast, unhandled case in match for " sexp)]
-     ))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreter for S0
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (interp env ast)
-  (match ast
-     [`(var ,x)
-      (cond [(equal? x 'input)
-	     (read)]
-	    [else
-	     (cond [(assq x env) => (lambda (p) (cdr p))]
-		   [else (error "undefined variable " x)])])]
-     [`(int ,n) n]
-     [`(prim ,name ,op ,args ...)
-      (apply op (map (lambda (e) (interp env e)) args))]
-     [`(let ([,x ,e]) ,body)
-      (let ([v (interp env e)])
-	(interp (cons (cons x v) env) body))]
-     [`(program ,e) (interp env e)]
-     [else
-      (error interp "no match in interp for " ast)]
      ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -79,20 +57,10 @@
  (lambda (env body)
    `(program ,(uniquify body env))))
 
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Flatten, S0 => C0
 ;;
-;; input grammar:
-;; e ::= n | x | (prim op e ...) | (let ([x e]) e)
-;;
-;; output grammar:
-;; atomic   a  ::= n | x
-;; expr     e  ::= a | (prim op a ...)
-;; stmt     s  ::= (assign (var x) e) | (return a)
-;; program  p  ::= (program (x ...) (s ...))
-;;
-;; flatten : expr -> atomic x (stmt list) x (var set)
+;; flatten : expr -> atomic x (stmt list)
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -145,10 +113,6 @@
 ;; Instruction Selection, C0 => psuedo-x86
 ;;
 ;; This changes instructions to the funny two-operand format of x86.
-;;
-;; s,d ::= (var x) | (int n) | (register r)
-;; i   ::= (mov s d) | (add s d) | (sub s d) | (neg d) | (call f)
-;; psuedo-x86 ::= (program (x ...) (i ...))
 ;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -208,8 +172,7 @@
   (match e
     [`(var ,x)
      (cond [(assq x env) => (lambda (p) `(stack-loc ,(cdr p)))]
-	   [else
-	    (error "in atomic->x86, undefined variable " x)])]
+	   [else (error "in atomic->x86, undefined variable " x)])]
     [`(int ,n)
      `(int ,n)]
     [`(register ,r)
@@ -308,11 +271,16 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define int-exp-passes
-  (list (cons "sexp->ast" (lambda (sexp) `(program ,(sexp->ast sexp))))
-	(cons "uniquify" (lambda (ast) (uniquify ast '())))
-	(cons "flatten" flatten)
-	(cons "instruction selection" instruction-selection)
-	(cons "assign locations" (lambda (ast) (assign-stack-loc ast '())))
-	(cons "insert spill code" insert-spill-code)
-	(cons "print x86" print-x86)
+  (list `("sexp->ast" ,(lambda (sexp) `(program ,(sexp->ast sexp)))
+	  ,(lambda (ast) (interp-S0 '() ast)))
+	`("uniquify" ,(lambda (ast) (uniquify ast '()))
+	  ,(lambda (ast) (interp-S0 '() ast)))
+	`("flatten" ,flatten ,(lambda (ast) (interp-C0 '() ast)))
+	`("instruction selection" ,instruction-selection
+	  ,(lambda (ast) (interp-x86 '() ast)))
+	`("assign locations" ,(lambda (ast) (assign-stack-loc ast '()))
+	  ,(lambda (ast) (interp-x86 '() ast)))
+	`("insert spill code" ,insert-spill-code
+	  ,(lambda (ast) (interp-x86 '() ast)))
+	`("print x86" ,print-x86 #f)
 	))

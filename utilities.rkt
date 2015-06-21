@@ -1,5 +1,5 @@
 #lang racket
-(provide map2 make-dispatcher assert compile)
+(provide map2 make-dispatcher assert compile check-passes)
 
 (define (map2 f ls)
   (cond [(null? ls)
@@ -19,6 +19,7 @@
        )))
 
 (define debug-state #f)
+
 (define (debug label val)
   (if debug-state
       (begin
@@ -27,18 +28,57 @@
 	(newline))
       (void)))
 
+(define (check-passes passes)
+  (lambda (test-name)
+    (debug "** testing " test-name)
+    (let* ([input-file-name (format "tests/~a.in" test-name)]
+	   [program-name (format "tests/~a.scm" test-name)]
+	   [program-file (open-input-file program-name)]	   
+	   [sexp (read program-file)])
+      (let loop ([passes passes] [p sexp] [result #f])
+	(cond [(null? passes) result]
+	      [else
+	       (match (car passes)
+		      [`(,name ,pass ,interp)
+		       (let* ([new-p (pass p)])
+			 (debug name new-p)
+			 (cond [interp
+				(let ([new-result 
+				       (if (file-exists? input-file-name)
+					   (begin
+					     (debug "using input file" input-file-name)
+					     (with-input-from-file input-file-name
+					       (lambda () (interp new-p))))
+					   (interp new-p))])
+				  (cond [result
+					 (cond [(equal? result new-result)
+						(debug "checked" '())
+						(loop (cdr passes) new-p new-result)]
+					       [else
+						(error (format "differing results in pass ~a:" name)
+						       result new-result)])]
+					[else ;; no result to check yet
+					 (debug "not checking" '())
+					 (loop (cdr passes) new-p new-result)]))]
+			       [else
+				(loop (cdr passes) new-p result)]))])])))))
+
 (define (compile passes)
-  (let* ([in-file-name (vector-ref (current-command-line-arguments) 0)]
-	 [file-base (string-trim in-file-name ".scm")]
-	 [in-file (open-input-file in-file-name)]
+  (let* ([prog-file-name (vector-ref (current-command-line-arguments) 0)]
+	 [file-base (string-trim prog-file-name ".scm")]
+	 [prog-file (open-input-file prog-file-name)]
 	 [out-file-name (string-append file-base ".s")]
 	 [out-file (open-output-file #:exists 'replace out-file-name)]
-	 [sexp (read in-file)])
+	 [sexp (read prog-file)])
     (let ([x86 (let loop ([passes passes] [p sexp])
 		 (cond [(null? passes) p]
-		       [else (let* ([new-p ((cdr (car passes)) p)])
-			       (debug (car (car passes)) new-p)
-			       (loop (cdr passes) new-p))]))])
+		       [else
+			(match (car passes)
+			   [`(,name ,pass ,interp)
+			    (let* ([new-p (pass p)])
+			      (debug name new-p)
+			      (loop (cdr passes) new-p)
+			      )])]))])
       (write-string x86 out-file)
       (newline out-file)
       )))
