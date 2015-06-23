@@ -1,5 +1,5 @@
 #lang racket
-(require racket/set)
+(require racket/set racket/stream)
 (require "utilities.rkt")
 (require "interp.rkt")
 
@@ -26,7 +26,7 @@
 	 [(? integer?)
 	  e]
 	 [`(,op ,es ...)
-	  #:when (set-member? primitives op)
+	  #:when (or (set-member? primitives op) (eq? op 'read))
 	  (let ([new-es (map (recur env) es)])
 	    `(,op ,@new-es))]
 	 [`(let ([,x ,e]) ,body)
@@ -54,8 +54,19 @@
 	  (values e '())]
 	 [(? integer?)
 	  (values e '())]
+	 [`(let ([,x ,e]) ,body)
+	  (let-values ([(new-e e-ss) ((recur #f) e)]
+		       [(new-body body-ss) ((recur #f) body)])
+	    (values new-body
+		    (append e-ss (list `(assign ,x ,new-e)) body-ss)))]
+	 [`(program ,extra ,e)
+	  (let-values ([(new-e ss) ((recur #f) e)])
+	    (let ([xs (list->set (map (lambda (s) 
+				 (match s [`(assign ,x ,e) x])) ss))])
+	      `(program ,(set->list xs)
+			,(append ss (list `(return ,new-e))))))]
 	 [`(,op ,es ...)
-	  #:when (set-member? primitives op)
+	  #:when (or (set-member? primitives op) (eq? op 'read))
 	  ;; flatten the argument expressions 'es'
 	  (let-values ([(new-es sss) (map2 (recur #t) es)])
 	    (let ([ss (append* sss)]
@@ -64,21 +75,10 @@
 	      (cond [need-atomic
 		     ;; create a temporary and assign the prim to it
 		     (let* ([tmp (gensym 'tmp)]
-			    [stmt `(assign (var ,tmp) ,prim-apply)])
-		       (values `(var ,tmp) (append ss (list stmt))))]
+			    [stmt `(assign ,tmp ,prim-apply)])
+		       (values tmp (append ss (list stmt))))]
 		    [else ;; return the recreated prim, pass along ss and xs
 		     (values prim-apply ss)])))]
-	 [`(let ([,x ,e]) ,body)
-	  (let-values ([(new-e e-ss) ((recur #f) e)]
-		       [(new-body body-ss) ((recur #f) body)])
-	    (values new-body
-		    (append e-ss (list `(assign (var ,x) ,new-e)) body-ss)))]
-	 [`(program ,extra ,e)
-	  (let-values ([(new-e ss) ((recur #f) e)])
-	    (let ([xs (list->set (map (lambda (s) 
-				 (match s [`(assign (var ,x) ,e) x])) ss))])
-	      `(program ,(set->list xs)
-			,(append ss (list `(return ,new-e))))))]
 	 ))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -104,16 +104,20 @@
 
 (define (instruction-selection recur)
   (lambda (e)
+    (debug "selecting instruction for" e)
     (match e
        [(? symbol?)
         `(var ,e)]
        [(? integer?)
         `(int ,e)]
+       [`(register ,r)
+	`(register ,r)]
        [`(return ,e)
-	(recur `(assign (register rax) ,(recur e)))]
+	(recur `(assign (register rax) ,e))]
        [`(assign ,lhs (read))
-	(list `(call _read_int)
-	      `(mov (register rax) ,(recur lhs)))]
+	(let ([lhs (recur lhs)])
+	  (list `(call _read_int)
+		`(mov (register rax) ,lhs)))]
        [`(assign ,lhs (,op ,e1 ,e2))
 	#:when (set-member? primitives op)
 	(let ([lhs (recur lhs)]
@@ -146,7 +150,8 @@
 		 (list `(mov (var ,x) ,lhs))]))]
        [`(assign ,lhs ,n)
 	#:when (integer? n)
-	(list `(mov (int ,n) ,lhs))]
+	(let ([lhs (recur lhs)])
+	  (list `(mov (int ,n) ,lhs)))]
        [`(program ,xs ,ss)
 	`(program ,xs ,(append* (map recur ss)))]
        [else
@@ -178,12 +183,13 @@
 	    `(,instr-name ,@(map (recur homes) as)))]
 	 [`(program ,xs ,ss)
 	  ;; map variables to stack locations
-	  (let ([new-homes (make-hash
-			    (map cons xs
-				 (map (lambda (n)
-					`(stack-loc ,(+ first-offset
-							(* variable-size n))))
-				      (in-range 0 (length xs)))))]
+	  (let ([new-homes
+		 (make-hash
+		  (map cons xs
+		       (map (lambda (n)
+			      `(stack-loc ,(+ first-offset
+					      (* variable-size n))))
+			    (stream->list (in-range 0 (length xs))))))]
 		[stack-space (+ first-offset (* (length xs) variable-size))])
 	    `(program ,stack-space ,(map (recur new-homes) ss)))]
 	 ))))
@@ -269,17 +275,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define int-exp-passes
-  (list `("uniquify" ,((uniquify uniquify) '())
-	  ,(lambda (ast) (interp-S0 '() ast)))
-	`("flatten" ,((flatten flatten) #f)
-	  ,(lambda (ast) (interp-C0 '() ast)))
-	`("instruction selection" ,(instruction-selection instruction-selection)
-	  ,(lambda (ast) (interp-x86 '() ast)))
+  (list `("uniquify" ,(lambda (ast) (((fix uniquify) '())
+				     `(program () ,ast)))
+	  ,((fix interp-S0) '()))
+	`("flatten" ,((fix flatten) #f)
+	  ,((fix interp-C0) '()))
+	`("instruction selection" 
+	  ,(fix instruction-selection)
+	  ,((fix interp-x86) '()))
 	`("assign locations"
-	  ,((assign-locations assign-locations) (void))
-	  ,(lambda (ast) (interp-x86 '() ast)))
+	  ,((fix assign-locations) (void))
+	  ,((fix interp-x86) '()))
 	`("insert spill code" 
-	  ,(insert-spill-code insert-spill-code)
-	  ,(lambda (ast) (interp-x86 '() ast)))
-	`("print x86" ,(print-x86 print-x86) #f)
+	  ,(fix insert-spill-code)
+	  ,((fix interp-x86) '()))
+	`("print x86" ,(fix print-x86) #f)
 	))

@@ -1,6 +1,8 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 make-dispatcher assert compile check-passes)
+(provide debug map2 make-dispatcher assert compile check-passes fix)
+
+(define fix (lambda (f) (lambda (x) ((f (fix f)) x))))
 
 (define (map2 f ls)
   (cond [(null? ls)
@@ -31,7 +33,7 @@
 
 (define (check-passes passes)
   (lambda (test-name)
-    (debug "** testing " test-name)
+    (debug "** checking passes for test " test-name)
     (let* ([input-file-name (format "tests/~a.in" test-name)]
 	   [program-name (format "tests/~a.scm" test-name)]
 	   [program-file (open-input-file program-name)]	   
@@ -41,6 +43,7 @@
 	      [else
 	       (match (car passes)
 		      [`(,name ,pass ,interp)
+		      (debug "running pass" name)
 		       (let* ([new-p (pass p)])
 			 (debug name new-p)
 			 (cond [interp
@@ -56,10 +59,10 @@
 						(debug "checked" '())
 						(loop (cdr passes) new-p new-result)]
 					       [else
-						(error (format "differing results in pass ~a:" name)
-						       result new-result)])]
+						(error (format "differing results in pass ~a, expected ~a, not" name result)
+						        new-result)])]
 					[else ;; no result to check yet
-					 (debug "not checking" '())
+					 (debug "not checking yet" '())
 					 (loop (cdr passes) new-p new-result)]))]
 			       [else
 				(loop (cdr passes) new-p result)]))])])))))
