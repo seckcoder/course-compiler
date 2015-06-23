@@ -1,7 +1,7 @@
 #lang racket
 (require "utilities.rkt")
 (require "int_exp.rkt")
-(require "register_allocator.rkt")
+;(require "register_allocator.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])
@@ -27,8 +27,8 @@
   (newline)(display "tests passed")(newline)
   )
 
-#;(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
+(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
 	       "s0" (range 1 11))
 
-(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+#;(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
 	       "s0" (range 1 11))

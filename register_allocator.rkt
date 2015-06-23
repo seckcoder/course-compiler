@@ -199,17 +199,6 @@
 	  `(program ,stack-size
 		    ,(map (assign-homes homes) ss))))]))
 	  
-(define	(assign-homes homes)
-  (lambda (s)
-    (match s
-       [`(var ,x)
-	(hash-ref homes x)]
-       [(or `(mov ,as ...) `(add ,as ...) `(sub ,as ...) `(neg ,as ...))
-	(let ([instr-name (car s)])
-	  `(,instr-name ,@(map (assign-homes homes) as)))]
-       [else
-	s])))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

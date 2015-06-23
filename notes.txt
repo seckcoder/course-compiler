@@ -25,17 +25,45 @@ reserve rax for spill code
 perform a single-pass of register allocation
 
 --------------------------------------------------------------------------------
-Vectors and type checking
+Conditional control flow, Booleans, and type checking
 
-T ::= Integer | (Vectorof T)
-e ::= ...
-    | (vector-immutable e ...) | (vector-length e) | (vector-ref e e)
---------------------------------------------------------------------------------
-Conditional control flow and Booleans
+S1
 
-T ::= Integer | Boolean | (Vectorof T)
+T ::= Integer | Boolean
 e ::= ...
     | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+
+
+--------------------------------------------------------------------------------
+Vectors and heap allocation
+
+T ::= Integer | (Vectorof T) | Void
+e ::= ...
+    | (make-vector e e) | (vector-length e) | (vector-ref e e)
+    | (vector-set! e e e)
+    | (eq? e e)
+
+Type System
+
+|- e0 : Integer      |- e1 : T
+-------------------------------------
+|- (make-vector e0 e1) : (Vectorof T)
+
+|- e : (Vectorof T)
+------------------------------
+|- (vector-length e) : Integer
+
+|- e0 : (Vectorof T)    |- e1 : Integer
+---------------------------------------
+|- (vector-ref e0 e1) : T
+
+|- e0 : (Vectorof T)    |- e1 : Integer    |- e2 : T
+----------------------------------------------------
+|- (vector-set! e0 e1 e2) : Void
+
+|- e0 : T      |- e1 : T
+------------------------
+|- (eq? e0 e1) : Bool
 
 --------------------------------------------------------------------------------
 Functions
