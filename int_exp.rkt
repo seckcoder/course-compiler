@@ -4,7 +4,11 @@
 (require "interp.rkt")
 
 (provide int-exp-passes sexp->ast  
-	 uniquify-mt flatten-mt instruction-selection-mt)
+	 uniquify uniquify-mt 
+	 flatten flatten-mt 
+	 instruction-selection instruction-selection-mt
+	 insert-spill-code
+	 print-x86)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Convert S0 sexp to an explicitly tagged AST
@@ -54,8 +58,8 @@
       )))
 (hash-set!
  uniquify-mt 'program
- (lambda (env body)
-   `(program ,(uniquify body env))))
+ (lambda (env extra body)
+   `(program ,extra ,(uniquify body env))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Flatten, S0 => C0
@@ -102,7 +106,7 @@
       )))
 (hash-set! 
  flatten-mt 'program
- (lambda (e)
+ (lambda (extra e)
    (let-values ([(new-e ss) (flatten e #f)])
      (let ([xs (list->set (map (lambda (s) 
 				 (match s [`(assign (var ,x) ,e) x])) ss))])
@@ -213,7 +217,9 @@
 (define (insert-spill-code e)
   (match e
      [`(mov ,s ,d)
-      (cond [(and (on-stack? s) (on-stack? d))
+      (cond [(equal? s d) ;; trivial move, delete it
+	     '()]
+            [(and (on-stack? s) (on-stack? d))
 	     (list `(mov ,s (register rax))
 		   `(mov (register rax) ,d))]
 	    [else
@@ -271,7 +277,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define int-exp-passes
-  (list `("sexp->ast" ,(lambda (sexp) `(program ,(sexp->ast sexp)))
+  (list `("sexp->ast" ,(lambda (sexp) `(program () ,(sexp->ast sexp)))
 	  ,(lambda (ast) (interp-S0 '() ast)))
 	`("uniquify" ,(lambda (ast) (uniquify ast '()))
 	  ,(lambda (ast) (interp-S0 '() ast)))

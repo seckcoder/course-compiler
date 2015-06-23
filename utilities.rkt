@@ -1,5 +1,6 @@
 #lang racket
-(provide map2 make-dispatcher assert compile check-passes)
+(require racket/pretty)
+(provide debug map2 make-dispatcher assert compile check-passes)
 
 (define (map2 f ls)
   (cond [(null? ls)
@@ -24,7 +25,7 @@
   (if debug-state
       (begin
 	(printf "~a:\n" label)
-	(display val)
+	(pretty-print val)
 	(newline))
       (void)))
 

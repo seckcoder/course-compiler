@@ -17,9 +17,9 @@
      [`(let ([,x ,e]) ,body)
       (let ([v (interp-S0 env e)])
 	(interp-S0 (cons (cons x v) env) body))]
-     [`(program ,e) (interp-S0 '() e)]
+     [`(program ,extra ,e) (interp-S0 '() e)]
      [else
-      (error interp-S0 "no match in interp-S0 for " ast)]
+      (error interp-S0 (format "no match in interp-S0 for ~a" ast))]
      ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -101,7 +101,7 @@
       (let loop ([env '()] [ss ss])
 	(cond [(null? ss)
 	       (cond [(assq 'rax env) => cdr]
-		     [else (error "rax not initialized")])]
+		     [else (error "in interp-x86, rax not initialized for return")])]
 	      [else
 	       (loop (interp-x86 env (car ss)) (cdr ss))]))]
      [else

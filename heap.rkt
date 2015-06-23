@@ -89,8 +89,8 @@
 (define (make-heap <=? [notify dont-notify])
   (heap (make-vector MIN-SIZE #f) 0 <=? notify))
 
-(define (list->heap <=? lst)
-  (vector->heap <=? (list->vector lst)))
+(define (list->heap <=? lst [notify dont-notify])
+  (vector->heap <=? (list->vector lst) 0 (length lst) notify))
 
 (define (vector->heap <=? vec0 [start 0] [end (vector-length vec0)]
 		      [notify dont-notify])
@@ -280,7 +280,9 @@
  [heap-remove-min! (-> heap? void?)]
  [heap-remove! (->* (heap? any/c) [#:same? (-> any/c any/c any/c)] void?)]
 
- [vector->heap (-> (-> any/c any/c any/c) vector? heap?)]
+ [vector->heap (->* ((-> any/c any/c any/c) vector?) 
+		    (integer? integer? any/c) heap?)]
+ [list->heap (->* ((-> any/c any/c any/c) list?) (any/c) heap?)]
  [heap->vector (-> heap? vector?)]
  [heap-copy (-> heap? heap?)]
 
