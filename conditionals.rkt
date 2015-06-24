@@ -62,6 +62,12 @@
 	(match e
 	   [#t `(int 1)]
 	   [#f `(int 0)]
+	   [`(assign ,lhs ,b)
+	    #:when (boolean? b)
+	    
+	    
+	    
+	    ]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this instruction-selection) cnd)]
