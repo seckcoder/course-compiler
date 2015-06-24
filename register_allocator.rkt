@@ -7,60 +7,6 @@
 
 (provide reg-int-exp-passes)
 
-(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r12))
-
-(define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
-				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
-(define registers (set-union (list->set (vector->list general-registers))
-			     (set 'rax 'rsp 'rbp)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Liveness Analysis
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; record live-after for each instruction
-
-(define free-vars
-  (lambda (a)
-    (match a
-       [`(var ,x) (set x)]
-       [else (set)])))
-
-(define read-vars
-  (lambda (instr)
-    (match instr
-       [`(mov ,s ,d) (free-vars s)]
-       [(or `(add ,s ,d) `(sub ,s ,d)) 
-	(set-union (free-vars s) (free-vars d))]
-       [`(neg ,d) (free-vars d)]
-       [`(call ,f) (set)]
-       )))
-
-(define write-vars
-  (lambda (instr)
-    (match instr
-       [`(mov ,s ,d) (free-vars d)]
-       [(or `(add ,s ,d) `(sub ,s ,d)) (free-vars d)]
-       [`(neg ,d) (free-vars d)]
-       [`(call ,f) caller-save]
-       )))
-
-(define (liveness-analysis ast)
-  (match ast
-     [`(program ,xs ,orig-ss)
-      (let loop ([ss (reverse orig-ss)] [live-after (set)] [lives '()])
-	(cond [(null? ss)
-	       `(program (,xs ,lives) ,orig-ss)]
-	      [else
-	       (let* ([s (car ss)]
-		      [live-before (set-union (set-subtract live-after
-							    (write-vars s))
-					      (read-vars s))])
-		 (debug "after" s) (debug "live" live-after)
-		 (loop (cdr ss)
-		       live-before
-		       (cons live-after lives)))]))]))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Graph ADT
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -75,150 +21,210 @@
 (define (adjacent graph u)
   (hash-ref graph u))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Build Interference Graph
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (build-interference ast)
-  (match ast
-    [`(program (,xs ,lives) ,ss)
-     (let ([graph (make-graph xs)])
-       (let loop ([ss-lv (reverse (map cons ss lives))] [ss '()])
-	 (cond [(null? ss-lv)
-		`(program (,xs ,graph) ,ss)]
-	       [else
-		(match (car ss-lv)
-		   [`((mov ,s ,d) . ,live-after)
-		    ;; d interferes with everything in live-after
-		    ;;   except s and d
-		    (for ([v live-after])
-			 (for ([d (write-vars `(mov ,s ,d))]
-			       #:when (not (or (eq? v s) (eq? v d))))
-			      (add-edge graph d v)))
-		    (loop (cdr ss-lv) 
-			  (cons `(mov ,s ,d) ss))]
-		   [`(,inst . ,live-after)
-		    (for ([v live-after])
-			 (for ([d (write-vars inst)]
-			       #:when (not (eq? v d)))
-			      (add-edge graph d v)))
-		    (loop (cdr ss-lv)
-			  (cons inst ss))]
-		   [`((call ,f) . ,live-after)
-		    ;; add interference with caller-save registers
-		    (for ([v live-after])
-			 (for ([u caller-save]
-			       #:when (not (eq? v u)))
-			      (add-edge graph u v)))
-		    ;; do the usual
-		    (let ([inst `(call ,f)])
-		      (for ([v live-after])
-			   (for ([d (write-vars inst)]
-				 #:when (not (eq? v d)))
-				(add-edge graph d v)))
-		      (loop (cdr ss-lv)
-			    (cons inst ss)))]
-		   )])))]))
+(define compile-reg-S0
+  (class compile-S0
+    (super-new)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Allocate Registers and Stack Locations (Graph Coloring) 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    (define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r12))
 
-(define largest-color 0)
+    (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
+    				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
+    (define registers (set-union (list->set (vector->list general-registers))
+				 (set 'rax 'rsp 'rbp)))
 
-;; Choose the first available color
-(define (choose-color v unavail-colors)
-  (let loop ([c 0])
-    (cond [(set-member? unavail-colors c)
-	   (loop (add1 c))]
-	  [else
-	   (cond [(> c largest-color)
-		  (set! largest-color c)])
-	   c])))
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; Liveness Analysis
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define variable-size 8)
-(define first-offset 16)
+    ;; record live-after for each instruction
 
-(define (identify-home c)
-  (let ([n (vector-length general-registers)])
-    (cond [(< c n)
-	   `(register ,(vector-ref general-registers c))]
-	  [else 
-	   `(stack-loc ,(+ first-offset (* (- c n) variable-size)))])))
-		       
-(define (allocate-registers ast)
-  (match ast
-     [`(program (,xs ,G) ,ss)
-      (let* ([unavail-colors (make-hash)] ;; aka. pencil marks
-	     [compare (lambda (u v) 
-			(>=
-			 (set-count (hash-ref unavail-colors u))
-			 (set-count (hash-ref unavail-colors v))))]
-	     [Q (make-pqueue compare)]
-	     [pq-node (make-hash)] ;; maps variables to priority queue nodes
-	     [color (make-hash)])  ;; maps variables to colors (natural numbers)
-	(for ([x xs])
-	     (hash-set! unavail-colors x 
-			(list->set
-			 (filter
-			  (lambda (u) (set-member? registers u))
-			  (set->list (hash-ref G x)))))
-	     (hash-set! pq-node x (pqueue-push! Q x)))
-	;; Graph coloring
-	(debug "starting graph coloring" '())
-	(let loop ()
-	  (cond [(> (pqueue-count Q) 0)
-		 (let ([v (pqueue-pop! Q)])
-		   (debug "coloring" v)
-		   (let ([c (choose-color v (hash-ref unavail-colors v))])
-		     (debug "found color" c)
-		     (hash-set! color v c)
-		     (for ([u (adjacent G v)])
-			  (debug "adjacent" u)
-			  (cond [(not (set-member? registers u))
-				 (debug "not a register" u)
-				 (hash-set! unavail-colors u
-					    (set-add (hash-ref unavail-colors u)
-						     c))
-				 (pqueue-decrease-key! Q (hash-ref pq-node u))])
-			  )
-		     (loop)))]))
-	(debug "finished graph coloring" '())
-	;; Create mapping from variables to their homes
-	(let ([homes
-	       (make-hash
-		(map (lambda (x) (cons x (identify-home (hash-ref color x))))
-		     xs))]
-	      [stack-size (cond [(< largest-color 
-				    (vector-length general-registers))
-				 first-offset]
-				[else
-				 (- largest-color
-				    (vector-length general-registers))])])
-	(debug "assigning homes" '())
-	  `(program ,stack-size
-		    ,(map ((fix assign-locations) homes) ss))))]))
-	  
+    (define/public (free-vars a)
+      (match a
+	 [`(var ,x) (set x)]
+	 [else (set)]))
+
+    (define/public (read-vars instr)
+      (match instr
+         [`(mov ,s ,d) (send this free-vars s)]
+	 [(or `(add ,s ,d) `(sub ,s ,d)) 
+	  (set-union (send this free-vars s) (send this free-vars d))]
+	 [`(neg ,d) (send this free-vars d)]
+	 [`(call ,f) (set)]
+	 ))
+  
+    (define/public (write-vars instr)
+      (match instr
+         [`(mov ,s ,d) (send this free-vars d)]
+	 [(or `(add ,s ,d) `(sub ,s ,d)) (send this free-vars d)]
+	 [`(neg ,d) (send this free-vars d)]
+	 [`(call ,f) caller-save]
+	 ))
+
+    (define/public (liveness-analysis)
+      (lambda (ast)
+	(match ast
+           [`(program ,xs ,orig-ss)
+	    (let loop ([ss (reverse orig-ss)] [live-after (set)] [lives '()])
+	      (cond [(null? ss)
+		     `(program (,xs ,lives) ,orig-ss)]
+		    [else
+		     (let* ([s (car ss)]
+			    [live-before (set-union (set-subtract 
+						     live-after (write-vars s))
+						    (read-vars s))])
+		       (debug "after" s) (debug "live" live-after)
+		       (loop (cdr ss)
+			     live-before
+			     (cons live-after lives)))]))])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; Build Interference Graph
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+    (define/public (build-interference live-after G)
+      (lambda (ast)
+	(match ast
+	   [`(mov ,s ,d)
+	    ;; d interferes with everything in live-after
+	    ;;   except s and d
+	    (for ([v live-after])
+		 (for ([d (write-vars `(mov ,s ,d))]
+		       #:when (not (or (eq? v s) (eq? v d))))
+		      (add-edge G d v)))]
+	   [`(call ,f)
+	    ;; add interference with caller-save registers
+	    (for ([v live-after])
+		 (for ([u caller-save]
+		       #:when (not (eq? v u)))
+		      (add-edge G u v)))
+	    ;; do the usual (not sure this is needed)
+	    (let ([inst `(call ,f)])
+	      (for ([v live-after])
+		   (for ([d (write-vars inst)]
+			 #:when (not (eq? v d)))
+			(add-edge G d v))))]
+           [`(program (,xs ,lives) ,ss)
+	    (let ([G (make-graph xs)])
+	      (let ([ss-lv (reverse (map cons ss lives))])
+		(for ([s-lv ss-lv]) 
+		     (match s-lv
+			[`(,inst . ,live-after)
+			 ((send this build-interference live-after G) inst)]))
+		`(program (,xs ,G) ,ss)))]
+	   [else
+	    (for ([v live-after])
+		 (for ([d (write-vars ast)] #:when (not (eq? v d)))
+		      (add-edge G d v)))])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; Allocate Registers and Stack Locations (Graph Coloring) 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+    (define largest-color 0)
+
+    ;; Choose the first available color
+    (define (choose-color v unavail-colors)
+      (let loop ([c 0])
+	(cond [(set-member? unavail-colors c)
+	       (loop (add1 c))]
+	      [else
+	       (cond [(> c largest-color)
+		      (set! largest-color c)])
+	       c])))
+
+    (define variable-size 8)
+    (define first-offset 16)
+
+    (define (identify-home c)
+      (let ([n (vector-length general-registers)])
+	(cond [(< c n)
+	       `(register ,(vector-ref general-registers c))]
+	      [else 
+	       `(stack-loc ,(+ first-offset (* (- c n) variable-size)))])))
+
+    (define/public (allocate-registers)
+      (lambda (ast)
+	(match ast
+           [`(program (,xs ,G) ,ss)
+	    (let* ([unavail-colors (make-hash)] ;; aka. pencil marks
+		   [compare (lambda (u v) 
+			      (>=
+			       (set-count (hash-ref unavail-colors u))
+			       (set-count (hash-ref unavail-colors v))))]
+		   [Q (make-pqueue compare)]
+		   [pq-node (make-hash)] ;; maps vars to priority queue nodes
+		   [color (make-hash)])  ;; maps vars to colors (natural numbers)
+	      (for ([x xs])
+		   (hash-set! unavail-colors x 
+			      (list->set
+			       (filter
+				(lambda (u) (set-member? registers u))
+				(set->list (hash-ref G x)))))
+		   (hash-set! pq-node x (pqueue-push! Q x)))
+	      ;; Graph coloring
+	      (debug "starting graph coloring" '())
+	      (let loop ()
+		(cond [(> (pqueue-count Q) 0)
+		       (let ([v (pqueue-pop! Q)])
+			 (debug "coloring" v)
+			 (let ([c (choose-color v (hash-ref unavail-colors v))])
+			   (debug "found color" c)
+			   (hash-set! color v c)
+			   (for ([u (adjacent G v)])
+				(debug "adjacent" u)
+				(cond [(not (set-member? registers u))
+				       (debug "not a register" u)
+				       (hash-set! unavail-colors u
+						  (set-add
+						   (hash-ref unavail-colors u)
+						   c))
+				       (pqueue-decrease-key! 
+					Q
+					(hash-ref pq-node u))])
+				)
+			   (loop)))]))
+	      (debug "finished graph coloring" '())
+	      ;; Create mapping from variables to their homes
+	      (let ([homes
+		     (make-hash
+		      (map (lambda (x) (cons x (identify-home
+						(hash-ref color x))))
+			   xs))]
+		    [stack-size (cond [(< largest-color 
+					  (vector-length general-registers))
+				       first-offset]
+				      [else
+				       (- largest-color
+					  (vector-length general-registers))])])
+		(debug "assigning homes" '())
+		`(program ,stack-size
+			  ,(map (send this assign-locations homes) ss))))])))
+      
+    )) ;; compile-reg-S0
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define reg-int-exp-passes
-  (list `("uniquify" ,(lambda (ast) (((fix uniquify) '())
-				     `(program () ,ast)))
-	  ,((fix interp-S0) '()))
-	`("flatten" ,((fix flatten) #f)
-	  ,((fix interp-C0) '()))
-	`("instruction selection" ,(fix instruction-selection)
-	  ,((fix interp-x86) '()))
-	`("liveness analysis" ,liveness-analysis
-	  ,((fix interp-x86) '()))
-	`("build interference" ,build-interference
-	  ,((fix interp-x86) '()))
-	`("allocate registers" ,allocate-registers
-	  ,((fix interp-x86) '()))
-	`("insert spill code" ,(fix insert-spill-code)
-	  ,((fix interp-x86) '()))
-	`("print x86" ,(fix print-x86) #f)
-	))
+  (let ([compiler (new compile-reg-S0)])
+    (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
+				       `(program () ,ast)))
+	    ,((fix interp-S0) '()))
+	  `("flatten" ,(send compiler flatten #f)
+	    ,((fix interp-C0) '()))
+	  `("instruction selection" ,(send compiler instruction-selection)
+	    ,((fix interp-x86) '()))
+	  `("liveness analysis" ,(send compiler liveness-analysis)
+	    ,((fix interp-x86) '()))
+	  `("build interference" ,(send compiler
+					build-interference (void) (void))
+	    ,((fix interp-x86) '()))
+	  `("allocate registers" ,(send compiler allocate-registers)
+	    ,((fix interp-x86) '()))
+	  `("insert spill code" ,(send compiler insert-spill-code)
+	    ,((fix interp-x86) '()))
+	  `("print x86" ,(send compiler print-x86) #f)
+	  )))
 

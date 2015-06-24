@@ -86,7 +86,7 @@
     ;; 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    (define/private (binary-op->inst op)
+    (define/public (binary-op->inst op)
       (match op
          ['+ 'add]
 	 ['- 'sub]
@@ -94,7 +94,7 @@
 	 ;['eq? 'cmp]	 ['and 'and]	 ['or 'or]
 	 ))
 
-    (define/private (unary-op->inst op)
+    (define/public (unary-op->inst op)
       (match op
 	 ['- 'neg]
 	 ;;['not 'not]
@@ -162,8 +162,8 @@
     ;;
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    (define variable-size 8)
-    (define first-offset 16)
+    (define/public (variable-size) 8)
+    (define/public (first-offset) 16)
 
     (define/public (assign-locations homes)
       (lambda (e)
@@ -181,14 +181,18 @@
 	      `(,instr-name ,@(map (send this assign-locations homes) as)))]
 	   [`(program ,xs ,ss)
 	    ;; map variables to stack locations
-	    (let ([new-homes
-		   (make-hash
-		    (map cons xs
-			 (map (lambda (n)
-				`(stack-loc ,(+ first-offset
-						(* variable-size n))))
-			      (stream->list (in-range 0 (length xs))))))]
-		  [stack-space (+ first-offset (* (length xs) variable-size))])
+	    (let* ([make-stack-loc
+		    (lambda (n)
+		      `(stack-loc ,(+ (send this first-offset)
+				      (* (send this variable-size) 
+					 n))))]
+		   [new-homes
+		    (make-hash
+		     (map cons xs
+			  (map make-stack-loc
+			       (stream->list (in-range 0 (length xs))))))]
+		  [stack-space (+ (send this first-offset)
+				  (* (length xs) (send this variable-size)))])
 	      `(program ,stack-space
 			,(map (send this assign-locations new-homes) ss)))]
 	   )))
@@ -204,7 +208,7 @@
     ;; 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    (define/private (on-stack? a)
+    (define/public (on-stack? a)
       (match a
          [`(stack-loc ,n) #t]
 	 [else #f]))
