@@ -197,28 +197,28 @@
 				    (vector-length general-registers))])])
 	(debug "assigning homes" '())
 	  `(program ,stack-size
-		    ,(map (assign-homes homes) ss))))]))
+		    ,(map ((fix assign-locations) homes) ss))))]))
 	  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define reg-int-exp-passes
-  (list `("sexp->ast" ,(lambda (sexp) `(program () ,(sexp->ast sexp)))
-	  ,(lambda (ast) (interp-S0 '() ast)))
-	`("uniquify" ,(lambda (ast) (uniquify ast '()))
-	  ,(lambda (ast) (interp-S0 '() ast)))
-	`("flatten" ,flatten ,(lambda (ast) (interp-C0 '() ast)))
-	`("instruction selection" ,instruction-selection
-	  ,(lambda (ast) (interp-x86 '() ast)))
+  (list `("uniquify" ,(lambda (ast) (((fix uniquify) '())
+				     `(program () ,ast)))
+	  ,((fix interp-S0) '()))
+	`("flatten" ,((fix flatten) #f)
+	  ,((fix interp-C0) '()))
+	`("instruction selection" ,(fix instruction-selection)
+	  ,((fix interp-x86) '()))
 	`("liveness analysis" ,liveness-analysis
-	  ,(lambda (ast) (interp-x86 '() ast)))
+	  ,((fix interp-x86) '()))
 	`("build interference" ,build-interference
-	  ,(lambda (ast) (interp-x86 '() ast)))
+	  ,((fix interp-x86) '()))
 	`("allocate registers" ,allocate-registers
-	  ,(lambda (ast) (interp-x86 '() ast)))
-	`("insert spill code" ,insert-spill-code
-	  ,(lambda (ast) (interp-x86 '() ast)))
-	`("print x86" ,print-x86 #f)
+	  ,((fix interp-x86) '()))
+	`("insert spill code" ,(fix insert-spill-code)
+	  ,((fix interp-x86) '()))
+	`("print x86" ,(fix print-x86) #f)
 	))
 

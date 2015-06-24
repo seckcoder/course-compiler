@@ -280,14 +280,11 @@
 	  ,((fix interp-S0) '()))
 	`("flatten" ,((fix flatten) #f)
 	  ,((fix interp-C0) '()))
-	`("instruction selection" 
-	  ,(fix instruction-selection)
+	`("instruction selection" ,(fix instruction-selection)
 	  ,((fix interp-x86) '()))
-	`("assign locations"
-	  ,((fix assign-locations) (void))
+	`("assign locations" ,((fix assign-locations) (void))
 	  ,((fix interp-x86) '()))
-	`("insert spill code" 
-	  ,(fix insert-spill-code)
+	`("insert spill code" ,(fix insert-spill-code)
 	  ,((fix interp-x86) '()))
 	`("print x86" ,(fix print-x86) #f)
 	))

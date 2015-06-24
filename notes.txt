@@ -1,5 +1,6 @@
 --------------------------------------------------------------------------------
-Integers, expressions, and variables
+Integers, expressions, and variables (int_exp.rkt)
+
 Language S_0:
 e ::= n | x | (+ e e) | (- e e) | (- e) | (read) | (let ([x e]) e)
 
@@ -17,7 +18,7 @@ Parsing? Racket has "Parser Tools: lex and yacc-style Parsing"
   https://gist.github.com/danking/1068185
 
 --------------------------------------------------------------------------------
-Register Allocation
+Register Allocation (register_allocator.rkt)
 
 reserve rax for spill code
  -> can use same code as prior to register allocation!
@@ -25,13 +26,13 @@ reserve rax for spill code
 perform a single-pass of register allocation
 
 --------------------------------------------------------------------------------
-Conditional control flow, Booleans, and type checking
+Conditional control flow, Booleans, and type checking (conditionals.rkt)
 
 S1
 
 T ::= Integer | Boolean
 e ::= ...
-    | #t | #f | (if e e e) | (equal? e e) | (and e e) | (or e e) | (not e)
+    | #t | #f | (if e e e) | (eq? e e) | (and e e) | (or e e) | (not e)
 
 
 --------------------------------------------------------------------------------
