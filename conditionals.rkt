@@ -64,13 +64,17 @@
 	(match ast
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let-values ([(thn-ss thn-lives)
-			  ((send this liveness-ss live-after-thn) thn-ss)]
+			  ((send this liveness-ss live-after) thn-ss)]
 			 [(els-ss els-lives)
-			  ((send this liveness-ss live-after-els) els-ss)])
-	      (values
-	       `(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
-	       (set-union live-after-thn live-after-els
-			  (free-vars cnd))))]
+			  ((send this liveness-ss live-after) els-ss)])
+	      (let ([live-after-thn (cond [(null? thn-lives) live-after]
+					  [else (car thn-lives)])]
+		    [live-after-els (cond [(null? els-lives) live-after]
+					  [else (car els-lives)])])
+		(values
+		 `(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
+		 (set-union live-after-thn live-after-els
+			    (free-vars cnd)))))]
 	   [else
 	    ((super liveness-analysis live-after) ast)]
 	   )))
