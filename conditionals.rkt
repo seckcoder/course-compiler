@@ -2,8 +2,7 @@
 (require (rename-in "int_exp.rkt" (old-uniquify uniquify))
 	 (rename-in "int_exp.rkt" (old-flatten flatten)))
 
-;; this is a problem! -Jeremy
-(set! primitives (set-union primitives 'eq? 'and 'or 'not))
+(define primitives (set '+ '- '* 'eq? 'and 'or 'not))
 
 (define (uniquify recur)
   (lambda (env)
