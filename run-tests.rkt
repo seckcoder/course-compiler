@@ -2,11 +2,21 @@
 (require "utilities.rkt")
 (require "int_exp.rkt")
 (require "register_allocator.rkt")
+(require "conditionals.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])
     (cond [(eq? i end) (reverse res)]
 	  [else (loop (add1 i) (cons i res))])))
+
+(define (check-compiler checker test-family test-nums)
+  (debug "checking passes" '())
+  (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
+			test-nums)])
+       (checker test-name)
+       )
+  (newline)(display "passed checks")(newline)
+  )
 
 (define (test-compiler compiler checker test-family test-nums)
   (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
@@ -29,8 +39,14 @@
   (newline)(display "tests passed")(newline)
   )
 
-(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
+#;(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
 	       "s0" (range 1 11))
 
-(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+#;(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+	       "s0" (range 1 11))
+
+(check-compiler (check-passes conditionals-passes) "s0" (range 1 11))
+(check-compiler (check-passes conditionals-passes) "s1" (range 1 4))
+
+#;(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
 	       "s0" (range 1 11))

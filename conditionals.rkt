@@ -1,6 +1,7 @@
 #lang racket
-
 (require "register_allocator.rkt")
+(require "interp.rkt")
+(provide compile-S1 conditionals-passes)
 
 (define compile-S1
   (class compile-reg-S0
@@ -17,7 +18,7 @@
 	 [else (super binary-op->inst op)]
 	 ))
 
-    (define/public (unary-op->inst op)
+    (define/override (unary-op->inst op)
       (match op
 	 ['not 'not]
 	 [else (super unary-op->inst op)]
@@ -42,9 +43,9 @@
 	   [#t (values #t '())]
 	   [#f (values #f '())]
 	   [`(if ,cnd ,thn ,els)
-	    (let-values ([(new-cnd cnd-ss) ((recur #t) cnd)]
-			 [(new-thn thn-ss) ((recur #t) thn)]
-			 [(new-els els-ss) ((recur #t) els)])
+	    (let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)]
+			 [(new-thn thn-ss) ((send this flatten #t) thn)]
+			 [(new-els els-ss) ((send this flatten #t) els)])
 	      (let* ([tmp (gensym 'if)]
 		     [thn-ret `(assign ,tmp ,new-thn)]
 		     [els-ret `(assign ,tmp ,new-els)])
@@ -88,11 +89,45 @@
 		(values
 		 `(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
 		 (set-union live-after-thn live-after-els
-			    (free-vars cnd)))))]
+			    (send this free-vars cnd)))))]
 	   [else
 	    ((super liveness-analysis live-after) ast)]
 	   )))
-    
-    
 
+      (define/override (build-interference live-after G)
+	(lambda (ast)
+	  (match ast
+	     [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
+	      (for ([inst (append thn-ss els-ss)]
+		    [live-after (append thn-lives els-lives)]) 
+		   ((send this build-interference 
+			  live-after G) inst))
+	      `(if ,cnd ,thn-ss ,els-ss)]
+	     [else
+	      ((super build-interference live-after G) ast)]
+	     )))
+      
+      
     )) ;; compile-S1
+
+(define conditionals-passes
+  (let ([compiler (new compile-S1)]
+	[interp (new interp-S1)])
+    (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
+				       `(program () ,ast)))
+	    ,(send interp interp-scheme '()))
+	  `("flatten" ,(send compiler flatten #f)
+	    ,(send interp interp-C '()))
+	  `("instruction selection" ,(send compiler instruction-selection)
+	    ,(send interp interp-x86 '()))
+	  `("liveness analysis" ,(send compiler liveness-analysis (void))
+	    ,(send interp interp-x86 '()))
+	  `("build interference" ,(send compiler
+					build-interference (void) (void))
+	    ,(send interp interp-x86 '()))
+	  #;`("allocate registers" ,(send compiler allocate-registers)
+	    ,(send interp interp-x86 '()))
+	  #;`("insert spill code" ,(send compiler insert-spill-code)
+	    ,(send interp interp-x86 '()))
+	  #;`("print x86" ,(send compiler print-x86) #f)
+	  )))

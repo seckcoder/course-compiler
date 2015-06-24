@@ -284,18 +284,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define int-exp-passes
-  (let ([compiler (new compile-S0)])
+  (let ([compiler (new compile-S0)]
+	[interp (new interp-S0)])
     (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
 				       `(program () ,ast)))
-	    ,((fix interp-S0) '()))
+	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
-	    ,((fix interp-C0) '()))
+	    ,(send interp interp-C '()))
 	  `("instruction selection" ,(send compiler instruction-selection)
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("assign locations" ,(send compiler assign-locations (void))
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("insert spill code" ,(send compiler insert-spill-code)
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))
 

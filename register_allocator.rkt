@@ -116,12 +116,9 @@
 			(add-edge G d v))))]
            [`(program (,xs ,lives) ,ss)
 	    (let ([G (make-graph xs)])
-	      (let ([ss-lv (reverse (map cons ss lives))])
-		(for ([s-lv ss-lv]) 
-		     (match s-lv
-			[`(,inst . ,live-after)
-			 ((send this build-interference live-after G) inst)]))
-		`(program (,xs ,G) ,ss)))]
+	      (for ([inst ss] [live-after lives])
+		   ((send this build-interference live-after G) inst))
+	      `(program (,xs ,G) ,ss))]
 	   [else
 	    (for ([v live-after])
 		 (for ([d (write-vars ast)] #:when (not (eq? v d)))
@@ -218,23 +215,24 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define reg-int-exp-passes
-  (let ([compiler (new compile-reg-S0)])
+  (let ([compiler (new compile-reg-S0)]
+	[interp (new interp-S0)])
     (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
 				       `(program () ,ast)))
-	    ,((fix interp-S0) '()))
+	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
-	    ,((fix interp-C0) '()))
+	    ,(send interp interp-C '()))
 	  `("instruction selection" ,(send compiler instruction-selection)
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("liveness analysis" ,(send compiler liveness-analysis (void))
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("build interference" ,(send compiler
 					build-interference (void) (void))
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("allocate registers" ,(send compiler allocate-registers)
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("insert spill code" ,(send compiler insert-spill-code)
-	    ,((fix interp-x86) '()))
+	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))
 
