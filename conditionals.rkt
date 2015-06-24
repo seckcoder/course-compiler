@@ -9,6 +9,20 @@
     (define/override (primitives)
       (set-union (super primitives) (set 'eq? 'and 'or 'not)))
 
+    (define/override (binary-op->inst op)
+      (match op
+	 ['eq? 'cmp]
+	 ['and 'and]
+	 ['or 'or]
+	 [else (super binary-op->inst op)]
+	 ))
+
+    (define/public (unary-op->inst op)
+      (match op
+	 ['not 'not]
+	 [else (super unary-op->inst op)]
+	 ))
+
     (define/override (uniquify env)
       (lambda (e)
 	(match e

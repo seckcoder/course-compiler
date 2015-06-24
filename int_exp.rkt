@@ -91,13 +91,13 @@
          ['+ 'add]
 	 ['- 'sub]
 	 ['* 'imul]
-	 ;['eq? 'cmp]	 ['and 'and]	 ['or 'or]
+	 [else (error "in binary-op->inst unmatched" op)]
 	 ))
 
     (define/public (unary-op->inst op)
       (match op
 	 ['- 'neg]
-	 ;;['not 'not]
+	 [else (error "in unary-op->inst unmatched" op)]
 	 ))
 
     (define/public (instruction-selection)
