@@ -5,7 +5,7 @@
 (require "interp.rkt")
 (require "priority_queue.rkt")
 
-(provide reg-int-exp-passes)
+(provide reg-int-exp-passes compile-reg-S0)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Graph ADT
@@ -61,22 +61,32 @@
 	 [`(call ,f) caller-save]
 	 ))
 
-    (define/public (liveness-analysis)
+    (define/public (liveness-ss live-after)
+      (lambda (orig-ss)
+	(let loop ([ss (reverse orig-ss)] [live-after live-after] 
+		   [lives '()] [new-ss '()])
+	      (cond [(null? ss)
+		     (values new-ss lives)]
+		    [else
+		     (let-values ([(new-s live-after)
+				   ((send this liveness-analysis live-after)
+				    (car ss))])
+		       (loop (cdr ss)
+			     live-after
+			     (cons live-after lives)
+			     (cons new-s new-ss)))]))))
+
+    (define/public (liveness-analysis live-after)
       (lambda (ast)
 	(match ast
-           [`(program ,xs ,orig-ss)
-	    (let loop ([ss (reverse orig-ss)] [live-after (set)] [lives '()])
-	      (cond [(null? ss)
-		     `(program (,xs ,lives) ,orig-ss)]
-		    [else
-		     (let* ([s (car ss)]
-			    [live-before (set-union (set-subtract 
-						     live-after (write-vars s))
-						    (read-vars s))])
-		       (debug "after" s) (debug "live" live-after)
-		       (loop (cdr ss)
-			     live-before
-			     (cons live-after lives)))]))])))
+           [`(program ,xs ,ss)
+	    (let-values ([(new-ss lives) ((send this liveness-ss (set)) ss)])
+	      `(program (,xs ,lives) ,new-ss))]
+	   [else
+	    (values ast
+		    (set-union (set-subtract live-after (write-vars ast))
+			       (read-vars ast)))]
+	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; Build Interference Graph
@@ -216,7 +226,7 @@
 	    ,((fix interp-C0) '()))
 	  `("instruction selection" ,(send compiler instruction-selection)
 	    ,((fix interp-x86) '()))
-	  `("liveness analysis" ,(send compiler liveness-analysis)
+	  `("liveness analysis" ,(send compiler liveness-analysis (void))
 	    ,((fix interp-x86) '()))
 	  `("build interference" ,(send compiler
 					build-interference (void) (void))
