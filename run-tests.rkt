@@ -46,7 +46,7 @@
 	       "s0" (range 1 11))
 
 (check-compiler (check-passes conditionals-passes) "s0" (range 1 11))
-(check-compiler (check-passes conditionals-passes) "s1" (range 1 4))
+(check-compiler (check-passes conditionals-passes) "s1" (range 1 5))
 
 #;(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
 	       "s0" (range 1 11))

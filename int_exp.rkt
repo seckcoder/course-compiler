@@ -45,6 +45,15 @@
     ;;
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+    (define/public (collect-locals)
+      (lambda (ast)
+	(match ast
+	   [`(assign ,x ,e) (list x)]
+	   [`(return ,e) '()]
+	   [else
+	    (error "unmatched in collect-locals S0" ast)]
+	   )))
+
     (define/public (flatten need-atomic)
       (lambda (e)
         (match e
@@ -59,10 +68,9 @@
 		      (append e-ss (list `(assign ,x ,new-e)) body-ss)))]
 	   [`(program ,extra ,e)
 	    (let-values ([(new-e ss) ((send this flatten #f) e)])
-	      (let ([xs (list->set (map (lambda (s) 
-					  (match s [`(assign ,x ,e) x])) ss))])
-		`(program ,(set->list xs)
-			  ,(append ss (list `(return ,new-e))))))]
+	      (debug "finished flattening program body" (list new-e ss))
+	      (let ([xs (list->set (append* (map (send this collect-locals) ss)))])
+		`(program ,(set->list xs) ,(append ss (list `(return ,new-e))))))]
 	   [`(,op ,es ...)
 	    #:when (or (set-member? (send this primitives) op) (eq? op 'read))
 	    ;; flatten the argument expressions 'es'
@@ -195,6 +203,8 @@
 				  (* (length xs) (send this variable-size)))])
 	      `(program ,stack-space
 			,(map (send this assign-locations new-homes) ss)))]
+	   [else
+	    (error "in assign-locations S0, unmatched" e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

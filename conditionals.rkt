@@ -1,6 +1,7 @@
 #lang racket
 (require "register_allocator.rkt")
 (require "interp.rkt")
+(require "utilities.rkt")
 (provide compile-S1 conditionals-passes)
 
 (define compile-S1
@@ -37,8 +38,20 @@
 	   [else ((super uniquify env) e)]
 	   )))
   
+    (define/override (collect-locals)
+      (lambda (ast)
+	(debug "collect-locals in S1" ast)
+	(match ast
+	   [`(if ,cnd ,thn ,els)
+	    (append (append* (map (send this collect-locals) thn))
+		    (append* (map (send this collect-locals) els)))]
+	   [else
+	    ((super collect-locals) ast)]
+	   )))
+
     (define/override (flatten need-atomic)
       (lambda (e)
+	(debug "flattening in S1" e)
 	(match e
 	   [#t (values #t '())]
 	   [#f (values #f '())]
@@ -51,9 +64,9 @@
 		     [els-ret `(assign ,tmp ,new-els)])
 		(values tmp
 			(append cnd-ss
-				`(if ,new-cnd
-				     ,(append thn-ss (list thn-ret))
-				     ,(append els-ss (list els-ret)))))))]
+				(list `(if ,new-cnd
+					   ,(append thn-ss (list thn-ret))
+					   ,(append els-ss (list els-ret))))))))]
 	   [else ((super flatten need-atomic) e)]
 	   )))
 
@@ -64,10 +77,10 @@
 	   [#f `(int 0)]
 	   [`(assign ,lhs ,b)
 	    #:when (boolean? b)
-	    
-	    
-	    
-	    ]
+	    (let ([lhs ((send this instruction-selection) lhs)]
+		  [b ((send this instruction-selection) b)])
+	      (list `(mov ,b ,lhs)))]
+
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this instruction-selection) cnd)]
@@ -75,7 +88,7 @@
 					thn-ss))]
 		  [els-ss (append* (map (send this instruction-selection)
 					els-ss))])
-	      `(if ,cnd ,thn-ss ,els-ss))]
+	      (list `(if ,cnd ,thn-ss ,els-ss)))]
 	   [else
 	    ((super instruction-selection) e)]
 	   )))
@@ -104,6 +117,7 @@
 	(lambda (ast)
 	  (match ast
 	     [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
+	      (debug "build interference for" ast)
 	      (for ([inst (append thn-ss els-ss)]
 		    [live-after (append thn-lives els-lives)]) 
 		   ((send this build-interference 
@@ -113,7 +127,53 @@
 	      ((super build-interference live-after G) ast)]
 	     )))
       
+    (define/override (assign-locations homes)
+      (lambda (e)
+	(match e
+	   [`(if ,cnd ,thn-ss ,els-ss)
+	    (let ([cnd ((send this assign-locations homes) cnd)]
+		  [thn-ss (map (send this assign-locations homes) thn-ss)]
+		  [els-ss (map (send this assign-locations homes) els-ss)])
+	      `(if ,cnd ,thn-ss ,els-ss))]
+	   [else
+	    ((super assign-locations homes) e)]
+	   )))
       
+    (define/override (insert-spill-code)
+      (lambda (e)
+	(match e
+           [`(if ,cnd ,thn-ss ,els-ss)
+	    (let ([else-label (gensym 'else)]
+		  [end-label (gensym 'if-end)])
+	      (append
+	       `((cmpl (int 0) ,cnd))
+	       `((je ,else-label))
+	       thn-ss
+	       `((jmp ,end-label))
+	       `((label ,else-label))
+	       els-ss
+	       `((label ,end-label))
+	       ))]
+	   [else
+	    ((super insert-spill-code) e)])))
+
+    (define/override (print-x86)
+      (lambda (e)
+	(match e
+           [`(cmpl ,s1 ,s2) 
+	    (format "\tcmpl\t~a,~a\n"
+		    ((send this print-x86) s1)
+		    ((send this print-x86) s2))]
+	   [`(je ,label)
+	    (format "\tje ~a\n" label)]
+	   [`(jmp ,label)
+	    (format "\tjmp ~a\n" label)]
+	   [`(label ,l)
+	    (format "~a:\n" l)]
+	   [else
+	    ((super print-x86) e)]
+	   )))
+
     )) ;; compile-S1
 
 (define conditionals-passes
@@ -128,12 +188,12 @@
 	    ,(send interp interp-x86 '()))
 	  `("liveness analysis" ,(send compiler liveness-analysis (void))
 	    ,(send interp interp-x86 '()))
-	  `("build interference" ,(send compiler
-					build-interference (void) (void))
+	  `("build interference" ,(send compiler build-interference
+					(void) (void))
 	    ,(send interp interp-x86 '()))
-	  #;`("allocate registers" ,(send compiler allocate-registers)
+	  `("allocate registers" ,(send compiler allocate-registers)
 	    ,(send interp interp-x86 '()))
-	  #;`("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler insert-spill-code)
 	    ,(send interp interp-x86 '()))
-	  #;`("print x86" ,(send compiler print-x86) #f)
+	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

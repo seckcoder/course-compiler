@@ -101,7 +101,8 @@
 	    (for ([v live-after])
 		 (for ([d (write-vars `(mov ,s ,d))]
 		       #:when (not (or (eq? v s) (eq? v d))))
-		      (add-edge G d v)))]
+		      (add-edge G d v)))
+	    ast]
 	   [`(call ,f)
 	    ;; add interference with caller-save registers
 	    (for ([v live-after])
@@ -109,20 +110,24 @@
 		       #:when (not (eq? v u)))
 		      (add-edge G u v)))
 	    ;; do the usual (not sure this is needed)
-	    (let ([inst `(call ,f)])
+	    #;(let ([inst `(call ,f)])
 	      (for ([v live-after])
 		   (for ([d (write-vars inst)]
 			 #:when (not (eq? v d)))
-			(add-edge G d v))))]
+			(add-edge G d v))))
+	    ast]
            [`(program (,xs ,lives) ,ss)
-	    (let ([G (make-graph xs)])
+	    (let ([G (make-graph xs)] [new-ss '()])
 	      (for ([inst ss] [live-after lives])
-		   ((send this build-interference live-after G) inst))
-	      `(program (,xs ,G) ,ss))]
+		   (let ([new-inst ((send this build-interference 
+					  live-after G) inst)])
+		     (set! new-ss (cons new-inst new-ss))))
+	      `(program (,xs ,G) ,(reverse new-ss)))]
 	   [else
 	    (for ([v live-after])
 		 (for ([d (write-vars ast)] #:when (not (eq? v d)))
-		      (add-edge G d v)))])))
+		      (add-edge G d v)))
+	    ast])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; Allocate Registers and Stack Locations (Graph Coloring) 
@@ -161,7 +166,7 @@
 			       (set-count (hash-ref unavail-colors v))))]
 		   [Q (make-pqueue compare)]
 		   [pq-node (make-hash)] ;; maps vars to priority queue nodes
-		   [color (make-hash)])  ;; maps vars to colors (natural numbers)
+		   [color (make-hash)])  ;; maps vars to colors (natural nums)
 	      (for ([x xs])
 		   (hash-set! unavail-colors x 
 			      (list->set
@@ -204,7 +209,7 @@
 				      [else
 				       (- largest-color
 					  (vector-length general-registers))])])
-		(debug "assigning homes" '())
+		(debug "assigning homes" ss)
 		`(program ,stack-size
 			  ,(map (send this assign-locations homes) ss))))])))
       
