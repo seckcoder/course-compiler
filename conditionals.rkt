@@ -102,6 +102,9 @@
       (match instr
      	 [`(cmp ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
+     	 [(or `(and ,s ,d) `(or ,s ,d))
+	  (set-union (send this free-vars s)
+		     (send this free-vars d))]
      	 [`(sete ,d) (set)]
      	 [else
      	  (super read-vars instr)]))
@@ -109,6 +112,7 @@
     (define/override (write-vars instr)
       (match instr
      	 [`(cmp ,s1 ,s2) (set '__flag)]
+     	 [(or `(and ,s ,d) `(or ,s ,d)) (send this free-vars d)]
      	 [`(sete ,d) (send this free-vars d)]
      	 [else
      	  (super write-vars instr)]))
@@ -161,6 +165,8 @@
 	    `(cmp ,@(map (send this assign-locations homes) (list s1 s2)))]
 	   [`(sete ,d)
 	    `(sete ,((send this assign-locations homes) d))]
+	   [(or `(and ,s ,d) `(or ,s ,d))
+	    `(cmp ,@(map (send this assign-locations homes) (list s d)))]
 	   [else
 	    ((super assign-locations homes) e)]
 	   )))

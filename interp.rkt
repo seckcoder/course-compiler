@@ -203,6 +203,14 @@
 	  (super get-name `(register ,(byte2full-reg r)))]
 	 [else (super get-name ast)]))
 
+    (define (i2b i)
+      (cond [(eq? i 0) #f]
+	    [else #f]))
+
+    (define (b2i b)
+      (cond [b 1]
+	    [else 0]))
+
     (define/override (interp-x86 env)
       (lambda (ast)
 	(match ast
@@ -236,6 +244,12 @@
 	      (cond [flag 
 		     ((send this interp-x86 env) (goto-label label (program)))]
 		    [else ((send this interp-x86 env) ss)]))]
+	   [`((and ,s ,d) . ,ss)
+	    (let ([s ((send this interp-x86 env) s)] 
+		  [d ((send this interp-x86 env) d)]
+		  [x (get-name d)])
+	      ((send this interp-x86 
+		     (cons (cons x (b2i (and (i2b d) (i2b s)))) env)) ss))]
 	   [`(program ,xs ,ss) 
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]
