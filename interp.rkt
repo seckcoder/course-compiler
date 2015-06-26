@@ -87,7 +87,7 @@
     ;; psuedo-x86 ::= (program (x ...) (i ...))
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    (define (get-name ast)
+    (define/public (get-name ast)
       (match ast
          [(or `(var ,x) `(register ,x) `(stack-loc ,x))
 	  x]
@@ -188,9 +188,31 @@
 
     (define program (make-parameter '()))
 
+    (define byte2full-reg
+      (lambda (r)
+	(match r
+	   ['al 'rax]
+	   ['bl 'rbx]
+	   ['cl 'rcx]
+	   ['dl 'rdx]
+	   )))
+
+    (define/override (get-name ast)
+      (match ast
+	 [`(byte-register ,r)
+	  (super get-name `(register ,(byte2full-reg r)))]
+	 [else (super get-name ast)]))
+
     (define/override (interp-x86 env)
       (lambda (ast)
 	(match ast
+	   [`(byte-register ,r)
+	    ((send this interp-x86 env) `(register ,(byte2full-reg r)))]
+	   [`((sete ,d) . ,ss)
+	    (let ([v ((send this interp-x86 env) '(register __flag))]
+		  [d ((send this interp-x86 env) d)]
+		  [x (send this get-name d)])
+	      ((send this interp-x86 (cons (cons x v) env)) ss))]
            [#t 1]
            [#f 0]
 	   ;; if's are present before insert-spill-code

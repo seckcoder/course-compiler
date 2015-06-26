@@ -13,7 +13,6 @@
 
     (define/override (binary-op->inst op)
       (match op
-	 ['eq? 'cmp]
 	 ['and 'and]
 	 ['or 'or]
 	 [else (super binary-op->inst op)]
@@ -80,7 +79,13 @@
 	    (let ([lhs ((send this instruction-selection) lhs)]
 		  [b ((send this instruction-selection) b)])
 	      (list `(mov ,b ,lhs)))]
-
+	   [`(assign ,lhs (eq? ,e1 ,e2))
+	    (let ([lhs ((send this instruction-selection) lhs)]
+		  [e1 ((send this instruction-selection) e1)]
+		  [e2 ((send this instruction-selection) e2)])
+	      (list `(cmp ,e1 ,e2)
+		    `(sete (byte-register al))
+		    `(mov (register rax) ,lhs)))]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this instruction-selection) cnd)]
@@ -92,6 +97,21 @@
 	   [else
 	    ((super instruction-selection) e)]
 	   )))
+
+    (define/override (read-vars instr)
+      (match instr
+     	 [`(cmp ,s1 ,s2) (set-union (send this free-vars s1)
+     				    (send this free-vars s2))]
+     	 [`(sete ,d) (set)]
+     	 [else
+     	  (super read-vars instr)]))
+
+    (define/override (write-vars instr)
+      (match instr
+     	 [`(cmp ,s1 ,s2) (set '__flag)]
+     	 [`(sete ,d) (send this free-vars d)]
+     	 [else
+     	  (super write-vars instr)]))
 
     (define/override (liveness-analysis live-after)
       (lambda (ast)
@@ -130,11 +150,17 @@
     (define/override (assign-locations homes)
       (lambda (e)
 	(match e
+	   [`(byte-register ,r)
+	    `(byte-register ,r)]
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this assign-locations homes) cnd)]
 		  [thn-ss (map (send this assign-locations homes) thn-ss)]
 		  [els-ss (map (send this assign-locations homes) els-ss)])
 	      `(if ,cnd ,thn-ss ,els-ss))]
+	   [`(cmp ,s1 ,s2)
+	    `(cmp ,@(map (send this assign-locations homes) (list s1 s2)))]
+	   [`(sete ,d)
+	    `(sete ,((send this assign-locations homes) d))]
 	   [else
 	    ((super assign-locations homes) e)]
 	   )))
@@ -161,12 +187,23 @@
 	       els-ss
 	       `((label ,end-label))
 	       ))]
+	   [`(cmp ,s1 ,s2)
+	    (cond [(and (send this on-stack? s1) (send this on-stack? s2))
+	    	   (list `(mov ,s1 (register rax))
+			 `(cmp (register rax) ,s2))]
+		  [else
+		   (list `(cmp ,s1 ,s2))])]
+	   [`(sete ,d)
+	    (list `(sete ,d))]
 	   [else
 	    ((super insert-spill-code) e)])))
 
     (define/override (print-x86)
       (lambda (e)
 	(match e
+	   [`(byte-register ,r) (format "%~a" r)]
+	   [`(sete ,d)
+	    (format "\tsete\t~a\n" ((send this print-x86) d))]
            [`(cmp ,s1 ,s2) 
 	    (format "\tcmpq\t~a, ~a\n"
 		    ((send this print-x86) s1)

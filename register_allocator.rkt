@@ -31,7 +31,7 @@
     (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
     				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
     (define registers (set-union (list->set (vector->list general-registers))
-				 (set 'rax 'rsp 'rbp)))
+				 (set 'rax 'rsp 'rbp '__flag)))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; Liveness Analysis
@@ -51,6 +51,7 @@
 	  (set-union (send this free-vars s) (send this free-vars d))]
 	 [`(neg ,d) (send this free-vars d)]
 	 [`(call ,f) (set)]
+	 [else (error "read-vars unmatched" instr)]
 	 ))
   
     (define/public (write-vars instr)
@@ -59,6 +60,7 @@
 	 [(or `(add ,s ,d) `(sub ,s ,d)) (send this free-vars d)]
 	 [`(neg ,d) (send this free-vars d)]
 	 [`(call ,f) caller-save]
+	 [else (error "write-vars unmatched" instr)]
 	 ))
 
     (define/public (liveness-ss live-after)
