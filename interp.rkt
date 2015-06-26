@@ -205,7 +205,7 @@
 
     (define (i2b i)
       (cond [(eq? i 0) #f]
-	    [else #f]))
+	    [else #t]))
 
     (define (b2i b)
       (cond [b 1]

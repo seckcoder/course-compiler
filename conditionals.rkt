@@ -39,7 +39,6 @@
   
     (define/override (collect-locals)
       (lambda (ast)
-	(debug "collect-locals in S1" ast)
 	(match ast
 	   [`(if ,cnd ,thn ,els)
 	    (append (append* (map (send this collect-locals) thn))
@@ -50,7 +49,6 @@
 
     (define/override (flatten need-atomic)
       (lambda (e)
-	(debug "flattening in S1" e)
 	(match e
 	   [#t (values #t '())]
 	   [#f (values #f '())]
@@ -58,14 +56,14 @@
 	    (let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)]
 			 [(new-thn thn-ss) ((send this flatten #t) thn)]
 			 [(new-els els-ss) ((send this flatten #t) els)])
-	      (let* ([tmp (gensym 'if)]
-		     [thn-ret `(assign ,tmp ,new-thn)]
-		     [els-ret `(assign ,tmp ,new-els)])
-		(values tmp
-			(append cnd-ss
-				(list `(if ,new-cnd
-					   ,(append thn-ss (list thn-ret))
-					   ,(append els-ss (list els-ret))))))))]
+	      (define tmp (gensym 'if))
+	      (define thn-ret `(assign ,tmp ,new-thn))
+	      (define els-ret `(assign ,tmp ,new-els))
+	      (values tmp
+		      (append cnd-ss
+			      (list `(if ,new-cnd
+					 ,(append thn-ss (list thn-ret))
+					 ,(append els-ss (list els-ret)))))))]
 	   [else ((super flatten need-atomic) e)]
 	   )))
 
@@ -141,7 +139,6 @@
 	(lambda (ast)
 	  (match ast
 	     [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
-	      (debug "build interference for" ast)
 	      (for ([inst (append thn-ss els-ss)]
 		    [live-after (append thn-lives els-lives)]) 
 		   ((send this build-interference 
@@ -166,7 +163,7 @@
 	   [`(sete ,d)
 	    `(sete ,((send this assign-locations homes) d))]
 	   [(or `(and ,s ,d) `(or ,s ,d))
-	    `(cmp ,@(map (send this assign-locations homes) (list s d)))]
+	    `(,(car e) ,@(map (send this assign-locations homes) (list s d)))]
 	   [else
 	    ((super assign-locations homes) e)]
 	   )))
@@ -199,6 +196,14 @@
 			 `(cmp (register rax) ,s2))]
 		  [else
 		   (list `(cmp ,s1 ,s2))])]
+	   ;; this is the same as for add and sub, should refactor.
+	   [(or `(and ,s ,d) `(or ,s ,d))
+	    (let ([instr-name (car e)])
+	      (cond [(and (send this on-stack? s) (send this on-stack? d))	
+		     (list `(mov ,s (register rax))
+			   `(,instr-name (register rax) ,d))]
+		    [else
+		     (list `(,instr-name ,s ,d))]))]
 	   [`(sete ,d)
 	    (list `(sete ,d))]
 	   [else
@@ -220,6 +225,12 @@
 	    (format "\tjmp ~a\n" label)]
 	   [`(label ,l)
 	    (format "~a:\n" l)]
+	   [`(and ,s ,d)
+	    (format "\tandq\t~a, ~a\n" ((send this print-x86) s) 
+		    ((send this print-x86) d))]
+	   [`(or ,s ,d)
+	    (format "\torq\t~a, ~a\n" ((send this print-x86) s) 
+		    ((send this print-x86) d))]
 	   [else
 	    ((super print-x86) e)]
 	   )))

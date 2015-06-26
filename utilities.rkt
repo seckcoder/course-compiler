@@ -21,13 +21,13 @@
 	(error "no match in dispatcher for " e)]
        )))
 
-(define debug-state #f)
+(define debug-state #t)
 
 (define (debug label val)
   (if debug-state
       (begin
 	(printf "~a:\n" label)
-	(display val)
+	(pretty-print val)
 	(newline))
       (void)))
 

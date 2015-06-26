@@ -68,7 +68,6 @@
 		      (append e-ss (list `(assign ,x ,new-e)) body-ss)))]
 	   [`(program ,extra ,e)
 	    (let-values ([(new-e ss) ((send this flatten #f) e)])
-	      (debug "finished flattening program body" (list new-e ss))
 	      (let ([xs (list->set (append* (map (send this collect-locals) ss)))])
 		`(program ,(set->list xs) ,(append ss (list `(return ,new-e))))))]
 	   [`(,op ,es ...)
@@ -110,7 +109,6 @@
 
     (define/public (instruction-selection)
       (lambda (e)
-	(debug "selecting instruction for" e)
 	(match e
            [(? symbol?)
 	    `(var ,e)]

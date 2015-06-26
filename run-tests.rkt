@@ -24,6 +24,7 @@
        (debug "checking passes" '())
        (checker test-name)
        (debug "running compiler" '())
+       ;; use dynamic require instead? or pass in a function.
        (if (system (format "racket ~a tests/~a.scm" compiler test-name))
 	   (if (system (format "gcc runtime.o tests/~a.s" test-name))
 	       (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
@@ -39,13 +40,13 @@
   (newline)(display "tests passed")(newline)
   )
 
-(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
-	       "s0" (range 1 11))
+;; (test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
+;; 	       "s0" (range 1 11))
 
-(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
-	       "s0" (range 1 11))
+;; (test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+;; 	       "s0" (range 1 11))
 
+;; (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
+;; 	       "s0" (range 1 11))
 (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
-	       "s0" (range 1 11))
-(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
-	       "s1" (range 1 12))
+	       "s1" (range 9 12))
