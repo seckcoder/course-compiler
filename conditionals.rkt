@@ -104,6 +104,7 @@
 	  (set-union (send this free-vars s)
 		     (send this free-vars d))]
      	 [`(sete ,d) (set)]
+	 [`(not ,d) (send this free-vars d)]
      	 [else
      	  (super read-vars instr)]))
 
@@ -111,6 +112,7 @@
       (match instr
      	 [`(cmp ,s1 ,s2) (set '__flag)]
      	 [(or `(and ,s ,d) `(or ,s ,d)) (send this free-vars d)]
+	 [`(not ,d) (send this free-vars d)]
      	 [`(sete ,d) (send this free-vars d)]
      	 [else
      	  (super write-vars instr)]))
@@ -160,8 +162,8 @@
 	      `(if ,cnd ,thn-ss ,els-ss))]
 	   [`(cmp ,s1 ,s2)
 	    `(cmp ,@(map (send this assign-locations homes) (list s1 s2)))]
-	   [`(sete ,d)
-	    `(sete ,((send this assign-locations homes) d))]
+	   [(or `(sete ,d) `(not ,d))
+	    `(,(car e) ,((send this assign-locations homes) d))]
 	   [(or `(and ,s ,d) `(or ,s ,d))
 	    `(,(car e) ,@(map (send this assign-locations homes) (list s d)))]
 	   [else
@@ -190,22 +192,6 @@
 	       els-ss
 	       `((label ,end-label))
 	       ))]
-	   [`(cmp ,s1 ,s2)
-	    (cond [(and (send this on-stack? s1) (send this on-stack? s2))
-	    	   (list `(mov ,s1 (register rax))
-			 `(cmp (register rax) ,s2))]
-		  [else
-		   (list `(cmp ,s1 ,s2))])]
-	   ;; this is the same as for add and sub, should refactor.
-	   [(or `(and ,s ,d) `(or ,s ,d))
-	    (let ([instr-name (car e)])
-	      (cond [(and (send this on-stack? s) (send this on-stack? d))	
-		     (list `(mov ,s (register rax))
-			   `(,instr-name (register rax) ,d))]
-		    [else
-		     (list `(,instr-name ,s ,d))]))]
-	   [`(sete ,d)
-	    (list `(sete ,d))]
 	   [else
 	    ((super insert-spill-code) e)])))
 
@@ -225,12 +211,6 @@
 	    (format "\tjmp ~a\n" label)]
 	   [`(label ,l)
 	    (format "~a:\n" l)]
-	   [`(and ,s ,d)
-	    (format "\tandq\t~a, ~a\n" ((send this print-x86) s) 
-		    ((send this print-x86) d))]
-	   [`(or ,s ,d)
-	    (format "\torq\t~a, ~a\n" ((send this print-x86) s) 
-		    ((send this print-x86) d))]
 	   [else
 	    ((super print-x86) e)]
 	   )))

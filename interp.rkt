@@ -94,6 +94,14 @@
 	 [else
 	  (error "doesn't have a name: " ast)]))
 
+    (define/public (interp-x86-op op)
+      (match op
+	 ['add +]
+	 ['sub -]
+	 ['neg -]
+	 ['mul *]
+	 [else (error "interp-x86-op, unmatched" op)]))
+
     (define/public (interp-x86 env)
       (lambda (ast)
 	(match ast
@@ -105,20 +113,6 @@
 	    env]
 	   [`((call _read_int) . ,ss) 
 	    ((send this interp-x86 (cons (cons 'rax (read)) env)) ss)]
-	   [`((add ,s ,d) . ,ss)
-	    (let ([s ((send this interp-x86 env) s)] 
-		  [d ((send this interp-x86 env) d)]
-		  [x (get-name d)])
-	      ((send this interp-x86 (cons (cons x (+ d s)) env)) ss))]
-	   [`((sub ,s ,d) . ,ss)
-	    (let ([s ((send this interp-x86 env) s)] 
-		  [d ((send this interp-x86 env) d)]
-		  [x (get-name d)])
-	      ((send this interp-x86 (cons (cons x (- d s)) env)) ss))]
-	   [`((neg ,d) . ,ss)
-	    (let ([d ((send this interp-x86 env) d)]
-		  [x (get-name d)])
-	      ((send this interp-x86 (cons (cons x (- d)) env)) ss))]
 	   [(or `((mov ,e (var ,x)) . ,ss) 
 		`((mov ,e (stack-loc ,x)) . ,ss)
 		`((mov ,e (register ,x)) . ,ss))
@@ -128,6 +122,17 @@
 	    (let ([env ((send this interp-x86 '()) ss)])
 	      (cond [(assq 'rax env) => cdr]
 		    [else (error "in interp-x86, return rax absent")]))]
+	   [`((,binary-op ,s ,d) . ,ss)
+	    (let ([s ((send this interp-x86 env) s)] 
+		  [d ((send this interp-x86 env) d)]
+		  [x (get-name d)]
+		  [f (send this interp-x86-op binary-op)])
+	      ((send this interp-x86 (cons (cons x (f d s)) env)) ss))]
+	   [`((,unary-op ,d) . ,ss)
+	    (let ([d ((send this interp-x86 env) d)]
+		  [x (get-name d)]
+		  [f (send this interp-x86-op unary-op)])
+	      ((send this interp-x86 (cons (cons x (f d)) env)) ss))]
 	   [else
 	    (error "no match in interp-x86 S0 for " ast)]
 	   )))
@@ -211,6 +216,13 @@
       (cond [b 1]
 	    [else 0]))
 
+    (define/override (interp-x86-op op)
+      (match op
+	 ['not not]
+	 ['and (lambda (a b) (b2i (and (i2b a) (i2b b))))]
+	 ['or (lambda (a b) (b2i (or (i2b a) (i2b b))))]
+	 [else (super interp-x86-op op)]))
+
     (define/override (interp-x86 env)
       (lambda (ast)
 	(match ast
@@ -244,12 +256,6 @@
 	      (cond [flag 
 		     ((send this interp-x86 env) (goto-label label (program)))]
 		    [else ((send this interp-x86 env) ss)]))]
-	   [`((and ,s ,d) . ,ss)
-	    (let ([s ((send this interp-x86 env) s)] 
-		  [d ((send this interp-x86 env) d)]
-		  [x (get-name d)])
-	      ((send this interp-x86 
-		     (cons (cons x (b2i (and (i2b d) (i2b s)))) env)) ss))]
 	   [`(program ,xs ,ss) 
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]

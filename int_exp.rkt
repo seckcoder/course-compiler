@@ -62,28 +62,29 @@
 	   [(? integer?)
 	    (values e '())]
 	   [`(let ([,x ,e]) ,body)
-	    (let-values ([(new-e e-ss) ((send this flatten #f) e)]
-			 [(new-body body-ss) ((send this flatten #f) body)])
-	      (values new-body
-		      (append e-ss (list `(assign ,x ,new-e)) body-ss)))]
+	    (define-values (new-e e-ss) ((send this flatten #f) e))
+	    (define-values (new-body body-ss) ((send this flatten #f) body))
+	    (values new-body
+		    (append e-ss (list `(assign ,x ,new-e)) body-ss))]
 	   [`(program ,extra ,e)
-	    (let-values ([(new-e ss) ((send this flatten #f) e)])
-	      (let ([xs (list->set (append* (map (send this collect-locals) ss)))])
-		`(program ,(set->list xs) ,(append ss (list `(return ,new-e))))))]
+	    (define-values (new-e ss) ((send this flatten #f) e))
+	    (define xs 
+	      (list->set (append* (map (send this collect-locals) ss))))
+	    `(program ,(set->list xs) ,(append ss (list `(return ,new-e))))]
 	   [`(,op ,es ...)
 	    #:when (or (set-member? (send this primitives) op) (eq? op 'read))
 	    ;; flatten the argument expressions 'es'
-	    (let-values ([(new-es sss) (map2 (send this flatten #t) es)])
-	      (let ([ss (append* sss)]
-		    ;; recreate the prim with the new arguments
-		    [prim-apply `(,op ,@new-es)])
-		(cond [need-atomic
-		       ;; create a temporary and assign the prim to it
-		       (let* ([tmp (gensym 'tmp)]
-			      [stmt `(assign ,tmp ,prim-apply)])
-			 (values tmp (append ss (list stmt))))]
-		      [else ;; return the recreated prim, pass along ss and xs
-		       (values prim-apply ss)])))]
+	    (define-values (new-es sss) (map2 (send this flatten #t) es))
+	    (define ss (append* sss))
+	    ;; recreate the prim with the new arguments
+	    (define prim-apply `(,op ,@new-es))
+	    (cond [need-atomic
+		   ;; create a temporary and assign the prim to it
+		   (let* ([tmp (gensym 'tmp)]
+			  [stmt `(assign ,tmp ,prim-apply)])
+		     (values tmp (append ss (list stmt))))]
+		  [else ;; return the recreated prim, pass along ss and xs
+		   (values prim-apply ss)])]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -232,18 +233,18 @@
 			 `(mov (register rax) ,d))]
 		  [else
 		   (list `(mov ,s ,d))])]
-	   [(or `(add ,s ,d) `(sub ,s ,d))
-	    (let ([instr-name (car e)])
-	      (cond [(and (on-stack? s) (on-stack? d))	
-		     (list `(mov ,s (register rax))
-			   `(,instr-name (register rax) ,d))]
-		    [else
-		     (list `(,instr-name ,s ,d))]))]
-	   [`(neg ,d) (list `(neg ,d))]
 	   [`(call ,f) (list `(call ,f))]
 	   [`(program ,stack-space ,ss)
 	    `(program ,stack-space 
 		      ,(append* (map (send this insert-spill-code) ss)))]
+	   [`(,instr-name ,s ,d)
+	    (cond [(and (on-stack? s) (on-stack? d))	
+		   (list `(mov ,s (register rax))
+			 `(,instr-name (register rax) ,d))]
+		  [else
+		   (list `(,instr-name ,s ,d))])]
+	   [`(,instr-name ,d)
+	    (list `(,instr-name ,d))]
 	   )))
   
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -258,17 +259,6 @@
 	   [`(int ,n) (format "$~a" n)]
 	   [`(register ,r) (format "%~a" r)]
 	   [`(call ,f) (format "\tcallq\t~a\n" f)]
-	   [`(mov ,s ,d)
-	    (format "\tmovq\t~a, ~a\n" ((send this print-x86) s) 
-		    ((send this print-x86) d))]
-	   [`(add ,s ,d)
-	    (format "\taddq\t~a, ~a\n" ((send this print-x86) s) 
-		    ((send this print-x86) d))]
-	   [`(sub ,s ,d)
-	    (format "\tsubq\t~a, ~a\n" ((send this print-x86) s) 
-		    ((send this print-x86) d))]
-	   [`(neg ,d)
-	    (format "\tnegq\t~a\n" ((send this print-x86) d))]
 	   [`(program ,stack-space ,ss)
 	    (string-append
 	     (format "\t.globl _main\n")
@@ -283,6 +273,14 @@
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
+	   [`(,instr-name ,s ,d)
+	    (format "\t~aq\t~a, ~a\n" instr-name
+		    ((send this print-x86) s) 
+		    ((send this print-x86) d))]
+	   [`(,instr-name ,d)
+	    (format "\t~aq\t~a\n" instr-name ((send this print-x86) d))]
+	   [else
+	    (error "print-x86, unmatched" e)]
 	   )))
 
     )) ;; class compile-S0

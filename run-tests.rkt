@@ -32,7 +32,7 @@
 				 "")]
 		      [result (system/exit-code (format "./a.out~a" input))])
 		 (if (eq? result 42)
-		     (begin (display ".")(flush-output))
+		     (begin (display test-name)(display ".")(flush-output))
 		     (error (format "test ~a failed, output: ~a" 
 				    test-name result))))
 	       (void))
@@ -40,13 +40,13 @@
   (newline)(display "tests passed")(newline)
   )
 
-;; (test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
-;; 	       "s0" (range 1 11))
+(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
+	       "s0" (range 1 11))
 
-;; (test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
-;; 	       "s0" (range 1 11))
+(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+	       "s0" (range 1 11))
 
-;; (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
-;; 	       "s0" (range 1 11))
 (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
-	       "s1" (range 9 12))
+	       "s0" (range 1 11))
+(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
+	       "s1" (range 1 14))

@@ -21,7 +21,7 @@
 	(error "no match in dispatcher for " e)]
        )))
 
-(define debug-state #t)
+(define debug-state #f)
 
 (define (debug label val)
   (if debug-state
