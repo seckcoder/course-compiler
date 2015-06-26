@@ -261,13 +261,13 @@
 	   [`(register ,r) (format "%~a" r)]
 	   [`(call ,f) (format "\tcallq\t~a\n" f)]
 	   [`(mov ,s ,d)
-	    (format "\tmovq\t~a,~a\n" ((send this print-x86) s) 
+	    (format "\tmovq\t~a, ~a\n" ((send this print-x86) s) 
 		    ((send this print-x86) d))]
 	   [`(add ,s ,d)
-	    (format "\taddq\t~a,~a\n" ((send this print-x86) s) 
+	    (format "\taddq\t~a, ~a\n" ((send this print-x86) s) 
 		    ((send this print-x86) d))]
 	   [`(sub ,s ,d)
-	    (format "\tsubq\t~a,~a\n" ((send this print-x86) s) 
+	    (format "\tsubq\t~a, ~a\n" ((send this print-x86) s) 
 		    ((send this print-x86) d))]
 	   [`(neg ,d)
 	    (format "\tnegq\t~a\n" ((send this print-x86) d))]

@@ -144,9 +144,16 @@
 	(match e
            [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([else-label (gensym 'else)]
-		  [end-label (gensym 'if-end)])
+		  [end-label (gensym 'if_end)]
+		  [cnd-inst ;; cmp's second operand can't be immediate
+		   (match cnd
+		      [`(int ,n)
+		       (list `(mov (int ,n) (register rax))
+			     `(cmp (int 0) (register rax)))]
+		      [else
+		       (list `(cmp (int 0) ,cnd))])])
 	      (append
-	       `((cmpl (int 0) ,cnd))
+	       cnd-inst
 	       `((je ,else-label))
 	       thn-ss
 	       `((jmp ,end-label))
@@ -160,8 +167,8 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
-           [`(cmpl ,s1 ,s2) 
-	    (format "\tcmpl\t~a,~a\n"
+           [`(cmp ,s1 ,s2) 
+	    (format "\tcmpq\t~a, ~a\n"
 		    ((send this print-x86) s1)
 		    ((send this print-x86) s2))]
 	   [`(je ,label)

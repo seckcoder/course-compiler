@@ -201,7 +201,7 @@
 		((send this interp-x86 env) (append els ss)))]
 	   [`((label ,l) . ,ss)
 	    ((send this interp-x86 env) ss)]
-	   [`((cmpl ,s1 ,s2) . ,ss)
+	   [`((cmp ,s1 ,s2) . ,ss)
 	    (let ([v1 ((send this interp-x86 env) s1)] 
 		  [v2 ((send this interp-x86 env) s2)])
 	      ((send this interp-x86 (cons (cons '__flag (equal? v1 v2)) env))

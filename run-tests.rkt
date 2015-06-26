@@ -39,14 +39,21 @@
   (newline)(display "tests passed")(newline)
   )
 
-#;(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
+(if #f
+    (begin
+(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
 	       "s0" (range 1 11))
 
-#;(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
 	       "s0" (range 1 11))
 
 (check-compiler (check-passes conditionals-passes) "s0" (range 1 11))
 (check-compiler (check-passes conditionals-passes) "s1" (range 1 5))
 
-#;(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
+(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
 	       "s0" (range 1 11))
+)
+(void))
+
+(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
+	       "s1" (range 1 5))
