@@ -1,6 +1,7 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 make-dispatcher assert compile check-passes fix)
+(provide debug map2 make-dispatcher assert 
+	 compile compile-file check-passes fix)
 
 (define fix (lambda (f) (lambda (x) ((f (fix f)) x))))
 
@@ -68,24 +69,29 @@
 				(loop (cdr passes) new-p result)]))])])))))
 
 (define (compile passes)
-  (let* ([prog-file-name (vector-ref (current-command-line-arguments) 0)]
-	 [file-base (string-trim prog-file-name ".scm")]
-	 [prog-file (open-input-file prog-file-name)]
-	 [out-file-name (string-append file-base ".s")]
-	 [out-file (open-output-file #:exists 'replace out-file-name)]
-	 [sexp (read prog-file)])
-    (let ([x86 (let loop ([passes passes] [p sexp])
-		 (cond [(null? passes) p]
-		       [else
-			(match (car passes)
-			   [`(,name ,pass ,interp)
-			    (let* ([new-p (pass p)])
-			      (debug name new-p)
-			      (loop (cdr passes) new-p)
-			      )])]))])
-      (write-string x86 out-file)
-      (newline out-file)
-      )))
+  (let ([prog-file-name (vector-ref (current-command-line-arguments) 0)])
+    ((compile-file passes) prog-file-name)))
+
+(define (compile-file passes)
+  (lambda (prog-file-name)
+    (debug "compile-file" prog-file-name)
+    (let* ([file-base (string-trim prog-file-name ".scm")]
+	   [prog-file (open-input-file prog-file-name)]
+	   [out-file-name (string-append file-base ".s")]
+	   [out-file (open-output-file #:exists 'replace out-file-name)]
+	   [sexp (read prog-file)])
+      (let ([x86 (let loop ([passes passes] [p sexp])
+		   (cond [(null? passes) p]
+			 [else
+			  (match (car passes)
+			     [`(,name ,pass ,interp)
+			      (let* ([new-p (pass p)])
+				(debug name new-p)
+				(loop (cdr passes) new-p)
+				)])]))])
+	(write-string x86 out-file)
+	(newline out-file)
+	))))
 
 (define assert
   (lambda (msg b)

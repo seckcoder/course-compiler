@@ -24,29 +24,33 @@
        (debug "checking passes" '())
        (checker test-name)
        (debug "running compiler" '())
-       ;; use dynamic require instead? or pass in a function.
+       ;; why doesn't this work?
+       #;((compile-file int-exp-passes) (format "tests/~a.scm" test-name))
        (if (system (format "racket ~a tests/~a.scm" compiler test-name))
-	   (if (system (format "gcc runtime.o tests/~a.s" test-name))
-	       (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
-				 (format " < tests/~a.in" test-name)
-				 "")]
-		      [result (system/exit-code (format "./a.out~a" input))])
-		 (if (eq? result 42)
-		     (begin (display test-name)(display ".")(flush-output))
-		     (error (format "test ~a failed, output: ~a" 
-				    test-name result))))
-	       (void))
-	   (void)))
+	   (void) (exit))
+       (debug "finished compiling" '())
+       (if (system (format "gcc runtime.o tests/~a.s" test-name))
+	   (void) (exit))
+
+       (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
+			 (format " < tests/~a.in" test-name)
+			 "")]
+	      [result (system/exit-code (format "./a.out~a" input))])
+	 (if (eq? result 42)
+	     (begin (display test-name)(display ".")(flush-output))
+	     (error (format "test ~a failed, output: ~a" 
+			    test-name result))))
+       );for
   (newline)(display "tests passed")(newline)
   )
 
 ;; (test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
-;; 	       "s0" (range 1 13))
+;;  	       "s0" (range 1 13))
 
 ;; (test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
-;; 	       "s0" (range 1 13))
+;;   	       "s0" (range 1 13))
 
+;; (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
+;;   	       "s0" (range 1 13))
 (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
- 	       "s0" (range 12 13))
-(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
-	       "s1" (range 14 16))
+ 	       "s1" (range 17 18))

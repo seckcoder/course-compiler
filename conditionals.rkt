@@ -93,7 +93,8 @@
 			   `(cmp ,new-e1 (register rax)))]
 		    [(immediate? new-e2)
 		     (list `(cmp ,new-e2 ,new-e1))]
-		    [else `(cmp ,new-e1 ,new-e2)]))
+		    [else 
+		     (list `(cmp ,new-e1 ,new-e2))]))
 	    (append comparison
 	      (list `(mov (int 0) (register rax))
 		    `(sete (byte-register al))
