@@ -8,9 +8,6 @@
   (class compile-reg-S0
     (super-new)
 
-    (define/override (primitives)
-      (set-union (super primitives) (set 'eq? 'and 'or 'not)))
-
     (define/override (binary-op->inst op)
       (match op
 	 ['and 'and]
@@ -23,6 +20,61 @@
 	 ['not 'not]
 	 [else (super unary-op->inst op)]
 	 ))
+
+    (define/public (type-check env)
+      (lambda (e)
+	(match e
+	   [(? symbol?)
+	    (cdr (assq e env))]
+	   [(? integer?)
+	    'int]
+	   [`(let ([,x ,e]) ,body)
+	    (let ([T ((send this type-check env) e)])
+	      ((send this type-check (cons (cons x T) env)) body))]
+	   [`(program ,extra ,body)
+	    ((send this type-check '()) body)
+	    `(program ,extra ,body)]
+	   [#t 
+	    'bool]
+	   [#f 
+	    'bool]
+	   [`(if ,cnd ,thn ,els)
+	    (let ([T-cnd ((send this type-check env) cnd)]
+		  [T-thn ((send this type-check env) thn)]
+		  [T-els ((send this type-check env) els)])
+	      (unless (equal? T-cnd 'bool)
+		  (error "expected conditional to have type bool, not" T-cnd))
+	      (unless (equal? T-thn T-els)
+		  (error "expected branches of if to have same type"
+			 (list T-thn T-els)))
+	      T-thn)]
+	   [`(,op ,es ...)
+	    (let ([ts (map (send this type-check env) es)])
+	      (define binary-ops
+		'((+ . ((int int) . int))
+		  (- . ((int int) . int))
+		  (* . ((int int) . int))
+		  (and . ((bool bool) . bool))
+		  (or . ((bool bool) . bool))
+		  (eq? . ((int int) . bool))
+		  ))
+	      (define unary-ops
+		'((- . ((int) . int))
+		  (not . ((bool) . bool))))
+	      (define nullary-ops
+		'((read . (() . int))))
+	      (define (check op ts table)
+		(let ([pts (car (cdr (assq op table)))]
+		      [ret (cdr (cdr (assq op table)))])
+		  (unless (equal? ts pts)
+			  (error "argument type does not match parameter type"
+				 (list ts pts)))
+		  ret))
+	      (cond [(eq? 2 (length ts)) (check op ts binary-ops)]
+		    [(eq? 1 (length ts)) (check op ts unary-ops)]
+		    [else (check op ts nullary-ops)]))]
+	   [else
+	    (error "type-check couldn't match" e)])))
 
     (define/override (uniquify env)
       (lambda (e)
@@ -175,12 +227,6 @@
 		  [thn-ss (map (send this assign-locations homes) thn-ss)]
 		  [els-ss (map (send this assign-locations homes) els-ss)])
 	      `(if ,cnd ,thn-ss ,els-ss))]
-	   [`(cmp ,s1 ,s2)
-	    `(cmp ,@(map (send this assign-locations homes) (list s1 s2)))]
-	   [(or `(sete ,d) `(not ,d))
-	    `(,(car e) ,((send this assign-locations homes) d))]
-	   [(or `(and ,s ,d) `(or ,s ,d))
-	    `(,(car e) ,@(map (send this assign-locations homes) (list s d)))]
 	   [else
 	    ((super assign-locations homes) e)]
 	   )))
@@ -239,6 +285,8 @@
 	[interp (new interp-S1)])
     (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
 				       `(program () ,ast)))
+	    ,(send interp interp-scheme '()))
+	  `("type-check" ,(send compiler type-check '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))

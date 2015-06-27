@@ -10,9 +10,6 @@
 
     (super-new)
 
-    (define/public (primitives)
-      (set '+ '- '*))
-
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; Uniquify, S0 => S0
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -24,10 +21,6 @@
 	    (cdr (assq e env))]
 	   [(? integer?)
 	    e]
-	   [`(,op ,es ...)
-	    #:when (or (set-member? (send this primitives) op) (eq? op 'read))
-	    (let ([new-es (map (send this uniquify env) es)])
-	      `(,op ,@new-es))]
 	   [`(let ([,x ,e]) ,body)
 	    (let ([new-x (gensym x)]
 		  [new-e ((send this uniquify env) e)])
@@ -35,6 +28,9 @@
 		 ,((send this uniquify (cons (cons x new-x) env)) body)))]
 	   [`(program ,extra ,body)
 	    `(program ,extra ,((send this uniquify env) body))]
+	   [`(,op ,es ...)
+	    (let ([new-es (map (send this uniquify env) es)])
+	      `(,op ,@new-es))]
 	   [else
 	    (error "uniquify couldn't match" e)])))
 
@@ -72,7 +68,6 @@
 	      (list->set (append* (map (send this collect-locals) ss))))
 	    `(program ,(set->list xs) ,(append ss (list `(return ,new-e))))]
 	   [`(,op ,es ...)
-	    #:when (or (set-member? (send this primitives) op) (eq? op 'read))
 	    ;; flatten the argument expressions 'es'
 	    (define-values (new-es sss) (map2 (send this flatten #t) es))
 	    (define ss (append* sss))
@@ -123,8 +118,18 @@
 	    (let ([lhs ((send this instruction-selection) lhs)])
 	      (list `(call _read_int)
 		    `(mov (register rax) ,lhs)))]
+	   [`(assign ,lhs ,x)
+	    #:when (symbol? x)
+	    (let ([lhs ((send this instruction-selection) lhs)])
+	      (cond [(equal? `(var ,x) lhs)
+		     '()]
+		    [else
+		     (list `(mov (var ,x) ,lhs))]))]
+	   [`(assign ,lhs ,n)
+	    #:when (integer? n)
+	    (let ([lhs ((send this instruction-selection) lhs)])
+	      (list `(mov (int ,n) ,lhs)))]
 	   [`(assign ,lhs (,op ,e1 ,e2))
-	    #:when (set-member? (send this primitives) op)
 	    (let ([lhs ((send this instruction-selection) lhs)]
 		  [e1 ((send this instruction-selection) e1)]
 		  [e2 ((send this instruction-selection) e2)]
@@ -137,7 +142,6 @@
 		     (list `(mov ,e1 ,lhs)
 			   `(,inst ,e2 ,lhs))]))]
 	   [`(assign ,lhs (,op ,e1))	
-	    #:when (set-member? (send this primitives) op)
 	    (let ([lhs ((send this instruction-selection) lhs)]
 		  [e1 ((send this instruction-selection) e1)]
 		  [inst (unary-op->inst op)])
@@ -146,17 +150,6 @@
 		    [else
 		     (list `(mov ,e1 ,lhs)
 			   `(,inst ,lhs))]))]
-	   [`(assign ,lhs ,x)
-	    #:when (symbol? x)
-	    (let ([lhs ((send this instruction-selection) lhs)])
-	      (cond [(equal? `(var ,x) lhs)
-		     '()]
-		    [else
-		     (list `(mov (var ,x) ,lhs))]))]
-	   [`(assign ,lhs ,n)
-	    #:when (integer? n)
-	    (let ([lhs ((send this instruction-selection) lhs)])
-	      (list `(mov (int ,n) ,lhs)))]
 	   [`(program ,xs ,ss)
 	    `(program ,xs
 		      ,(append* (map (send this instruction-selection) ss)))]
@@ -183,9 +176,6 @@
 	    `(register ,r)]
 	   [`(call ,f)
 	    `(call ,f)]
-	   [(or `(mov ,as ...) `(add ,as ...) `(sub ,as ...) `(neg ,as ...))
-	    (let ([instr-name (car e)])
-	      `(,instr-name ,@(map (send this assign-locations homes) as)))]
 	   [`(program ,xs ,ss)
 	    ;; map variables to stack locations
 	    (let* ([make-stack-loc
@@ -202,6 +192,8 @@
 				  (* (length xs) (send this variable-size)))])
 	      `(program ,stack-space
 			,(map (send this assign-locations new-homes) ss)))]
+	   [`(,instr-name ,as ...)
+	    `(,instr-name ,@(map (send this assign-locations homes) as))]
 	   [else
 	    (error "in assign-locations S0, unmatched" e)]
 	   )))
