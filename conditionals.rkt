@@ -8,36 +8,21 @@
   (class compile-reg-S0
     (super-new)
 
-    (define/override (binary-op->inst op)
-      (match op
-	 ['and 'and]
-	 ['or 'or]
-	 [else (super binary-op->inst op)]
-	 ))
-
-    (define/override (unary-op->inst op)
-      (match op
-	 ['not 'not]
-	 [else (super unary-op->inst op)]
-	 ))
-
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; type-check : env -> S1 -> S1 (new pass)
     (define/public (type-check env)
       (lambda (e)
 	(match e
-	   [(? symbol?)
-	    (cdr (assq e env))]
-	   [(? integer?)
-	    'int]
+	   [(? symbol?) (cdr (assq e env))]
+	   [(? integer?) 'int]
 	   [`(let ([,x ,e]) ,body)
 	    (let ([T ((send this type-check env) e)])
 	      ((send this type-check (cons (cons x T) env)) body))]
 	   [`(program ,extra ,body)
 	    ((send this type-check '()) body)
 	    `(program ,extra ,body)]
-	   [#t 
-	    'bool]
-	   [#f 
-	    'bool]
+	   [#t 'bool]
+	   [#f 'bool]
 	   [`(if ,cnd ,thn ,els)
 	    (let ([T-cnd ((send this type-check env) cnd)]
 		  [T-thn ((send this type-check env) thn)]
@@ -76,6 +61,8 @@
 	   [else
 	    (error "type-check couldn't match" e)])))
 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uniquify : env -> S1 -> S1
     (define/override (uniquify env)
       (lambda (e)
 	(match e
@@ -88,15 +75,17 @@
 	      `(if ,cnd ,thn ,els))]
 	   [else ((super uniquify env) e)]
 	   )))
-  
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; flatten : S1 -> C1-expr x (C1-stmt list)
+
     (define/override (collect-locals)
       (lambda (ast)
 	(match ast
 	   [`(if ,cnd ,thn ,els)
 	    (append (append* (map (send this collect-locals) thn))
 		    (append* (map (send this collect-locals) els)))]
-	   [else
-	    ((super collect-locals) ast)]
+	   [else ((super collect-locals) ast)]
 	   )))
 
     (define/override (flatten need-atomic)
@@ -113,67 +102,83 @@
 	      (define els-ret `(assign ,tmp ,new-els))
 	      (values tmp
 		      (append cnd-ss
-			      (list `(if ,new-cnd
-					 ,(append thn-ss (list thn-ret))
-					 ,(append els-ss (list els-ret)))))))]
+			      `((if ,new-cnd
+				    ,(append thn-ss (list thn-ret))
+				    ,(append els-ss (list els-ret)))))))]
 	   [else ((super flatten need-atomic) e)]
 	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; select-instructions : env -> S1 -> S1
+
+    (define/override (binary-op->inst op)
+      (match op
+	 ['and 'and]
+	 ['or 'or]
+	 [else (super binary-op->inst op)]
+	 ))
+
+    (define/override (unary-op->inst op)
+      (match op
+	 ['not 'not]
+	 [else (super unary-op->inst op)]
+	 ))
 
     (define/public (immediate? e)
       (match e
          [`(int ,n) #t]
 	 [else #f]))
 
-    (define/override (instruction-selection)
+    (define/override (select-instructions)
       (lambda (e)
 	(match e
 	   [#t `(int 1)]
 	   [#f `(int 0)]
 	   [`(assign ,lhs ,b)
 	    #:when (boolean? b)
-	    (let ([lhs ((send this instruction-selection) lhs)]
-		  [b ((send this instruction-selection) b)])
-	      (list `(mov ,b ,lhs)))]
+	    (let ([lhs ((send this select-instructions) lhs)]
+		  [b ((send this select-instructions) b)])
+	      `((mov ,b ,lhs)))]
 	   [`(assign ,lhs (eq? ,e1 ,e2))
-	    (define new-lhs ((send this instruction-selection) lhs))
-	    (define new-e1 ((send this instruction-selection) e1))
-	    (define new-e2 ((send this instruction-selection) e2))
+	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-e1 ((send this select-instructions) e1))
+	    (define new-e2 ((send this select-instructions) e2))
 	    ;; second operand of cmp can't be an immediate
 	    (define comparison
 	      (cond [(and (immediate? new-e1) (immediate? new-e2))
-		     (list `(mov ,new-e2 (register rax))
-			   `(cmp ,new-e1 (register rax)))]
+		     `((mov ,new-e2 (register rax))
+		       (cmp ,new-e1 (register rax)))]
 		    [(immediate? new-e2)
-		     (list `(cmp ,new-e2 ,new-e1))]
+		     `((cmp ,new-e2 ,new-e1))]
 		    [else 
-		     (list `(cmp ,new-e1 ,new-e2))]))
+		     `((cmp ,new-e1 ,new-e2))]))
 	    (append comparison
-	      (list `(mov (int 0) (register rax))
-		    `(sete (byte-register al))
-		    `(mov (register rax) ,new-lhs)))]
+	      `((mov (int 0) (register rax))
+		(sete (byte-register al))
+		(mov (register rax) ,new-lhs)))]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([cnd ((send this instruction-selection) cnd)]
-		  [thn-ss (append* (map (send this instruction-selection) 
+	    (let ([cnd ((send this select-instructions) cnd)]
+		  [thn-ss (append* (map (send this select-instructions) 
 					thn-ss))]
-		  [els-ss (append* (map (send this instruction-selection)
+		  [els-ss (append* (map (send this select-instructions)
 					els-ss))])
-	      (list `(if ,cnd ,thn-ss ,els-ss)))]
-	   [else
-	    ((super instruction-selection) e)]
+	      `((if ,cnd ,thn-ss ,els-ss)))]
+	   [else ((super select-instructions) e)]
 	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-live : live-after -> S1 -> S1*
 
     (define/override (read-vars instr)
       (match instr
      	 [`(cmp ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
      	 [(or `(and ,s ,d) `(or ,s ,d))
-	  (set-union (send this free-vars s)
-		     (send this free-vars d))]
+	  (set-union (send this free-vars s) (send this free-vars d))]
      	 [`(sete ,d) (set)]
 	 [`(not ,d) (send this free-vars d)]
-     	 [else
-     	  (super read-vars instr)]))
+     	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
       (match instr
@@ -181,28 +186,29 @@
      	 [(or `(and ,s ,d) `(or ,s ,d)) (send this free-vars d)]
 	 [`(not ,d) (send this free-vars d)]
      	 [`(sete ,d) (send this free-vars d)]
-     	 [else
-     	  (super write-vars instr)]))
+     	 [else (super write-vars instr)]))
 
-    (define/override (liveness-analysis live-after)
+    (define/override (uncover-live live-after)
       (lambda (ast)
 	(match ast
 	   [`(if ,cnd ,thn-ss ,els-ss)
-	    (let-values ([(thn-ss thn-lives)
-			  ((send this liveness-ss live-after) thn-ss)]
-			 [(els-ss els-lives)
-			  ((send this liveness-ss live-after) els-ss)])
-	      (let ([live-after-thn (cond [(null? thn-lives) live-after]
-					  [else (car thn-lives)])]
-		    [live-after-els (cond [(null? els-lives) live-after]
-					  [else (car els-lives)])])
-		(values
-		 `(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
-		 (set-union live-after-thn live-after-els
-			    (send this free-vars cnd)))))]
-	   [else
-	    ((super liveness-analysis live-after) ast)]
+	    (define-values (new-thn-ss thn-lives)
+	      ((send this liveness-ss live-after) thn-ss))
+	    (define-values (new-els-ss els-lives)
+	      ((send this liveness-ss live-after) els-ss))
+	    (define live-after-thn (cond [(null? thn-lives) live-after]
+					 [else (car thn-lives)]))
+	    (define live-after-els (cond [(null? els-lives) live-after]
+					 [else (car els-lives)]))
+	    (values `(if ,cnd ,new-thn-ss ,thn-lives ,new-els-ss ,els-lives)
+		    (set-union live-after-thn live-after-els
+			       (send this free-vars cnd)))]
+	   [else ((super uncover-live live-after) ast)]
 	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; build-interference : live-after x graph -> pseudo-x86* -> pseudo-x86*
+    ;; *annotate program with interference graph, removes liveness
 
       (define/override (build-interference live-after G)
 	(lambda (ast)
@@ -213,24 +219,25 @@
 	      (define new-thn (map build-inter thn-ss thn-lives))
 	      (define new-els (map build-inter els-ss els-lives))
 	      `(if ,cnd ,new-thn ,new-els)]
-	     [else
-	      ((super build-interference live-after G) ast)]
+	     [else ((super build-interference live-after G) ast)]
 	     )))
       
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
     (define/override (assign-locations homes)
       (lambda (e)
 	(match e
-	   [`(byte-register ,r)
-	    `(byte-register ,r)]
+	   [`(byte-register ,r) `(byte-register ,r)]
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this assign-locations homes) cnd)]
 		  [thn-ss (map (send this assign-locations homes) thn-ss)]
 		  [els-ss (map (send this assign-locations homes) els-ss)])
 	      `(if ,cnd ,thn-ss ,els-ss))]
-	   [else
-	    ((super assign-locations homes) e)]
+	   [else ((super assign-locations homes) e)]
 	   )))
       
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; insert-spill-code : psuedo-x86 -> x86
     (define/override (insert-spill-code)
       (lambda (e)
 	(match e
@@ -242,44 +249,35 @@
 		  [cnd-inst ;; cmp's second operand can't be immediate
 		   (match cnd
 		      [`(int ,n)
-		       (list `(mov (int ,n) (register rax))
-			     `(cmp (int 0) (register rax)))]
-		      [else
-		       (list `(cmp (int 0) ,cnd))])])
-	      (append
-	       cnd-inst
-	       `((je ,else-label))
-	       thn-ss
-	       `((jmp ,end-label))
-	       `((label ,else-label))
-	       els-ss
-	       `((label ,end-label))
+		       `((mov (int ,n) (register rax))
+			 (cmp (int 0) (register rax)))]
+		      [else `((cmp (int 0) ,cnd))])])
+	      (append cnd-inst `((je ,else-label)) thn-ss `((jmp ,end-label))
+	       `((label ,else-label)) els-ss `((label ,end-label))
 	       ))]
 	   [else
 	    ((super insert-spill-code) e)])))
 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; print-x86 : x86 -> string
     (define/override (print-x86)
       (lambda (e)
 	(match e
 	   [`(byte-register ,r) (format "%~a" r)]
-	   [`(sete ,d)
-	    (format "\tsete\t~a\n" ((send this print-x86) d))]
+	   [`(sete ,d) (format "\tsete\t~a\n" ((send this print-x86) d))]
            [`(cmp ,s1 ,s2) 
-	    (format "\tcmpq\t~a, ~a\n"
-		    ((send this print-x86) s1)
+	    (format "\tcmpq\t~a, ~a\n" ((send this print-x86) s1)
 		    ((send this print-x86) s2))]
-	   [`(je ,label)
-	    (format "\tje ~a\n" label)]
-	   [`(jmp ,label)
-	    (format "\tjmp ~a\n" label)]
-	   [`(label ,l)
-	    (format "~a:\n" l)]
-	   [else
-	    ((super print-x86) e)]
+	   [`(je ,label) (format "\tje ~a\n" label)]
+	   [`(jmp ,label) (format "\tjmp ~a\n" label)]
+	   [`(label ,l) (format "~a:\n" l)]
+	   [else ((super print-x86) e)]
 	   )))
 
     )) ;; compile-S1
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Passes
 (define conditionals-passes
   (let ([compiler (new compile-S1)]
 	[interp (new interp-S1)])
@@ -290,9 +288,9 @@
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))
-	  `("instruction selection" ,(send compiler instruction-selection)
+	  `("instruction selection" ,(send compiler select-instructions)
 	    ,(send interp interp-x86 '()))
-	  `("liveness analysis" ,(send compiler liveness-analysis (void))
+	  `("liveness analysis" ,(send compiler uncover-live (void))
 	    ,(send interp interp-x86 '()))
 	  `("build interference" ,(send compiler build-interference
 					(void) (void))

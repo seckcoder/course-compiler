@@ -1,7 +1,13 @@
 #lang racket
 (require racket/pretty)
 (provide debug map2 make-dispatcher assert 
-	 compile compile-file check-passes fix)
+	 compile compile-file check-passes fix while)
+
+(define-syntax-rule (while condition body ...)
+  (let loop ()
+    (when condition
+      body ...
+      (loop))))
 
 (define fix (lambda (f) (lambda (x) ((f (fix f)) x))))
 
