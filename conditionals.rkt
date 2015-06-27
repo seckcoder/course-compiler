@@ -67,6 +67,11 @@
 	   [else ((super flatten need-atomic) e)]
 	   )))
 
+    (define/public (immediate? e)
+      (match e
+         [`(int ,n) #t]
+	 [else #f]))
+
     (define/override (instruction-selection)
       (lambda (e)
 	(match e
@@ -78,12 +83,21 @@
 		  [b ((send this instruction-selection) b)])
 	      (list `(mov ,b ,lhs)))]
 	   [`(assign ,lhs (eq? ,e1 ,e2))
-	    (let ([lhs ((send this instruction-selection) lhs)]
-		  [e1 ((send this instruction-selection) e1)]
-		  [e2 ((send this instruction-selection) e2)])
-	      (list `(cmp ,e1 ,e2)
+	    (define new-lhs ((send this instruction-selection) lhs))
+	    (define new-e1 ((send this instruction-selection) e1))
+	    (define new-e2 ((send this instruction-selection) e2))
+	    ;; second operand of cmp can't be an immediate
+	    (define comparison
+	      (cond [(and (immediate? new-e1) (immediate? new-e2))
+		     (list `(mov ,new-e2 (register rax))
+			   `(cmp ,new-e1 (register rax)))]
+		    [(immediate? new-e2)
+		     (list `(cmp ,new-e2 ,new-e1))]
+		    [else `(cmp ,new-e1 ,new-e2)]))
+	    (append comparison
+	      (list `(mov (int 0) (register rax))
 		    `(sete (byte-register al))
-		    `(mov (register rax) ,lhs)))]
+		    `(mov (register rax) ,new-lhs)))]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this instruction-selection) cnd)]
