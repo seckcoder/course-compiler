@@ -246,14 +246,16 @@
 	   [`((cmp ,s1 ,s2) . ,ss)
 	    (let ([v1 ((send this interp-x86 env) s1)] 
 		  [v2 ((send this interp-x86 env) s2)])
-	      ((send this interp-x86 (cons (cons '__flag (equal? v1 v2)) env))
+	      ((send this interp-x86 (cons (cons '__flag 
+						 (b2i (equal? v1 v2))) 
+					   env))
 	       ss))]
 	   [`((jmp ,label) . ,ss)
 	    ((send this interp-x86 env) (goto-label label (program)))]
 	   [`((je ,label) . ,ss)
 	    (let ([flag (cond [(assq '__flag env) => (lambda (p) (cdr p))]
 			      [else (error "flag not set before je")])])
-	      (cond [flag 
+	      (cond [(i2b flag)
 		     ((send this interp-x86 env) (goto-label label (program)))]
 		    [else ((send this interp-x86 env) ss)]))]
 	   [`(program ,xs ,ss) 

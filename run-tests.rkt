@@ -53,4 +53,4 @@
 ;; (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
 ;;   	       "s0" (range 1 13))
 (test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
- 	       "s1" (range 17 18))
+ 	       "s1" (range 17 19))

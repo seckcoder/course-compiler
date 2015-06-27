@@ -156,11 +156,11 @@
 	(lambda (ast)
 	  (match ast
 	     [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
-	      (for ([inst (append thn-ss els-ss)]
-		    [live-after (append thn-lives els-lives)]) 
-		   ((send this build-interference 
-			  live-after G) inst))
-	      `(if ,cnd ,thn-ss ,els-ss)]
+	      (define (build-inter inst live-after)
+		((send this build-interference live-after G) inst))
+	      (define new-thn (map build-inter thn-ss thn-lives))
+	      (define new-els (map build-inter els-ss els-lives))
+	      `(if ,cnd ,new-thn ,new-els)]
 	     [else
 	      ((super build-interference live-after G) ast)]
 	     )))
@@ -189,7 +189,9 @@
       (lambda (e)
 	(match e
            [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([else-label (gensym 'else)]
+	    (let ([thn-ss (append* (map (send this insert-spill-code) thn-ss))]
+		  [els-ss (append* (map (send this insert-spill-code) els-ss))]
+		  [else-label (gensym 'else)]
 		  [end-label (gensym 'if_end)]
 		  [cnd-inst ;; cmp's second operand can't be immediate
 		   (match cnd
