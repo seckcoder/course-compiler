@@ -188,8 +188,9 @@
 (define reg-int-exp-passes
   (let ([compiler (new compile-reg-S0)]
 	[interp (new interp-S0)])
-    (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
-				       `(program () ,ast)))
+    (list `("programify" ,(lambda (ast) `(program () ,ast))
+	    ,(send interp interp-scheme '()))
+	  `("uniquify" ,(send compiler uniquify '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))

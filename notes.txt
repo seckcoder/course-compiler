@@ -35,12 +35,19 @@ e ::= ...
     | #t | #f | (if e e e) | (eq? e e) | (and e e) | (or e e) | (not e)
 
 
---------------------------------------------------------------------------------
-Vectors and heap allocation
+|- e0 : T      |- e1 : T
+------------------------
+|- (eq? e0 e1) : Bool
 
-T ::= Integer | (Vectorof T) | Void
+
+--------------------------------------------------------------------------------
+Tuples (Racket Vectors) and heap allocation
+
+(needed to represent closures)
+
+T ::= Integer | (Vector T_1 ... T_n) | Void
 e ::= ...
-    | (make-vector e e) | (vector-length e) | (vector-ref e e)
+    | (vector e_1 ... e_n) | (vector-ref e e)
     | (vector-set! e e e)
     | (eq? e e)
 
@@ -48,23 +55,15 @@ Type System
 
 |- e0 : Integer      |- e1 : T
 -------------------------------------
-|- (make-vector e0 e1) : (Vectorof T)
+|- (vector e_1 ... e_n) : (Vector T1 ... Tn)
 
-|- e : (Vectorof T)
-------------------------------
-|- (vector-length e) : Integer
+|- e : (Vector T_1 ... T_n)
+---------------------------
+|- (vector-ref e i) : T_i
 
-|- e0 : (Vectorof T)    |- e1 : Integer
----------------------------------------
-|- (vector-ref e0 e1) : T
-
-|- e0 : (Vectorof T)    |- e1 : Integer    |- e2 : T
-----------------------------------------------------
-|- (vector-set! e0 e1 e2) : Void
-
-|- e0 : T      |- e1 : T
-------------------------
-|- (eq? e0 e1) : Bool
+|- e_1 : (Vector T_1 ... T_n)   |- e_2 : T_i
+--------------------------------------------
+|- (vector-set! e_1 i e_2) : Void
 
 --------------------------------------------------------------------------------
 Functions
@@ -75,7 +74,7 @@ e ::= ...
     | (f e ...)
 
 --------------------------------------------------------------------------------
-Garbage Collection
+Garbage Collection (Copying Collector)
 
 
 

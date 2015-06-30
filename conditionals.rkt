@@ -8,6 +8,10 @@
   (class compile-reg-S0
     (super-new)
 
+    (define/override (primitives)
+      (set-union (super primitives) 
+		 (set 'eq? 'and 'or 'not)))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S1 -> S1 (new pass)
     (define/public (type-check env)
@@ -33,7 +37,7 @@
 		  (error "expected branches of if to have same type"
 			 (list T-thn T-els)))
 	      T-thn)]
-	   [`(,op ,es ...)
+	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    (let ([ts (map (send this type-check env) es)])
 	      (define binary-ops
 		'((+ . ((int int) . int))
@@ -255,8 +259,7 @@
 	      (append cnd-inst `((je ,else-label)) thn-ss `((jmp ,end-label))
 	       `((label ,else-label)) els-ss `((label ,end-label))
 	       ))]
-	   [else
-	    ((super insert-spill-code) e)])))
+	   [else ((super insert-spill-code) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
@@ -281,10 +284,11 @@
 (define conditionals-passes
   (let ([compiler (new compile-S1)]
 	[interp (new interp-S1)])
-    (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
-				       `(program () ,ast)))
+    (list `("programify" ,(lambda (ast) `(program () ,ast))
 	    ,(send interp interp-scheme '()))
 	  `("type-check" ,(send compiler type-check '())
+	    ,(send interp interp-scheme '()))
+	  `("uniquify" ,(send compiler uniquify '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))

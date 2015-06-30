@@ -9,6 +9,9 @@
   (class object%
     (super-new)
 
+    (define/public (primitives)
+      (set '+ '- '* 'read))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S0 -> S0
     (define/public (uniquify env)
@@ -23,7 +26,7 @@
 	       ,((send this uniquify (cons (cons x new-x) env)) body))]
 	   [`(program ,extra ,body)
 	    `(program ,extra ,((send this uniquify env) body))]
-	   [`(,op ,es ...)
+	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    `(,op ,@(map (send this uniquify env) es))]
 	   [else (error "uniquify couldn't match" e)])))
 
@@ -51,7 +54,7 @@
 	    (define-values (new-e ss) ((send this flatten #f) e))
 	    (define xs (append* (map (send this collect-locals) ss)))
 	    `(program ,(remove-duplicates xs) ,(append ss `((return ,new-e))))]
-	   [`(,op ,es ...)
+	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    (define-values (new-es sss) (map2 (send this flatten #t) es))
 	    (define ss (append* sss))
 	    (define prim-apply `(,op ,@new-es))
@@ -221,8 +224,9 @@
 (define int-exp-passes
   (let ([compiler (new compile-S0)]
 	[interp (new interp-S0)])
-    (list `("uniquify" ,(lambda (ast) ((send compiler uniquify '())
-				       `(program () ,ast)))
+    (list `("programify" ,(lambda (ast) `(program () ,ast))
+	    ,(send interp interp-scheme '()))
+	  `("uniquify" ,(send compiler uniquify '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))

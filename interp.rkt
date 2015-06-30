@@ -1,14 +1,16 @@
 #lang racket
 (require "utilities.rkt")
-(provide interp-S0 interp-S1)
+(provide interp-S0 interp-S1 interp-S2)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S0
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define interp-S0
   (class object%
     (super-new)
+
+    (define/public (primitives)
+      (set '+ '- '* 'read))
 
     (define/public (interp-op op)
       (match op
@@ -29,7 +31,7 @@
 	    (let ([v ((send this interp-scheme env) e)])
 	      ((send this interp-scheme (cons (cons x v) env)) body))]
 	   [`(program ,extra ,e) ((send this interp-scheme '()) e)]
-	   [`(,op ,args ...)
+	   [`(,op ,args ...) #:when (set-member? (send this primitives) op)
 	    (apply (interp-op op) (map (send this interp-scheme env) args))]
 	   [else
 	    (error (format "no match in interp-scheme S0 for ~a" ast))]
@@ -42,7 +44,6 @@
     ;; expr     e  ::= a | (op a ...)
     ;; stmt     s  ::= (assign x e) | (return a)
     ;; program  p  ::= (program (x ...) (s ...))
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
     (define result (gensym 'result))
 
@@ -74,7 +75,7 @@
 	    (let ([env ((send this seq-C '()) ss)])
 	      (cond [(assq result env) => cdr]
 		    [else (error "missing return statement")]))]
-	   [`(,op ,args ...)
+	   [`(,op ,args ...) #:when (set-member? (send this primitives) op)
 	    (apply (interp-op op) (map (send this interp-C env) args))]
 	   [else
 	    (error "no match in interp-C0 for " ast)]
@@ -85,7 +86,6 @@
     ;; s,d ::= (var x) | (int n) | (register r) | (stack-loc n)
     ;; i   ::= (mov s d) | (add s d) | (sub s d) | (neg d) | (call f)
     ;; psuedo-x86 ::= (program (x ...) (i ...))
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
     (define/public (get-name ast)
       (match ast
@@ -141,11 +141,14 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S1
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define interp-S1
   (class interp-S0
     (super-new)
+
+    (define/override (primitives)
+      (set-union (super primitives) 
+		 (set 'eq? 'and 'or 'not)))
 
     (define/override (interp-op op)
       (match op
@@ -164,8 +167,7 @@
 	    (if ((send this interp-scheme env) cnd)
 		((send this interp-scheme env) thn)
 		((send this interp-scheme env) els))]
-	   [else
-	    ((super interp-scheme env) ast)]
+	   [else ((super interp-scheme env) ast)]
 	   )))
 
     (define/override (interp-C env)
@@ -177,8 +179,7 @@
 	    (if ((send this interp-C env) cnd)
 		((send this seq-C env) thn)
 		((send this seq-C env) els))]
-	   [else
-	    ((super interp-C env) ast)]
+	   [else ((super interp-C env) ast)]
 	   )))
 
     (define (goto-label label ss)
@@ -267,4 +268,22 @@
 	    
     ));; class interp-S1
     
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interpreters for S2
 
+(define interp-S2
+  (class interp-S1
+    (super-new)
+
+    (define/override (primitives)
+      (set-union (super primitives) 
+		 (set 'vector 'vector-ref 'vector-set!)))
+
+    (define/override (interp-op op)
+      (match op
+         ['vector vector]
+	 ['vector-ref vector-ref]
+	 ['vector-set! vector-set!]
+	 [else (super interp-op op)]))
+
+    ));; interp-S2

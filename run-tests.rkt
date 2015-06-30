@@ -3,6 +3,7 @@
 (require "int_exp.rkt")
 (require "register_allocator.rkt")
 (require "conditionals.rkt")
+(require "vectors.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])
@@ -18,14 +19,14 @@
   (newline)(display "passed checks")(newline)
   )
 
-(define (test-compiler compiler checker test-family test-nums)
+(define (test-compiler name compiler checker test-family test-nums)
   (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
 			test-nums)])
-       (debug "checking passes" '())
+       (debug "checking passes for" name)
        (checker test-name)
-       (debug "running compiler" '())
+       (debug "running compiler" name)
        (compiler (format "tests/~a.scm" test-name))
-       (debug "finished compiling" '())
+       (debug "finished compiling" name)
        (if (system (format "gcc runtime.o tests/~a.s" test-name))
 	   (void) (exit))
 
@@ -41,20 +42,24 @@
   (newline)(display "tests passed")(newline)
   )
 
-(test-compiler (compile-file int-exp-passes)
-	       (check-passes int-exp-passes) 
+(test-compiler "int_exp" (compile-file int-exp-passes)
+	       (check-passes "int_exp" int-exp-passes) 
   	       "s0" (range 1 13))
 
-(test-compiler (compile-file reg-int-exp-passes)
-	       (check-passes reg-int-exp-passes) 
+(test-compiler "reg_int_exp" (compile-file reg-int-exp-passes)
+	       (check-passes "reg_int_exp" reg-int-exp-passes) 
    	       "s0" (range 1 13))
 
-(test-compiler (compile-file conditionals-passes) 
-	       (check-passes conditionals-passes) 
+(test-compiler "conditionals" (compile-file conditionals-passes) 
+	       (check-passes "conditionals" conditionals-passes) 
   	       "s0" (range 1 13))
-(test-compiler (compile-file conditionals-passes)
-	       (check-passes conditionals-passes) 
+(test-compiler "conditionals" (compile-file conditionals-passes)
+	       (check-passes "conditionals" conditionals-passes) 
   	       "s1" (range 1 19))
+
+(test-compiler "vectors" (compile-file vectors-passes)
+	       (check-passes "vectors" vectors-passes) 
+  	       "s2" (range 1 2))
 
 
 

@@ -38,14 +38,16 @@
 	(newline))
       (void)))
 
-(define (check-passes passes)
+(define (check-passes name passes)
   (lambda (test-name)
+    (debug "** compiler " name)
     (debug "** checking passes for test " test-name)
     (define input-file-name (format "tests/~a.in" test-name))
     (define program-name (format "tests/~a.scm" test-name))
     (define program-file (open-input-file program-name))
     (define sexp (read program-file))
     (close-input-port program-file)
+    (debug "program:" sexp)
 
     (let loop ([passes passes] [p sexp] [result #f])
       (cond [(null? passes) result]
@@ -95,8 +97,11 @@
 			      (debug name new-p)
 			      (loop (cdr passes) new-p)
 			      )])]))])
-      (write-string x86 out-file)
-      (newline out-file)
+      (cond [(string? x86)
+	     (write-string x86 out-file)
+	     (newline out-file)]
+	    [else
+	     (error "compiler did not produce x86 output")])
       )
     (close-output-port out-file)
     ))
