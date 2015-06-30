@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
-Integers, expressions, and variables (int_exp.rkt)
+Integers, expressions, and variables (int_exp.rkt)  [249 lines]
 
 Language S_0:
 e ::= n | x | (+ e e) | (- e e) | (- e) | (read) | (let ([x e]) e)
@@ -18,7 +18,7 @@ Parsing? Racket has "Parser Tools: lex and yacc-style Parsing"
   https://gist.github.com/danking/1068185
 
 --------------------------------------------------------------------------------
-Register Allocation (register_allocator.rkt)
+Register Allocation (register_allocator.rkt) [210 lines]
 
 reserve rax for spill code
  -> can use same code as prior to register allocation!
@@ -27,6 +27,7 @@ perform a single-pass of register allocation
 
 --------------------------------------------------------------------------------
 Conditional control flow, Booleans, and type checking (conditionals.rkt)
+  [311 lines]
 
 S1
 
@@ -41,7 +42,8 @@ e ::= ...
 
 
 --------------------------------------------------------------------------------
-Tuples (Racket Vectors) and heap allocation
+Tuples (Racket Vectors) and heap allocation (vectors.rkt)
+  [136 lines] (too easy?)
 
 (needed to represent closures)
 
@@ -65,7 +67,7 @@ Type System
 |- (vector-set! e_1 i e_2) : Void
 
 --------------------------------------------------------------------------------
-Functions
+Functions (functions.rkt)
 
 p ::= (program d ... e)
 d ::= (define (f [x : T] ...) e)
