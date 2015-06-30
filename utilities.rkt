@@ -41,38 +41,38 @@
 (define (check-passes passes)
   (lambda (test-name)
     (debug "** checking passes for test " test-name)
-    (let* ([input-file-name (format "tests/~a.in" test-name)]
-	   [program-name (format "tests/~a.scm" test-name)]
-	   [program-file (open-input-file program-name)]	   
-	   [sexp (read program-file)])
-      (let loop ([passes passes] [p sexp] [result #f])
-	(cond [(null? passes) result]
-	      [else
-	       (match (car passes)
-		      [`(,name ,pass ,interp)
-		      (debug "running pass" name)
-		       (let* ([new-p (pass p)])
-			 (debug name new-p)
-			 (cond [interp
-				(let ([new-result 
-				       (if (file-exists? input-file-name)
-					   (begin
-					     (debug "using input file" input-file-name)
-					     (with-input-from-file input-file-name
-					       (lambda () (interp new-p))))
-					   (interp new-p))])
-				  (cond [result
-					 (cond [(equal? result new-result)
-						(debug "checked" '())
-						(loop (cdr passes) new-p new-result)]
-					       [else
-						(error (format "differing results in pass ~a, expected ~a, not" name result)
-						        new-result)])]
-					[else ;; no result to check yet
-					 (debug "not checking yet" '())
-					 (loop (cdr passes) new-p new-result)]))]
-			       [else
-				(loop (cdr passes) new-p result)]))])])))))
+    (define input-file-name (format "tests/~a.in" test-name))
+    (define program-name (format "tests/~a.scm" test-name))
+    (define program-file (open-input-file program-name))
+    (define sexp (read program-file))
+    (close-input-port program-file)
+
+    (let loop ([passes passes] [p sexp] [result #f])
+      (cond [(null? passes) result]
+	    [else
+	     (match (car passes)
+		[`(,name ,pass ,interp)
+		 (debug "running pass" name)
+		 (let* ([new-p (pass p)])
+		   (debug name new-p)
+		   (cond [interp
+			  (let ([new-result 
+				 (if (file-exists? input-file-name)
+				     (begin
+				       (with-input-from-file input-file-name
+					 (lambda () (interp new-p))))
+				     (interp new-p))])
+			    (cond [result
+				   (cond [(equal? result new-result)
+					  (loop (cdr passes) new-p new-result)]
+					 [else
+					  (error (format "differing results in pass ~a, expected ~a, not" name result)
+						 new-result)])]
+				  [else ;; no result to check yet
+				   (loop (cdr passes) new-p new-result)]))]
+			 [else
+			  (loop (cdr passes) new-p result)]))])]))
+    ))
 
 (define (compile passes)
   (let ([prog-file-name (vector-ref (current-command-line-arguments) 0)])
@@ -80,24 +80,26 @@
 
 (define (compile-file passes)
   (lambda (prog-file-name)
-    (debug "compile-file" prog-file-name)
-    (let* ([file-base (string-trim prog-file-name ".scm")]
-	   [prog-file (open-input-file prog-file-name)]
-	   [out-file-name (string-append file-base ".s")]
-	   [out-file (open-output-file #:exists 'replace out-file-name)]
-	   [sexp (read prog-file)])
-      (let ([x86 (let loop ([passes passes] [p sexp])
-		   (cond [(null? passes) p]
-			 [else
-			  (match (car passes)
-			     [`(,name ,pass ,interp)
-			      (let* ([new-p (pass p)])
-				(debug name new-p)
-				(loop (cdr passes) new-p)
-				)])]))])
-	(write-string x86 out-file)
-	(newline out-file)
-	))))
+    (define file-base (string-trim prog-file-name ".scm"))
+    (define prog-file (open-input-file prog-file-name))
+    (define out-file-name (string-append file-base ".s"))
+    (define out-file (open-output-file #:exists 'replace out-file-name))
+    (define sexp (read prog-file))
+    (close-input-port prog-file)
+    (let ([x86 (let loop ([passes passes] [p sexp])
+		 (cond [(null? passes) p]
+		       [else
+			(match (car passes)
+			   [`(,name ,pass ,interp)
+			    (let* ([new-p (pass p)])
+			      (debug name new-p)
+			      (loop (cdr passes) new-p)
+			      )])]))])
+      (write-string x86 out-file)
+      (newline out-file)
+      )
+    (close-output-port out-file)
+    ))
 
 (define assert
   (lambda (msg b)

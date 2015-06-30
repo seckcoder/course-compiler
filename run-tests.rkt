@@ -24,10 +24,7 @@
        (debug "checking passes" '())
        (checker test-name)
        (debug "running compiler" '())
-       ;; why doesn't this work?
-       #;((compile-file int-exp-passes) (format "tests/~a.scm" test-name))
-       (if (system (format "racket ~a tests/~a.scm" compiler test-name))
-	   (void) (exit))
+       (compiler (format "tests/~a.scm" test-name))
        (debug "finished compiling" '())
        (if (system (format "gcc runtime.o tests/~a.s" test-name))
 	   (void) (exit))
@@ -44,14 +41,20 @@
   (newline)(display "tests passed")(newline)
   )
 
-(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
-  	       "s0" (range 1 13))
-(test-compiler "conditionals_compiler.rkt" (check-passes conditionals-passes) 
- 	       "s1" (range 1 19))
-
-(test-compiler "reg_int_exp_compiler.rkt" (check-passes reg-int-exp-passes) 
+(test-compiler (compile-file int-exp-passes)
+	       (check-passes int-exp-passes) 
   	       "s0" (range 1 13))
 
-(test-compiler "int_exp_compiler.rkt" (check-passes int-exp-passes) 
- 	       "s0" (range 1 13))
+(test-compiler (compile-file reg-int-exp-passes)
+	       (check-passes reg-int-exp-passes) 
+   	       "s0" (range 1 13))
+
+(test-compiler (compile-file conditionals-passes) 
+	       (check-passes conditionals-passes) 
+  	       "s0" (range 1 13))
+(test-compiler (compile-file conditionals-passes)
+	       (check-passes conditionals-passes) 
+  	       "s1" (range 1 19))
+
+
 
