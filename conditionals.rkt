@@ -115,6 +115,10 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S1 -> S1
 
+    (define/override (instructions)
+      (set-union (super instructions)
+		 (set 'cmp 'sete 'and 'or 'not)))
+
     (define/override (binary-op->inst op)
       (match op
 	 ['and 'and]

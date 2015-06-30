@@ -37,6 +37,12 @@
 			(error "type mismatch in vector-set!" 
 			       (list-ref ts i) t-arg)) ]
 	       [else (error "expected a vector in vector-set!, not" t)])]
+	   [`(eq? ,e1 ,e2)
+	    (match `(,((send this type-check env) e1)
+		     ,((send this type-check env) e2))
+	       [`((Vector ,ts1 ...) (Vector ,ts2 ...))
+		'bool]
+	       [else ((super type-check env) e)])]
 	   [else ((super type-check env) e)]
 	   )))
 
@@ -51,21 +57,54 @@
 	(match e
 	   [`(assign ,lhs (vector ,es ...))
 	    (define new-lhs ((send this select-instructions) lhs))
-	    (define new-es (append* (map (send this select-instructions) es)))
+	    (define new-es (map (send this select-instructions) es))
 	    (define n (length es))
-	    (append new-es
-		    `((mov (int ,(* n 8)) (register rdi))
+	    (define initializers
+	      (for/list ([e new-es] [i (in-range 0 (length new-es))])
+			`(mov ,e (offset ,new-lhs ,i))))
+	    (append `((mov (int ,(* n 8)) (register rdi))
 		      (call _malloc)
-		      (mov (register rax) ,new-lhs)))]
+		      (mov (register rax) ,new-lhs))
+		    initializers)]
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))
-	    
-	    ]
+	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-e-vec ((send this select-instructions) e-vec))
+	    `((mov (offset ,new-e-vec ,i) ,new-lhs))]
 	   [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
-	    
-	    ]
-	   [else (super select-instructions)]
+	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-e-vec ((send this select-instructions) e-vec))
+	    (define new-e-arg ((send this select-instructions) e-arg))
+	    `((mov ,new-e-arg (offset ,new-e-vec ,i)))]
+	   [else ((super select-instructions) e)]
 	   )))
     
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
+    (define/override (assign-locations homes)
+      (lambda (e)
+	(match e
+	   [`(offset ,e ,i)
+	    (define new-e ((assign-locations homes) e))
+	    `(offset ,new-e ,i)]
+	   [else ((super assign-locations homes) e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; insert-spill-code : psuedo-x86 -> x86
+
+    (define/override (on-stack? a)
+      (match a
+	 [`(offset ,e ,i) (send this on-stack? e)]
+	 [else #f]))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; print-x86 : x86 -> string
+    (define/override (print-x86)
+      (lambda (e)
+	(match e
+	   [`(offset ,e ,i) (format "~a(~a)" i ((send this print-x86) e))]
+	   [else ((super print-x86) e)]
+	   )))
 
     ));; compile-S2
 
@@ -82,16 +121,16 @@
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))
-	  ;; `("instruction selection" ,(send compiler select-instructions)
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("liveness analysis" ,(send compiler uncover-live (void))
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("build interference" ,(send compiler build-interference
-	  ;; 				(void) (void))
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("allocate registers" ,(send compiler allocate-registers)
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("insert spill code" ,(send compiler insert-spill-code)
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("print x86" ,(send compiler print-x86) #f)
+	  `("instruction selection" ,(send compiler select-instructions)
+	    ,(send interp interp-x86 '()))
+	  `("liveness analysis" ,(send compiler uncover-live (void))
+	    ,(send interp interp-x86 '()))
+	  `("build interference" ,(send compiler build-interference
+	   				(void) (void))
+	    ,(send interp interp-x86 '()))
+	  `("allocate registers" ,(send compiler allocate-registers)
+	    ,(send interp interp-x86 '()))
+	  `("insert spill code" ,(send compiler insert-spill-code)
+	    ,(send interp interp-x86 '()))
+	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

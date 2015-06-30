@@ -129,6 +129,9 @@
     (define/public (variable-size) 8)
     (define/public (first-offset) 16)
 
+    (define/public (instructions)
+      (set 'add 'sub 'imul 'neg 'mov))
+
     (define/public (assign-locations homes)
       (lambda (e)
 	(match e
@@ -149,7 +152,8 @@
 				   (* (length xs) (send this variable-size))))
 	    `(program ,stack-space
 		      ,(map (send this assign-locations new-homes) ss))]
-	   [`(,instr-name ,as ...)
+	   [`(,instr-name ,as ...) 
+	    #:when (set-member? (send this instructions) instr-name)
 	    `(,instr-name ,@(map (send this assign-locations homes) as))]
 	   [else (error "in assign-locations S0, unmatched" e)]
 	   )))
@@ -177,10 +181,13 @@
 	    `(program ,stack-space 
 		      ,(append* (map (send this insert-spill-code) ss)))]
 	   [`(,instr-name ,s ,d)
+	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
 		   `((mov ,s (register rax)) (,instr-name (register rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
-	   [`(,instr-name ,d) `((,instr-name ,d))]
+	   [`(,instr-name ,d)
+	    #:when (set-member? (send this instructions) instr-name)
+	    `((,instr-name ,d))]
 	   )))
   
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -208,13 +215,14 @@
 	     (format "\tretq\n")
 	     )]
 	   [`(,instr-name ,s ,d)
+	    #:when (set-member? (send this instructions) instr-name)
 	    (format "\t~aq\t~a, ~a\n" instr-name
 		    ((send this print-x86) s) 
 		    ((send this print-x86) d))]
 	   [`(,instr-name ,d)
+	    #:when (set-member? (send this instructions) instr-name)
 	    (format "\t~aq\t~a\n" instr-name ((send this print-x86) d))]
-	   [else
-	    (error "print-x86, unmatched" e)]
+	   [else (error "print-x86, unmatched" e)]
 	   )))
 
     )) ;; class compile-S0

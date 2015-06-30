@@ -49,7 +49,6 @@ T ::= Integer | (Vector T_1 ... T_n) | Void
 e ::= ...
     | (vector e_1 ... e_n) | (vector-ref e e)
     | (vector-set! e e e)
-    | (eq? e e)
 
 Type System
 

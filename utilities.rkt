@@ -53,10 +53,10 @@
       (cond [(null? passes) result]
 	    [else
 	     (match (car passes)
-		[`(,name ,pass ,interp)
-		 (debug "running pass" name)
+		[`(,pass-name ,pass ,interp)
+		 (debug "running pass" pass-name)
 		 (let* ([new-p (pass p)])
-		   (debug name new-p)
+		   (debug pass-name new-p)
 		   (cond [interp
 			  (let ([new-result 
 				 (if (file-exists? input-file-name)
@@ -68,7 +68,7 @@
 				   (cond [(equal? result new-result)
 					  (loop (cdr passes) new-p new-result)]
 					 [else
-					  (error (format "differing results in pass ~a, expected ~a, not" name result)
+					  (error (format "differing results in compiler '~a' pass '~a', expected ~a, not" name pass-name result)
 						 new-result)])]
 				  [else ;; no result to check yet
 				   (loop (cdr passes) new-p new-result)]))]

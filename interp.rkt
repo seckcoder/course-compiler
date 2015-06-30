@@ -113,11 +113,15 @@
 	    env]
 	   [`((call _read_int) . ,ss) 
 	    ((send this interp-x86 (cons (cons 'rax (read)) env)) ss)]
-	   [(or `((mov ,e (var ,x)) . ,ss) 
-		`((mov ,e (stack-loc ,x)) . ,ss)
-		`((mov ,e (register ,x)) . ,ss))
-	    (let ([v ((send this interp-x86 env) e)])
-	      ((send this interp-x86 (cons (cons x v) env)) ss))]
+	   [`((call _malloc) . ,ss)
+	    (define num-bytes ((send this interp-x86 env) '(register rdi)))
+	    (define vec (make-vector (/ num-bytes 8)))
+	    (define new-env (cons (cons 'rax vec) env))
+	    ((send this interp-x86 new-env) ss)]
+	   [`((mov ,s ,d) . ,ss)
+	    (define x (send this get-name d))
+	    (define v ((send this interp-x86 env) s))
+	    ((send this interp-x86 (cons (cons x v) env)) ss)]
 	   [`(program ,xs ,ss) 
 	    (let ([env ((send this interp-x86 '()) ss)])
 	      (cond [(assq 'rax env) => cdr]
@@ -248,7 +252,7 @@
 	    (let ([v1 ((send this interp-x86 env) s1)] 
 		  [v2 ((send this interp-x86 env) s2)])
 	      ((send this interp-x86 (cons (cons '__flag 
-						 (b2i (equal? v1 v2))) 
+						 (b2i (eq? v1 v2))) 
 					   env))
 	       ss))]
 	   [`((jmp ,label) . ,ss)
@@ -285,5 +289,20 @@
 	 ['vector-ref vector-ref]
 	 ['vector-set! vector-set!]
 	 [else (super interp-op op)]))
+
+    (define/override (interp-x86 env)
+      (lambda (ast)
+	(match ast
+	   [`(offset ,s ,i)
+	    (define vec ((send this interp-x86 env) s))
+	    (vector-ref vec i)]
+	   [`((mov ,s (offset ,d ,i)) . ,ss)
+	    (define v ((send this interp-x86 env) s))
+	    (define vec ((send this interp-x86 env) d))
+	    (debug "vector-set!" (list vec i v))
+	    (vector-set! vec i v)
+	    ((send this interp-x86 env) ss)]
+	   [else ((super interp-x86 env) ast)]
+	   )))
 
     ));; interp-S2
