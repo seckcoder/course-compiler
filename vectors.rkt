@@ -41,7 +41,7 @@
 	    (match `(,((send this type-check env) e1)
 		     ,((send this type-check env) e2))
 	       [`((Vector ,ts1 ...) (Vector ,ts2 ...))
-		'bool]
+		'Boolean]
 	       [else ((super type-check env) e)])]
 	   [else ((super type-check env) e)]
 	   )))

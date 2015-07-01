@@ -74,9 +74,9 @@
     (define/public (uncover-live live-after)
       (lambda (ast)
 	(match ast
-           [`(program ,xs ,ss)
+           [`(program ,xs ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    `(program (,xs ,lives) ,new-ss)]
+	    `(program (,xs ,lives) ,@new-ss)]
 	   [else
 	    (values ast (set-union (set-subtract live-after (write-vars ast))
 				   (read-vars ast)))]
@@ -101,14 +101,14 @@
 		       #:when (not (eq? v u)))
 		      (add-edge G u v)))
 	    ast]
-           [`(program (,xs ,lives) ,ss)
+           [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph xs))
 	    (define new-ss '())
 	    (for ([inst ss] [live-after lives])
 		 (define new-inst ((send this build-interference 
 					 live-after G) inst))
 		 (set! new-ss (cons new-inst new-ss)))
-	    `(program (,xs ,G) ,(reverse new-ss))]
+	    `(program (,xs ,G) ,@(reverse new-ss))]
 	   [else
 	    (for ([v live-after])
 		 (for ([d (write-vars ast)] #:when (not (eq? v d)))
@@ -144,7 +144,7 @@
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
-           [`(program (,xs ,G) ,ss)
+           [`(program (,xs ,G) ,ss ...)
 	    (define unavail-colors (make-hash)) ;; pencil marks
 	    (define (compare u v) 
 	      (>= (set-count (hash-ref unavail-colors u))
@@ -178,7 +178,8 @@
 	      (cond [(< largest-color (vector-length general-registers))
 		     first-offset]
 		    [else (- largest-color (vector-length general-registers))]))
-	    `(program ,stack-size ,(map (send this assign-locations homes) ss))]
+	    `(program ,stack-size 
+		      ,@(map (send this assign-locations homes) ss))]
 	   )))
 
     )) ;; compile-reg-S0

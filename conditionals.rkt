@@ -18,21 +18,21 @@
       (lambda (e)
 	(match e
 	   [(? symbol?) (cdr (assq e env))]
-	   [(? integer?) 'int]
+	   [(? integer?) 'Integer]
 	   [`(let ([,x ,e]) ,body)
 	    (let ([T ((send this type-check env) e)])
 	      ((send this type-check (cons (cons x T) env)) body))]
 	   [`(program ,extra ,body)
 	    ((send this type-check '()) body)
 	    `(program ,extra ,body)]
-	   [#t 'bool]
-	   [#f 'bool]
+	   [#t 'Boolean]
+	   [#f 'Boolean]
 	   [`(if ,cnd ,thn ,els)
 	    (let ([T-cnd ((send this type-check env) cnd)]
 		  [T-thn ((send this type-check env) thn)]
 		  [T-els ((send this type-check env) els)])
-	      (unless (equal? T-cnd 'bool)
-		  (error "expected conditional to have type bool, not" T-cnd))
+	      (unless (equal? T-cnd 'Boolean)
+		  (error "expected conditional to have type Boolean, not" T-cnd))
 	      (unless (equal? T-thn T-els)
 		  (error "expected branches of if to have same type"
 			 (list T-thn T-els)))
@@ -40,18 +40,18 @@
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    (let ([ts (map (send this type-check env) es)])
 	      (define binary-ops
-		'((+ . ((int int) . int))
-		  (- . ((int int) . int))
-		  (* . ((int int) . int))
-		  (and . ((bool bool) . bool))
-		  (or . ((bool bool) . bool))
-		  (eq? . ((int int) . bool))
+		'((+ . ((Integer Integer) . Integer))
+		  (- . ((Integer Integer) . Integer))
+		  (* . ((Integer Integer) . Integer))
+		  (and . ((Boolean Boolean) . Boolean))
+		  (or . ((Boolean Boolean) . Boolean))
+		  (eq? . ((Integer Integer) . Boolean))
 		  ))
 	      (define unary-ops
-		'((- . ((int) . int))
-		  (not . ((bool) . bool))))
+		'((- . ((Integer) . Integer))
+		  (not . ((Boolean) . Boolean))))
 	      (define nullary-ops
-		'((read . (() . int))))
+		'((read . (() . Integer))))
 	      (define (check op ts table)
 		(let ([pts (car (cdr (assq op table)))]
 		      [ret (cdr (cdr (assq op table)))])

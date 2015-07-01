@@ -1,3 +1,3 @@
 (program
- (define (id [x : int]) x)
+ (define (id [x : Integer]) : Integer x)
  (id 42))

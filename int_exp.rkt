@@ -50,21 +50,18 @@
 	    (define-values (new-e e-ss) ((send this flatten #f) e))
 	    (define-values (new-body body-ss) ((send this flatten #f) body))
 	    (values new-body (append e-ss `((assign ,x ,new-e)) body-ss))]
-	   [`(program ,extra ,e)
-	    (define-values (new-e ss) ((send this flatten #f) e))
-	    (define xs (append* (map (send this collect-locals) ss)))
-	    `(program ,(remove-duplicates xs) ,(append ss `((return ,new-e))))]
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    (define-values (new-es sss) (map2 (send this flatten #t) es))
 	    (define ss (append* sss))
 	    (define prim-apply `(,op ,@new-es))
 	    (cond [need-atomic
-		   ;; create a temporary and assign the prim to it
-		   (let* ([tmp (gensym 'tmp)]
-			  [stmt `(assign ,tmp ,prim-apply)])
-		     (values tmp (append ss (list stmt))))]
-		  [else ;; return the recreated prim, pass along ss and xs
-		   (values prim-apply ss)])]
+		   (define tmp (gensym 'tmp))
+		   (values tmp (append ss `((assign ,tmp ,prim-apply))))]
+		  [else (values prim-apply ss)])]
+	   [`(program ,extra ,e)
+	    (define-values (new-e ss) ((send this flatten #f) e))
+	    (define xs (append* (map (send this collect-locals) ss)))
+	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -116,8 +113,8 @@
 	    (cond [(equal? new-e1 new-lhs)
 		   `((,inst ,new-lhs))]
 		  [else `((mov ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
-	   [`(program ,xs ,ss)
-	    `(program ,xs ,(append* (map (send this select-instructions) ss)))]
+	   [`(program ,xs ,ss ...)
+	    `(program ,xs ,@(append* (map (send this select-instructions) ss)))]
 	   [else (error "instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -139,7 +136,7 @@
 	   [`(int ,n) `(int ,n)]
 	   [`(register ,r) `(register ,r)]
 	   [`(call ,f) `(call ,f)]
-	   [`(program ,xs ,ss)
+	   [`(program ,xs ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
 	      `(stack-loc ,(+ (send this first-offset)
@@ -151,7 +148,7 @@
 	    (define stack-space (+ (send this first-offset)
 				   (* (length xs) (send this variable-size))))
 	    `(program ,stack-space
-		      ,(map (send this assign-locations new-homes) ss))]
+		      ,@(map (send this assign-locations new-homes) ss))]
 	   [`(,instr-name ,as ...) 
 	    #:when (set-member? (send this instructions) instr-name)
 	    `(,instr-name ,@(map (send this assign-locations homes) as))]
@@ -177,9 +174,9 @@
 		     (mov (register rax) ,d))]
 		  [else `((mov ,s ,d))])]
 	   [`(call ,f) `((call ,f))]
-	   [`(program ,stack-space ,ss)
+	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
-		      ,(append* (map (send this insert-spill-code) ss)))]
+		      ,@(append* (map (send this insert-spill-code) ss)))]
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
@@ -200,7 +197,7 @@
 	   [`(int ,n) (format "$~a" n)]
 	   [`(register ,r) (format "%~a" r)]
 	   [`(call ,f) (format "\tcallq\t~a\n" f)]
-	   [`(program ,stack-space ,ss)
+	   [`(program ,stack-space ,ss ...)
 	    (string-append
 	     (format "\t.globl _main\n")
 	     (format "_main:\n")

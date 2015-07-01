@@ -1,6 +1,6 @@
 #lang racket
 (require "utilities.rkt")
-(provide interp-S0 interp-S1 interp-S2)
+(provide interp-S0 interp-S1 interp-S2 interp-S3)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S0
@@ -8,6 +8,8 @@
 (define interp-S0
   (class object%
     (super-new)
+
+    (field (result (gensym 'result)))
 
     (define/public (primitives)
       (set '+ '- '* 'read))
@@ -43,9 +45,7 @@
     ;; atomic   a  ::= n | x
     ;; expr     e  ::= a | (op a ...)
     ;; stmt     s  ::= (assign x e) | (return a)
-    ;; program  p  ::= (program (x ...) (s ...))
-
-    (define result (gensym 'result))
+    ;; program  p  ::= (program (x ...) s ...)
 
     (define/public (seq-C env)
       (lambda (ss)
@@ -71,10 +71,10 @@
 	    (let ([v ((send this interp-C env) e)])
 	      (debug "return" v)
 	      (cons (cons result v) env))]
-	   [`(program ,xs ,ss)
-	    (let ([env ((send this seq-C '()) ss)])
-	      (cond [(assq result env) => cdr]
-		    [else (error "missing return statement")]))]
+	   [`(program ,xs ,ss ...)
+	    (define env ((send this seq-C '()) ss))
+	    (cond [(assq result env) => cdr]
+		  [else (error "missing return statement")])]
 	   [`(,op ,args ...) #:when (set-member? (send this primitives) op)
 	    (apply (interp-op op) (map (send this interp-C env) args))]
 	   [else
@@ -85,7 +85,7 @@
     ;; psuedo-x86 and x86
     ;; s,d ::= (var x) | (int n) | (register r) | (stack-loc n)
     ;; i   ::= (mov s d) | (add s d) | (sub s d) | (neg d) | (call f)
-    ;; psuedo-x86 ::= (program (x ...) (i ...))
+    ;; psuedo-x86 ::= (program (x ...) i ...)
 
     (define/public (get-name ast)
       (match ast
@@ -122,7 +122,7 @@
 	    (define x (send this get-name d))
 	    (define v ((send this interp-x86 env) s))
 	    ((send this interp-x86 (cons (cons x v) env)) ss)]
-	   [`(program ,xs ,ss) 
+	   [`(program ,xs ,ss ...) 
 	    (let ([env ((send this interp-x86 '()) ss)])
 	      (cond [(assq 'rax env) => cdr]
 		    [else (error "in interp-x86, return rax absent")]))]
@@ -263,7 +263,7 @@
 	      (cond [(i2b flag)
 		     ((send this interp-x86 env) (goto-label label (program)))]
 		    [else ((send this interp-x86 env) ss)]))]
-	   [`(program ,xs ,ss) 
+	   [`(program ,xs ,ss ...)
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]
 	   [else
@@ -306,3 +306,55 @@
 	   )))
 
     ));; interp-S2
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interpreters for S3
+
+
+(define interp-S3
+  (class interp-S2
+    (super-new)
+    (inherit-field result)
+
+    (define/override (interp-scheme env)
+      (lambda (ast)
+	(match ast
+	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+	    (cons f `(lambda ,xs ,body))]
+	   [`(,f ,args ...) #:when (assq f env)
+	    (define new-args (map (send this interp-scheme env) args))
+	    (match (cdr (assq f env))
+	       [`(lambda (,xs ...) ,body)
+		((send this interp-scheme (map cons xs new-args)) body)]
+	       [else (error "interp-scheme, expected a funnction, not" 
+			    (cdr (assq f env)))])]
+	   [`(program ,ds ... ,body)
+	    (define new-env (map (send this interp-scheme '()) ds))
+	    ((send this interp-scheme new-env) body)]
+	   [else ((super interp-scheme env) ast)]
+	   )))
+
+    (define/override (interp-C env)
+      (lambda (ast)
+	(match ast
+	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
+	    (cons f `(lambda ,xs ,@ss))]
+	   [`(,f ,args ...) #:when (assq f env)
+	    (define new-args (map (send this interp-C env) args))
+	    (match (cdr (assq f env))
+	       [`(lambda (,xs ...) ,ss ...)
+		(define result-env
+		  ((send this seq-C (map cons xs new-args)) ss))
+		(cond [(assq result result-env) => cdr]
+		  [else (error "missing return statement")])]
+	       [else (error "interp-C, expected a funnction, not" 
+			    (cdr (assq f env)))])]
+	   [`(program ,locals ,ds ,ss ...)
+	    (define new-env (map (send this interp-C '()) ds))
+	    (define result-env ((send this seq-C new-env) ss))
+	    (cond [(assq result result-env) => cdr]
+		  [else (error "missing return statement")])]
+	   [else ((super interp-C env) ast)]
+	   )))
+
+    ));; interp-S3

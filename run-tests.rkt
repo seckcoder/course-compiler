@@ -4,11 +4,12 @@
 (require "register_allocator.rkt")
 (require "conditionals.rkt")
 (require "vectors.rkt")
+(require "functions.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])
     (cond [(eq? i end) (reverse res)]
-	  [else (loop (add1 i) (cons i res))])))
+   	  [else (loop (add1 i) (cons i res))])))
 
 (define (check-compiler checker test-family test-nums)
   (debug "checking passes" '())
@@ -44,6 +45,8 @@
   (newline)(display "tests passed")(newline)
   )
 
+(when #t
+
 (test-compiler "int_exp" (compile-file int-exp-passes)
 	       (check-passes "int_exp" int-exp-passes) 
   	       "s0" (range 1 13))
@@ -63,5 +66,8 @@
 	       (check-passes "vectors" vectors-passes) 
   	       "s2" (range 1 6))
 
+(test-compiler "functions" (compile-file functions-passes)
+	       (check-passes "functions" functions-passes) 
+  	       "s3" (range 1 2))
 
-
+)

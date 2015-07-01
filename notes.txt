@@ -70,7 +70,7 @@ Type System
 Functions (functions.rkt)
 
 p ::= (program d ... e)
-d ::= (define (f [x : T] ...) e)
+d ::= (define (f [x : T] ...) : T e)
 e ::= ...
     | (f e ...)
 
