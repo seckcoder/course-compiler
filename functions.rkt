@@ -116,7 +116,7 @@
 	    (define mov-stack
 	      (for/list ([param last-params] 
 			 [i (in-range 0 (length last-params))])
-	         `(mov (stack-loc ,(- (+ 16 i))) (var ,param))))
+	         `(mov (stack-loc ,(- (+ 16 (* i 8)))) (var ,param))))
 	    (define new-ss (append mov-stack mov-regs
               (append* (map (send this select-instructions) ss))))
 	    ;; parameters become locals
@@ -186,6 +186,16 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
+    (define/override (assign-locations homes)
+      (lambda (e)
+	(match e
+	   [`(stack-loc ,i) `(stack-loc ,i)]
+	   [`(stack-arg ,i) `(stack-arg ,i)]
+	   [else ((super assign-locations homes) e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; allocate-registers : pseudo-x86 -> pseudo-x86
 
     (define/override (allocate-registers)
@@ -231,6 +241,8 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
+	   [`(stack-arg ,i)
+	    (format "~a(%rsp)" i)]
 	   [`(define (,f) ,n ,stack-space ,ss ...)
 	    (string-append
 	     (format "\t.globl ~a\n" f)

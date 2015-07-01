@@ -362,6 +362,12 @@
     (define/public (builtin-funs) 
       (set '_malloc '_read_int))
 
+    (define/override (get-name ast)
+      (match ast
+         [`(stack-arg ,n) (stack-arg-name n)]
+	 [else (super get-name ast)]
+	 ))
+
     (define/override (interp-x86 env)
       (lambda (ast)
 	(match ast
@@ -374,7 +380,7 @@
 	   [`((call ,f) . ,ss) 
 	    #:when (not (set-member? (send this builtin-funs) f))
 	    (match (cdr (assq f env))
-	       [`(lambda ,n ,ss ...)
+	       [`(lambda ,n ,body-ss ...)
 		;; copy some register and stack locations over to new-env
 		(define passing-regs (for/list ([r arg-registers])
 					       (assq r env)))
@@ -382,14 +388,20 @@
 		  (for/list ([i (in-range 
 				 0 (max 0 (- n (vector-length
 						arg-registers))))])
-			    (cons (- (+ 16 i))
-				  (cdr (assq (stack-arg-name i) env)))))
+			    (define name (stack-arg-name (* i 8)))
+			    (define val
+			      (cond [(assq name env) => cdr]
+				    [else (error "undefined" name)])) 
+			    (define index (- (+ 16 (* i 8))))
+			    (cons index val)))
+		(debug "passing stack" passing-stack)
 		(define new-env (append passing-regs passing-stack))
-		(define result-env ((send this interp-x86 new-env) ss))
+		(define result-env
+		  (parameterize ([program body-ss])
+		     ((send this interp-x86 new-env) body-ss)))
 		(define res (cond [(assq 'rax result-env) => cdr]
 				  [else (error "missing rax for return")]))
-		(parameterize ([program ss])
-		   ((send this interp-x86 (cons (cons 'rax res) env)) ss))]
+		((send this interp-x86 (cons (cons 'rax res) env)) ss)]
 	       [else (error "interp-x86, expected a funnction, not" 
 			    (cdr (assq f env)))])
 	    ]
