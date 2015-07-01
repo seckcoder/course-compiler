@@ -2,6 +2,9 @@
 (require "utilities.rkt")
 (provide interp-S0 interp-S1 interp-S2 interp-S3)
 
+;; This (dynamically scoped) parameter is used for goto
+(define program (make-parameter '()))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S0
 
@@ -137,8 +140,7 @@
 		  [x (get-name d)]
 		  [f (send this interp-x86-op unary-op)])
 	      ((send this interp-x86 (cons (cons x (f d)) env)) ss))]
-	   [else
-	    (error "no match in interp-x86 S0 for " ast)]
+	   [else (error "no match in interp-x86 S0 for " ast)]
 	   )))
 
     )) ;; class interp-S0
@@ -195,8 +197,6 @@
 		 (cdr ss)]
 		[else
 		 (goto-label label (cdr ss))])]))
-
-    (define program (make-parameter '()))
 
     (define byte2full-reg
       (lambda (r)
@@ -266,8 +266,7 @@
 	   [`(program ,xs ,ss ...)
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]
-	   [else
-	    ((super interp-x86 env) ast)]
+	   [else ((super interp-x86 env) ast)]
 	   )))
 	    
     ));; class interp-S1
@@ -356,5 +355,52 @@
 		  [else (error "missing return statement")])]
 	   [else ((super interp-C env) ast)]
 	   )))
+
+    (define (stack-arg-name n)
+      (string->symbol (string-append "rsp_" (number->string n))))
+
+    (define/public (builtin-funs) 
+      (set '_malloc '_read_int))
+
+    (define/override (interp-x86 env)
+      (lambda (ast)
+	(match ast
+	   [`(stack-arg ,n)
+	    (define x (stack-arg-name n))
+	    (cond [(assq x env) => cdr]
+		  [else (error "in interp-x86, undefined variable " x)])]
+	   [`(define (,f) ,n ,locals ,ss ...)
+	    (cons f `(lambda ,n ,@ss))]
+	   [`((call ,f) . ,ss) 
+	    #:when (not (set-member? (send this builtin-funs) f))
+	    (match (cdr (assq f env))
+	       [`(lambda ,n ,ss ...)
+		;; copy some register and stack locations over to new-env
+		(define passing-regs (for/list ([r arg-registers])
+					       (assq r env)))
+		(define passing-stack
+		  (for/list ([i (in-range 
+				 0 (max 0 (- n (vector-length
+						arg-registers))))])
+			    (cons (- (+ 16 i))
+				  (cdr (assq (stack-arg-name i) env)))))
+		(define new-env (append passing-regs passing-stack))
+		(define result-env ((send this interp-x86 new-env) ss))
+		(define res (cond [(assq 'rax result-env) => cdr]
+				  [else (error "missing rax for return")]))
+		(parameterize ([program ss])
+		   ((send this interp-x86 (cons (cons 'rax res) env)) ss))]
+	       [else (error "interp-x86, expected a funnction, not" 
+			    (cdr (assq f env)))])
+	    ]
+	   [`(program ,locals ,ds ,ss ...)
+	    (parameterize ([program ss])
+	       (define env (map (send this interp-x86 '()) ds))
+	       (define result-env ((send this interp-x86 env) ss))
+	       (cond [(assq 'rax result-env) => cdr]
+		     [else (error "missing rax for return")]))]
+	   [else ((super interp-x86 env) ast)]
+	   )))
+
 
     ));; interp-S3

@@ -193,7 +193,7 @@
       (lambda (e)
 	(match e
            [`(stack-loc ,n) 
-	    (format "-~a(%rbp)" n)]
+	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(register ,r) (format "%~a" r)]
 	   [`(call ,f) (format "\tcallq\t~a\n" f)]

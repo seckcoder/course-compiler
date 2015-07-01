@@ -39,7 +39,7 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uniquify : env -> S1 -> S1
+    ;; uniquify : env -> S3 -> S3
     (define/override (uniquify env)
       (lambda (e)
 	(match e
@@ -99,6 +99,49 @@
 	   [else ((super flatten need-atomic) ast)]
 	   )))
 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; select-instructions : env -> S3 -> S3
+
+    (define/override (select-instructions)
+      (lambda (e)
+	(match e
+	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
+	    ;; move from registers and stack locations to parameters
+	    (define-values (first-params last-params) 
+	      (cond[(> (length xs) 6) (split-at xs 6)]
+		   [else (values xs '())]))
+	    (define mov-regs
+	      (for/list ([param first-params] [r arg-registers])
+	         `(mov (register ,r) (var ,param))))
+	    (define mov-stack
+	      (for/list ([param last-params] 
+			 [i (in-range 0 (length last-params))])
+	         `(mov (stack-loc ,(- (+ 16 i))) (var ,param))))
+	    (define new-ss (append mov-stack mov-regs
+              (append* (map (send this select-instructions) ss))))
+	    `(define (,f) ,(length xs) ,locals ,@new-ss)]
+	   [`(assign ,lhs (,f ,es ...))
+	    #:when (and (symbol? f) 
+			(not (set-member? (send this primitives) f)))
+	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-es (map (send this select-instructions) es))
+	    (define-values (first-args last-args) 
+	      (cond[(> (length new-es) 6) (split-at new-es 6)]
+		   [else (values new-es '())]))
+	    (define mov-regs
+	      (for/list ([arg first-args] [r arg-registers])
+	         `(mov ,arg (register ,r))))
+	    (define mov-stack
+	      (for/list ([arg last-args] [i (in-range 0 (length last-args))])
+	         `(mov ,arg (stack-arg ,(* i 8)))))
+	    (append mov-stack mov-regs
+	     `((call ,f) (mov (register rax) ,new-lhs)))]
+	   [`(program ,locals ,ds ,ss ...)
+	    `(program ,locals
+		      ,(map (send this select-instructions) ds)
+		      ,@(append* (map (send this select-instructions) ss)))]
+	   [else ((super select-instructions) e)]
+	   )))
     ));; compile-S3
     
 
@@ -115,8 +158,8 @@
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))
-	  ;; `("instruction selection" ,(send compiler select-instructions)
-	  ;;   ,(send interp interp-x86 '()))
+	  `("instruction selection" ,(send compiler select-instructions)
+	    ,(send interp interp-x86 '()))
 	  ;; `("liveness analysis" ,(send compiler uncover-live (void))
 	  ;;   ,(send interp interp-x86 '()))
 	  ;; `("build interference" ,(send compiler build-interference

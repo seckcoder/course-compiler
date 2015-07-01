@@ -1,7 +1,7 @@
 #lang racket
 (require racket/pretty)
 (provide debug map2 make-dispatcher assert 
-	 compile compile-file check-passes fix while)
+	 compile compile-file check-passes fix while arg-registers)
 
 (define-syntax-rule (while condition body ...)
   (let loop ()
@@ -114,3 +114,6 @@
 	  (display msg)
 	  (newline))
 	(void))))
+
+(define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+
