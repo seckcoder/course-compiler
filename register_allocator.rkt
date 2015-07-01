@@ -7,20 +7,6 @@
 
 (provide reg-int-exp-passes compile-reg-S0)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Graph ADT
-
-(define (make-graph vertices)
-  (make-hash (map (lambda (v) (cons v (set))) vertices)))
-
-(define (add-edge graph u v)
-  (hash-set! graph u (set-add (hash-ref graph u (set)) v))
-  (hash-set! graph v (set-add (hash-ref graph v (set)) u)))
-
-(define (adjacent graph u)
-  (hash-ref graph u))
-
-
 (define compile-reg-S0
   (class compile-S0
     (super-new)
@@ -103,6 +89,7 @@
 	    ast]
            [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph xs))
+	    ;; to do: change to for/list -Jeremy
 	    (define new-ss '())
 	    (for ([inst ss] [live-after lives])
 		 (define new-inst ((send this build-interference 
@@ -141,44 +128,52 @@
 	    [else 
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 
+    (define/public (allocate-homes G xs ss)
+      (debug "allocate-homes" (list xs ss (hash? G)))
+      (define unavail-colors (make-hash)) ;; pencil marks
+      (define (compare u v) 
+	(>= (set-count (hash-ref unavail-colors u))
+	    (set-count (hash-ref unavail-colors v))))
+      (define Q (make-pqueue compare))
+      (define pq-node (make-hash)) ;; maps vars to priority queue nodes
+      (define color (make-hash)) ;; maps vars to colors (natural nums)
+      (for ([x xs])
+	   ;; mark neighboring registers as unavailable
+	   (hash-set! unavail-colors x 
+		      (list->set
+		       (filter (lambda (u) (set-member? registers u))
+			       (set->list (hash-ref G x)))))
+	   ;; add variables to priority queue
+	   (hash-set! pq-node x (pqueue-push! Q x)))
+      (debug "start graph coloring" '())
+      ;; Graph coloring
+      (while (> (pqueue-count Q) 0)
+	     (define v (pqueue-pop! Q))
+	     (define c (choose-color v (hash-ref unavail-colors v)))
+	     (hash-set! color v c)
+	     (for ([u (adjacent G v)])
+		  (when (not (set-member? registers u))
+			(hash-set! unavail-colors u
+				   (set-add (hash-ref unavail-colors u) c))
+			(pqueue-decrease-key! Q (hash-ref pq-node u)))))
+      (debug "finish graph coloring" '())
+      ;; Create mapping from variables to their homes
+      (define homes
+	(make-hash (for/list ([x xs])
+			     (cons x (identify-home (hash-ref color x))))))
+      (define stack-size
+	(cond [(< largest-color (vector-length general-registers))
+	       first-offset]
+	      [else (- largest-color (vector-length general-registers))]))
+      (values homes stack-size))
+
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
-           [`(program (,xs ,G) ,ss ...)
-	    (define unavail-colors (make-hash)) ;; pencil marks
-	    (define (compare u v) 
-	      (>= (set-count (hash-ref unavail-colors u))
-		  (set-count (hash-ref unavail-colors v))))
-	    (define Q (make-pqueue compare))
-	    (define pq-node (make-hash)) ;; maps vars to priority queue nodes
-	    (define color (make-hash)) ;; maps vars to colors (natural nums)
-	    (for ([x xs])
-		 ;; mark neighboring registers as unavailable
-		 (hash-set! unavail-colors x 
-			    (list->set
-			     (filter (lambda (u) (set-member? registers u))
-				     (set->list (hash-ref G x)))))
-		 ;; add variables to priority queue
-		 (hash-set! pq-node x (pqueue-push! Q x)))
-	    ;; Graph coloring
-	    (while (> (pqueue-count Q) 0)
-	       (define v (pqueue-pop! Q))
-	       (define c (choose-color v (hash-ref unavail-colors v)))
-	       (hash-set! color v c)
-	       (for ([u (adjacent G v)])
-		    (when (not (set-member? registers u))
-		       (hash-set! unavail-colors u
-				  (set-add (hash-ref unavail-colors u) c))
-		       (pqueue-decrease-key! Q (hash-ref pq-node u)))))
-	      ;; Create mapping from variables to their homes
-	    (define homes
-	      (make-hash (for/list ([x xs])
-			    (cons x (identify-home (hash-ref color x))))))
-	    (define stack-size
-	      (cond [(< largest-color (vector-length general-registers))
-		     first-offset]
-		    [else (- largest-color (vector-length general-registers))]))
-	    `(program ,stack-size 
+           [`(program (,locals ,G) ,ss ...)
+	    (define-values (homes stk-size) 
+	      (send this allocate-homes G locals ss))
+	    `(program ,stk-size 
 		      ,@(map (send this assign-locations homes) ss))]
 	   )))
 

@@ -119,7 +119,8 @@
 	         `(mov (stack-loc ,(- (+ 16 i))) (var ,param))))
 	    (define new-ss (append mov-stack mov-regs
               (append* (map (send this select-instructions) ss))))
-	    `(define (,f) ,(length xs) ,locals ,@new-ss)]
+	    ;; parameters become locals
+	    `(define (,f) ,(length xs) ,(append xs locals) ,@new-ss)]
 	   [`(assign ,lhs (,f ,es ...))
 	    #:when (and (symbol? f) 
 			(not (set-member? (send this primitives) f)))
@@ -142,6 +143,116 @@
 		      ,@(append* (map (send this select-instructions) ss)))]
 	   [else ((super select-instructions) e)]
 	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
+
+    (define/override (uncover-live live-after)
+      (lambda (ast)
+	(match ast
+	   [`(define (,f) ,n ,locals ,ss ...)
+	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    `(define (,f) ,n (,locals ,lives) ,@new-ss)]
+           [`(program ,locals ,ds ,ss ...)
+	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    (define new-ds (map (send this uncover-live (set)) ds))
+	    `(program (,locals ,lives) ,new-ds ,@new-ss)]
+	   [else ((super uncover-live live-after) ast)]
+	   )))
+    
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; build-interference : live-after x graph -> pseudo-x86* -> pseudo-x86*
+    ;; *annotate program with interference graph
+
+    (define/override (build-interference live-after G)
+      (lambda (ast)
+	(match ast
+	   [`(define (,f) ,n (,locals ,lives) ,ss ...)
+	    (define new-G (make-graph locals))
+	    (define new-ss 
+	      (for/list ([inst ss] [live-after lives])
+			((send this build-interference live-after new-G) inst)))
+	    `(define (,f) ,n (,locals ,new-G) ,@new-ss)]
+           [`(program (,locals ,lives) ,ds ,ss ...)
+	    (debug "build-interference for program (functions)" '()) 
+	    (define new-G (make-graph locals))
+	    (define new-ds (for/list ([d ds])
+			      ((send this build-interference (void) (void)) d)))
+	    (define new-ss 
+	      (for/list ([inst ss] [live-after lives])
+			((send this build-interference live-after new-G) inst)))
+	    `(program (,locals ,new-G) ,new-ds ,@new-ss)]
+	   [else ((super build-interference live-after G) ast)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; allocate-registers : pseudo-x86 -> pseudo-x86
+
+    (define/override (allocate-registers)
+      (lambda (ast)
+	(match ast
+	   [`(define (,f) ,n (,xs ,G) ,ss ...)
+	    (debug "allocating registers in function" (list f (hash? G)))
+	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
+	    (debug "assigning locations in function" f)
+	    (define new-ss (map (send this assign-locations homes) ss))
+	    (debug "finished allocation in function" f)
+	    `(define (,f) ,n ,stk-size ,@new-ss)]
+           [`(program (,locals ,G) ,ds ,ss ...)
+	    (define new-ds (map (send this allocate-registers) ds)) 
+	    (debug "finished allocation for functions" '())
+	    (define-values (homes stk-size) 
+	      (send this allocate-homes G locals ss))
+	    (debug "finished allocation for main" '())
+	    (define new-ss (map (send this assign-locations homes) ss))
+	    (debug "done assigning locations for main" '())
+	    `(program ,stk-size ,new-ds ,@new-ss)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; insert-spill-code : psuedo-x86 -> x86
+
+    (define/override (insert-spill-code)
+      (lambda (e)
+	(match e
+	   [`(define (,f) ,n ,stack-space ,ss ...)
+	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
+	    `(define (,f) ,n ,stack-space ,@(append* sss))]
+	   [`(program ,stack-space ,ds ,ss ...)
+	    (define new-ds (for/list ([d ds])
+				     ((send this insert-spill-code) d)))
+	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
+	    `(program ,stack-space ,new-ds ,@(append* sss))]
+	   [else ((super insert-spill-code) e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; print-x86 : x86 -> string
+    (define/override (print-x86)
+      (lambda (e)
+	(match e
+	   [`(define (,f) ,n ,stack-space ,ss ...)
+	    (string-append
+	     (format "\t.globl ~a\n" f)
+	     (format "~a:\n" f)
+	     (format "\tpushq\t%rbp\n")
+	     (format "\tmovq\t%rsp, %rbp\n")
+	     (format "\tsubq\t$~a, %rsp\n" stack-space)
+	     "\n"
+	     (string-append* (map (send this print-x86) ss))
+	     "\n"
+	     (format "\taddq\t$~a, %rsp\n" stack-space)
+	     (format "\tpopq\t%rbp\n")
+	     (format "\tretq\n")
+	     )]
+	   [`(program ,stack-space ,ds ,ss ...)
+	    (string-append
+	     (string-append* (for/list ([d ds]) ((send this print-x86) d)))
+	     "\n"
+	     ((super print-x86) `(program ,stack-space ,@ss)))]
+	   [else ((super print-x86) e)]
+	   )))
+
     ));; compile-S3
     
 
@@ -160,14 +271,14 @@
 	    ,(send interp interp-C '()))
 	  `("instruction selection" ,(send compiler select-instructions)
 	    ,(send interp interp-x86 '()))
-	  ;; `("liveness analysis" ,(send compiler uncover-live (void))
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("build interference" ,(send compiler build-interference
-	  ;;  				(void) (void))
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("allocate registers" ,(send compiler allocate-registers)
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("insert spill code" ,(send compiler insert-spill-code)
-	  ;;   ,(send interp interp-x86 '()))
-	  ;; `("print x86" ,(send compiler print-x86) #f)
+	  `("liveness analysis" ,(send compiler uncover-live (void))
+	    ,(send interp interp-x86 '()))
+	  `("build interference" ,(send compiler build-interference
+					(void) (void))
+	    ,(send interp interp-x86 '()))
+	  `("allocate registers" ,(send compiler allocate-registers)
+	    ,(send interp interp-x86 '()))
+	  `("insert spill code" ,(send compiler insert-spill-code)
+	    ,(send interp interp-x86 '()))
+	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

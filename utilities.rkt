@@ -1,7 +1,8 @@
 #lang racket
 (require racket/pretty)
 (provide debug map2 make-dispatcher assert 
-	 compile compile-file check-passes fix while arg-registers)
+	 compile compile-file check-passes fix while arg-registers
+	 make-graph add-edge adjacent)
 
 (define-syntax-rule (while condition body ...)
   (let loop ()
@@ -116,4 +117,18 @@
 	(void))))
 
 (define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Graph ADT
+
+(define (make-graph vertices)
+  (make-hash (map (lambda (v) (cons v (set))) vertices)))
+
+(define (add-edge graph u v)
+  (hash-set! graph u (set-add (hash-ref graph u (set)) v))
+  (hash-set! graph v (set-add (hash-ref graph v (set)) u)))
+
+(define (adjacent graph u)
+  (hash-ref graph u))
+
 

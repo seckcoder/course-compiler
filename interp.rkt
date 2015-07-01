@@ -369,7 +369,7 @@
 	    (define x (stack-arg-name n))
 	    (cond [(assq x env) => cdr]
 		  [else (error "in interp-x86, undefined variable " x)])]
-	   [`(define (,f) ,n ,locals ,ss ...)
+	   [`(define (,f) ,n ,extra ,ss ...)
 	    (cons f `(lambda ,n ,@ss))]
 	   [`((call ,f) . ,ss) 
 	    #:when (not (set-member? (send this builtin-funs) f))
@@ -393,7 +393,7 @@
 	       [else (error "interp-x86, expected a funnction, not" 
 			    (cdr (assq f env)))])
 	    ]
-	   [`(program ,locals ,ds ,ss ...)
+	   [`(program ,extra ,ds ,ss ...)
 	    (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
