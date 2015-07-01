@@ -12,6 +12,7 @@
     (super-new)
 
     (define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r12))
+    (define callee-save (set 'rbx 'r10 'r11 'r13 'r14 'r15))
 
     (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
     				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
@@ -40,7 +41,7 @@
     (define/public (read-vars instr)
       (match instr
          [`(mov ,s ,d) (send this free-vars s)]
-	 [(or `(add ,s ,d) `(sub ,s ,d)) 
+	 [(or `(add ,s ,d) `(sub ,s ,d) `(imul ,s ,d)) 
 	  (set-union (send this free-vars s) (send this free-vars d))]
 	 [`(neg ,d) (send this free-vars d)]
 	 [`(call ,f) (set)]
@@ -50,7 +51,8 @@
     (define/public (write-vars instr)
       (match instr
          [`(mov ,s ,d) (send this free-vars d)]
-	 [(or `(add ,s ,d) `(sub ,s ,d)) (send this free-vars d)]
+	 [(or `(add ,s ,d) `(sub ,s ,d) `(imul ,s ,d)) 
+	  (send this free-vars d)]
 	 [`(neg ,d) (send this free-vars d)]
 	 [`(call ,f) caller-save]
 	 [else (error "write-vars unmatched" instr)]

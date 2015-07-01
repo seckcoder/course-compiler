@@ -88,6 +88,7 @@
 			 ,@new-body)]
 	   [`(,f ,es ...) 
 	    #:when (and (symbol? f) 
+			(not (set-member? (set 'if 'let) f))
 			(not (set-member? (send this primitives) f)))
 	    (define-values (new-es sss) (map2 (send this flatten #t) es))
 	    (define ss (append* sss))
@@ -245,16 +246,25 @@
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
 	   [`(define (,f) ,n ,stack-space ,ss ...)
+	    (define callee-reg (set->list callee-save))
+	    (define save-callee-reg
+	      (for/list ([r callee-reg])
+			(format "\tpushq\t%~a\n" r)))
+	    (define restore-callee-reg
+	      (for/list ([r (reverse callee-reg)])
+			(format "\tpopq\t%~a\n" r)))
 	    (string-append
 	     (format "\t.globl ~a\n" f)
 	     (format "~a:\n" f)
 	     (format "\tpushq\t%rbp\n")
 	     (format "\tmovq\t%rsp, %rbp\n")
+	     (string-append* save-callee-reg)
 	     (format "\tsubq\t$~a, %rsp\n" stack-space)
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
 	     (format "\taddq\t$~a, %rsp\n" stack-space)
+	     (string-append* restore-callee-reg)
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]

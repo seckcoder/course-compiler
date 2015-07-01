@@ -68,6 +68,6 @@
 
 (test-compiler "functions" (compile-file functions-passes)
 	       (check-passes "functions" functions-passes) 
-  	       "s3" (range 1 4))
+  	       "s3" (range 1 5))
 
 )

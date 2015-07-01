@@ -1,8 +1,10 @@
 #lang racket
 (require racket/pretty)
 (provide debug map2 make-dispatcher assert 
-	 compile compile-file check-passes fix while arg-registers
-	 make-graph add-edge adjacent)
+	 compile compile-file check-passes fix while 
+	 make-graph add-edge adjacent
+	 general-registers caller-save callee-save arg-registers
+	 register->color registers)
 
 (define debug-state #f)
 
@@ -119,6 +121,23 @@
 	(void))))
 
 (define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+
+(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r12))
+(define callee-save (set 'rbx 'r10 'r11 'r13 'r14 'r15))
+
+(define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
+    				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
+(define reg-colors
+  '((rax . -1) (__flag . -1)
+    (rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
+    (r8 . 5) (r9 . 6) (r10 . 7) (r11 . 8) (r12 . 9) (r13 . 10)
+    (r14 . 11) (r15 . 12)))
+
+(define (register->color r)
+  (cdr (assq r reg-colors)))
+
+(define registers (set-union (list->set (vector->list general-registers))
+			     (set 'rax 'rsp 'rbp '__flag)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Graph ADT

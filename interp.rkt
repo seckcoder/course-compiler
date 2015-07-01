@@ -102,7 +102,7 @@
 	 ['add +]
 	 ['sub -]
 	 ['neg -]
-	 ['mul *]
+	 ['imul *]
 	 [else (error "interp-x86-op, unmatched" op)]))
 
     (define/public (interp-x86 env)
@@ -324,7 +324,9 @@
 	    (define new-args (map (send this interp-scheme env) args))
 	    (match (cdr (assq f env))
 	       [`(lambda (,xs ...) ,body)
-		((send this interp-scheme (map cons xs new-args)) body)]
+		(define new-env 
+		  (append (map cons xs new-args) env))
+		((send this interp-scheme new-env) body)]
 	       [else (error "interp-scheme, expected a funnction, not" 
 			    (cdr (assq f env)))])]
 	   [`(program ,ds ... ,body)
@@ -342,8 +344,10 @@
 	    (define new-args (map (send this interp-C env) args))
 	    (match (cdr (assq f env))
 	       [`(lambda (,xs ...) ,ss ...)
+		(define new-env 
+		  (append (map cons xs new-args) env))
 		(define result-env
-		  ((send this seq-C (map cons xs new-args)) ss))
+		  ((send this seq-C new-env) ss))
 		(cond [(assq result result-env) => cdr]
 		  [else (error "missing return statement")])]
 	       [else (error "interp-C, expected a funnction, not" 
@@ -382,8 +386,10 @@
 	    (match (cdr (assq f env))
 	       [`(lambda ,n ,body-ss ...)
 		;; copy some register and stack locations over to new-env
-		(define passing-regs (for/list ([r arg-registers])
-					       (assq r env)))
+		(define passing-regs
+		  (filter (lambda (p) p) (for/list ([r arg-registers])
+						   (assq r env))))
+		(debug "passing regs" passing-regs)
 		(define passing-stack
 		  (for/list ([i (in-range 
 				 0 (max 0 (- n (vector-length
@@ -395,7 +401,7 @@
 			    (define index (- (+ 16 (* i 8))))
 			    (cons index val)))
 		(debug "passing stack" passing-stack)
-		(define new-env (append passing-regs passing-stack))
+		(define new-env (append passing-regs passing-stack env))
 		(define result-env
 		  (parameterize ([program body-ss])
 		     ((send this interp-x86 new-env) body-ss)))
