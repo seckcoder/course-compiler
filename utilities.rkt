@@ -4,6 +4,16 @@
 	 compile compile-file check-passes fix while arg-registers
 	 make-graph add-edge adjacent)
 
+(define debug-state #f)
+
+(define (debug label val)
+  (if debug-state
+      (begin
+	(printf "~a:\n" label)
+	(pretty-print val)
+	(newline))
+      (void)))
+
 (define-syntax-rule (while condition body ...)
   (let loop ()
     (when condition
@@ -29,16 +39,6 @@
 	(error "no match in dispatcher for " e)]
        )))
 
-(define debug-state #t)
-
-(define (debug label val)
-  (if debug-state
-      (begin
-	(printf "~a:\n" label)
-	(pretty-print val)
-	(newline))
-      (void)))
-
 (define (check-passes name passes)
   (lambda (test-name)
     (debug "** compiler " name)
@@ -56,25 +56,27 @@
 	     (match (car passes)
 		[`(,pass-name ,pass ,interp)
 		 (debug "running pass" pass-name)
-		 (let* ([new-p (pass p)])
-		   (debug pass-name new-p)
-		   (cond [interp
-			  (let ([new-result 
-				 (if (file-exists? input-file-name)
-				     (begin
-				       (with-input-from-file input-file-name
-					 (lambda () (interp new-p))))
-				     (interp new-p))])
-			    (cond [result
-				   (cond [(equal? result new-result)
-					  (loop (cdr passes) new-p new-result)]
-					 [else
-					  (error (format "differing results in compiler '~a' pass '~a', expected ~a, not" name pass-name result)
-						 new-result)])]
-				  [else ;; no result to check yet
-				   (loop (cdr passes) new-p new-result)]))]
-			 [else
-			  (loop (cdr passes) new-p result)]))])]))
+		 (define new-p (pass p))
+		 (debug pass-name new-p)
+		 (cond [interp
+			(let ([new-result 
+			       (if (file-exists? input-file-name)
+				   (begin
+				     (with-input-from-file input-file-name
+				       (lambda () (interp new-p))))
+				   (interp new-p))])
+			  (cond [result
+				 (cond [(equal? result new-result)
+					(loop (cdr passes) new-p new-result)]
+				       [else
+					(display "in program")(newline)
+					(pretty-print new-p)(newline)
+					(error (format "differing results in compiler '~a' pass '~a', expected ~a, not" name pass-name result )
+					       new-result)])]
+				[else ;; no result to check yet
+				 (loop (cdr passes) new-p new-result)]))]
+		       [else
+			(loop (cdr passes) new-p result)])])]))
     ))
 
 (define (compile passes)

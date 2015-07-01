@@ -391,7 +391,7 @@
 			    (define name (stack-arg-name (* i 8)))
 			    (define val
 			      (cond [(assq name env) => cdr]
-				    [else (error "undefined" name)])) 
+				    [else (error "passing stack undefined" (list n name))])) 
 			    (define index (- (+ 16 (* i 8))))
 			    (cons index val)))
 		(debug "passing stack" passing-stack)

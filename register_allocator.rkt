@@ -15,6 +15,15 @@
 
     (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
     				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
+    (define reg-colors
+      '((rax . -1) (__flag . -1)
+	(rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
+	(r8 . 5) (r9 . 6) (r10 . 7) (r11 . 8) (r12 . 9) (r13 . 10)
+	(r14 . 11) (r15 . 12)))
+
+    (define (register->color r)
+      (cdr (assq r reg-colors)))
+    
     (define registers (set-union (list->set (vector->list general-registers))
 				 (set 'rax 'rsp 'rbp '__flag)))
 
@@ -25,6 +34,7 @@
     (define/public (free-vars a)
       (match a
 	 [`(var ,x) (set x)]
+	 [`(register ,r) (set r)] ;; experimental -Jeremy
 	 [else (set)]))
 
     (define/public (read-vars instr)
@@ -89,13 +99,10 @@
 	    ast]
            [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph xs))
-	    ;; to do: change to for/list -Jeremy
-	    (define new-ss '())
-	    (for ([inst ss] [live-after lives])
-		 (define new-inst ((send this build-interference 
-					 live-after G) inst))
-		 (set! new-ss (cons new-inst new-ss)))
-	    `(program (,xs ,G) ,@(reverse new-ss))]
+	    (define new-ss 
+	      (for/list ([inst ss] [live-after lives])
+	         ((send this build-interference live-after G) inst)))
+	    `(program (,xs ,G) ,@new-ss)]
 	   [else
 	    (for ([v live-after])
 		 (for ([d (write-vars ast)] #:when (not (eq? v d)))
@@ -129,7 +136,6 @@
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 
     (define/public (allocate-homes G xs ss)
-      (debug "allocate-homes" (list xs ss (hash? G)))
       (define unavail-colors (make-hash)) ;; pencil marks
       (define (compare u v) 
 	(>= (set-count (hash-ref unavail-colors u))
@@ -138,14 +144,15 @@
       (define pq-node (make-hash)) ;; maps vars to priority queue nodes
       (define color (make-hash)) ;; maps vars to colors (natural nums)
       (for ([x xs])
-	   ;; mark neighboring registers as unavailable
-	   (hash-set! unavail-colors x 
-		      (list->set
-		       (filter (lambda (u) (set-member? registers u))
-			       (set->list (hash-ref G x)))))
+	   ;; mark neighboring register colors as unavailable
+	   (define adj-reg
+	      (filter (lambda (u) (set-member? registers u))
+		      (set->list (hash-ref G x))))
+	   (define adj-colors
+	     (list->set (map (lambda (r) (register->color r)) adj-reg)))
+	   (hash-set! unavail-colors x adj-colors)
 	   ;; add variables to priority queue
 	   (hash-set! pq-node x (pqueue-push! Q x)))
-      (debug "start graph coloring" '())
       ;; Graph coloring
       (while (> (pqueue-count Q) 0)
 	     (define v (pqueue-pop! Q))
@@ -156,7 +163,6 @@
 			(hash-set! unavail-colors u
 				   (set-add (hash-ref unavail-colors u) c))
 			(pqueue-decrease-key! Q (hash-ref pq-node u)))))
-      (debug "finish graph coloring" '())
       ;; Create mapping from variables to their homes
       (define homes
 	(make-hash (for/list ([x xs])

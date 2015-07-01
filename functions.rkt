@@ -102,13 +102,17 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S3 -> S3
 
+    (define max-stack 0)
+
     (define/override (select-instructions)
       (lambda (e)
 	(match e
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
+	    (set! max-stack 0)
+	    (define n (vector-length arg-registers))
 	    ;; move from registers and stack locations to parameters
 	    (define-values (first-params last-params) 
-	      (cond[(> (length xs) 6) (split-at xs 6)]
+	      (cond[(> (length xs) n) (split-at xs n)]
 		   [else (values xs '())]))
 	    (define mov-regs
 	      (for/list ([param first-params] [r arg-registers])
@@ -120,14 +124,16 @@
 	    (define new-ss (append mov-stack mov-regs
               (append* (map (send this select-instructions) ss))))
 	    ;; parameters become locals
-	    `(define (,f) ,(length xs) ,(append xs locals) ,@new-ss)]
+	    `(define (,f) ,(length xs) (,(append xs locals) ,max-stack)
+	       ,@new-ss)]
 	   [`(assign ,lhs (,f ,es ...))
 	    #:when (and (symbol? f) 
 			(not (set-member? (send this primitives) f)))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-es (map (send this select-instructions) es))
+	    (define n (vector-length arg-registers))
 	    (define-values (first-args last-args) 
-	      (cond[(> (length new-es) 6) (split-at new-es 6)]
+	      (cond[(> (length new-es) n) (split-at new-es n)]
 		   [else (values new-es '())]))
 	    (define mov-regs
 	      (for/list ([arg first-args] [r arg-registers])
@@ -135,12 +141,14 @@
 	    (define mov-stack
 	      (for/list ([arg last-args] [i (in-range 0 (length last-args))])
 	         `(mov ,arg (stack-arg ,(* i 8)))))
+	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
 	     `((call ,f) (mov (register rax) ,new-lhs)))]
 	   [`(program ,locals ,ds ,ss ...)
-	    `(program ,locals
-		      ,(map (send this select-instructions) ds)
-		      ,@(append* (map (send this select-instructions) ss)))]
+	    (define new-ds (map (send this select-instructions) ds))
+	    (set! max-stack 0)
+	    (define sss (map (send this select-instructions) ss))
+	    `(program (,locals ,max-stack) ,new-ds ,@(append* sss))]
 	   [else ((super select-instructions) e)]
 	   )))
 
@@ -150,13 +158,13 @@
     (define/override (uncover-live live-after)
       (lambda (ast)
 	(match ast
-	   [`(define (,f) ,n ,locals ,ss ...)
+	   [`(define (,f) ,n (,locals ,max-stack) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    `(define (,f) ,n (,locals ,lives) ,@new-ss)]
-           [`(program ,locals ,ds ,ss ...)
+	    `(define (,f) ,n (,locals ,max-stack ,lives) ,@new-ss)]
+           [`(program (,locals ,max-stack) ,ds ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    (define new-ds (map (send this uncover-live (set)) ds))
-	    `(program (,locals ,lives) ,new-ds ,@new-ss)]
+	    `(program (,locals ,max-stack ,lives) ,new-ds ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
     
@@ -167,21 +175,20 @@
     (define/override (build-interference live-after G)
       (lambda (ast)
 	(match ast
-	   [`(define (,f) ,n (,locals ,lives) ,ss ...)
+	   [`(define (,f) ,n (,locals ,max-stack ,lives) ,ss ...)
 	    (define new-G (make-graph locals))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
-	    `(define (,f) ,n (,locals ,new-G) ,@new-ss)]
-           [`(program (,locals ,lives) ,ds ,ss ...)
-	    (debug "build-interference for program (functions)" '()) 
+	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
+           [`(program (,locals ,max-stack ,lives) ,ds ,ss ...)
 	    (define new-G (make-graph locals))
 	    (define new-ds (for/list ([d ds])
 			      ((send this build-interference (void) (void)) d)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
-	    `(program (,locals ,new-G) ,new-ds ,@new-ss)]
+	    `(program (,locals ,max-stack ,new-G) ,new-ds ,@new-ss)]
 	   [else ((super build-interference live-after G) ast)]
 	   )))
 
@@ -201,22 +208,16 @@
     (define/override (allocate-registers)
       (lambda (ast)
 	(match ast
-	   [`(define (,f) ,n (,xs ,G) ,ss ...)
-	    (debug "allocating registers in function" (list f (hash? G)))
+	   [`(define (,f) ,n (,xs ,max-stack ,G) ,ss ...)
 	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
-	    (debug "assigning locations in function" f)
 	    (define new-ss (map (send this assign-locations homes) ss))
-	    (debug "finished allocation in function" f)
-	    `(define (,f) ,n ,stk-size ,@new-ss)]
-           [`(program (,locals ,G) ,ds ,ss ...)
+	    `(define (,f) ,n ,(+ stk-size (* 8 max-stack)) ,@new-ss)]
+           [`(program (,locals ,max-stack ,G) ,ds ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
-	    (debug "finished allocation for functions" '())
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes G locals ss))
-	    (debug "finished allocation for main" '())
 	    (define new-ss (map (send this assign-locations homes) ss))
-	    (debug "done assigning locations for main" '())
-	    `(program ,stk-size ,new-ds ,@new-ss)]
+	    `(program ,(+ stk-size (* 8 max-stack)) ,new-ds ,@new-ss)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
