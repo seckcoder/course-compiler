@@ -132,12 +132,12 @@
 	   [`((,binary-op ,s ,d) . ,ss)
 	    (let ([s ((send this interp-x86 env) s)] 
 		  [d ((send this interp-x86 env) d)]
-		  [x (get-name d)]
+		  [x (send this get-name d)]
 		  [f (send this interp-x86-op binary-op)])
 	      ((send this interp-x86 (cons (cons x (f d s)) env)) ss))]
 	   [`((,unary-op ,d) . ,ss)
 	    (let ([d ((send this interp-x86 env) d)]
-		  [x (get-name d)]
+		  [x (send this get-name d)]
 		  [f (send this interp-x86-op unary-op)])
 	      ((send this interp-x86 (cons (cons x (f d)) env)) ss))]
 	   [else (error "no match in interp-x86 S0 for " ast)]
@@ -378,7 +378,7 @@
 	   [`(stack-arg ,n)
 	    (define x (stack-arg-name n))
 	    (cond [(assq x env) => cdr]
-		  [else (error "in interp-x86, undefined variable " x)])]
+		  [else (error "in interp-x86, undefined stack-arg " x)])]
 	   [`(define (,f) ,n ,extra ,ss ...)
 	    (cons f `(lambda ,n ,@ss))]
 	   [`((call ,f) . ,ss) 

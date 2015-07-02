@@ -180,6 +180,11 @@
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
 		      ,@(append* (map (send this insert-spill-code) ss)))]
+	   ;; imulq has funny restrictions -Jeremy
+	   [`(imul ,s ,d)
+	    `((mov ,d (register rax))
+	      (imul ,s (register rax))
+	      (mov (register rax) ,d))]
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
