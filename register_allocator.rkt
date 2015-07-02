@@ -104,6 +104,7 @@
     (define largest-color 0)
 
     ;; Choose the first available color
+    ;; To do: move biasing -Jeremy
     (define (choose-color v unavail-colors)
       (let loop ([c 0])
 	(cond [(set-member? unavail-colors c) 
