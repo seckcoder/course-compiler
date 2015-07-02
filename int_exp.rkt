@@ -180,7 +180,9 @@
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
 		      ,@(append* (map (send this insert-spill-code) ss)))]
-	   ;; imulq has funny restrictions -Jeremy
+	   ;; for imulq, destination must be a register -Jeremy
+	   [`(imul ,s (register ,d))
+	    `((imul ,s (register ,d)))]
 	   [`(imul ,s ,d)
 	    `((mov ,d (register rax))
 	      (imul ,s (register rax))
