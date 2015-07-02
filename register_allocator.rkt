@@ -11,22 +11,6 @@
   (class compile-S0
     (super-new)
 
-    (define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r12))
-    (define callee-save (set 'rbx 'r10 'r11 'r13 'r14 'r15))
-
-    (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
-    				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
-    (define reg-colors
-      '((rax . -1) (__flag . -1)
-	(rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
-	(r8 . 5) (r9 . 6) (r10 . 7) (r11 . 8) (r12 . 9) (r13 . 10)
-	(r14 . 11) (r15 . 12)))
-
-    (define (register->color r)
-      (cdr (assq r reg-colors)))
-    
-    (define registers (set-union (list->set (vector->list general-registers))
-				 (set 'rax 'rsp 'rbp '__flag)))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
@@ -122,10 +106,9 @@
     ;; Choose the first available color
     (define (choose-color v unavail-colors)
       (let loop ([c 0])
-	(cond [(set-member? unavail-colors c) (loop (add1 c))]
-	      [else
-	       (cond [(> c largest-color) (set! largest-color c)])
-	       c])))
+	(cond [(set-member? unavail-colors c) 
+	       (loop (add1 c))]
+	      [else c])))
 
     (define variable-size 8)
     (define first-offset 16)
@@ -138,6 +121,7 @@
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 
     (define/public (allocate-homes G xs ss)
+      (set! largest-color 0)
       (define unavail-colors (make-hash)) ;; pencil marks
       (define (compare u v) 
 	(>= (set-count (hash-ref unavail-colors u))
@@ -159,6 +143,7 @@
       (while (> (pqueue-count Q) 0)
 	     (define v (pqueue-pop! Q))
 	     (define c (choose-color v (hash-ref unavail-colors v)))
+	     (cond [(> c largest-color) (set! largest-color c)])
 	     (hash-set! color v c)
 	     (for ([u (adjacent G v)])
 		  (when (not (set-member? registers u))
@@ -169,11 +154,16 @@
       (define homes
 	(make-hash (for/list ([x xs])
 			     (cons x (identify-home (hash-ref color x))))))
+      ;;(printf "largest color: ~a" largest-color)(newline)
+      (define num-spills 
+	(max 0 (- (add1 largest-color) (vector-length general-registers))))
+      ;;(printf "num spills: ~a" num-spills)(newline)
       (define stack-size
-	(cond [(< largest-color (vector-length general-registers))
-	       first-offset]
-	      [else (- largest-color (vector-length general-registers))]))
-      (values homes stack-size))
+	(+ (send this first-offset)
+	   (align (* num-spills (send this variable-size)) 16)))
+      ;;(printf "stack size: ~a" stack-size)(newline)
+      ;;(printf "aligned stack size: ~a" (align stack-size 16))(newline)
+      (values homes (align stack-size 16)))
 
     (define/public (allocate-registers)
       (lambda (ast)

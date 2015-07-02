@@ -218,7 +218,8 @@
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes G locals ss))
 	    (define new-ss (map (send this assign-locations homes) ss))
-	    `(program ,(+ stk-size (* 8 max-stack)) ,new-ds ,@new-ss)]
+	    `(program ,(align (+ stk-size (* 8 max-stack)) 16)
+		      ,new-ds ,@new-ss)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

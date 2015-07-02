@@ -30,7 +30,7 @@
        (debug "running compiler" name)
        (compiler (format "tests/~a.scm" test-name))
        (debug "finished compiling" name)
-       (if (system (format "gcc runtime.o tests/~a.s" test-name))
+       (if (system (format "gcc -g runtime.o tests/~a.s" test-name))
 	   (void) (exit))
 
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
@@ -45,29 +45,31 @@
   (newline)(display "tests passed")(newline)
   )
 
-(when #t
+(define s0_range (range 1 16))
+(define s1_range (range 1 19))
+(define s2_range (range 1 6))
+(define s3_range (range 1 5))
 
 (test-compiler "int_exp" (compile-file int-exp-passes)
 	       (check-passes "int_exp" int-exp-passes) 
-  	       "s0" (range 1 13))
+  	       "s0" s0_range)
 
 (test-compiler "reg_int_exp" (compile-file reg-int-exp-passes)
 	       (check-passes "reg_int_exp" reg-int-exp-passes) 
-   	       "s0" (range 1 13))
+   	       "s0" s0_range)
 
 (test-compiler "conditionals" (compile-file conditionals-passes) 
 	       (check-passes "conditionals" conditionals-passes) 
-  	       "s0" (range 1 13))
+  	       "s0" s0_range)
 (test-compiler "conditionals" (compile-file conditionals-passes)
 	       (check-passes "conditionals" conditionals-passes) 
-  	       "s1" (range 1 19))
+  	       "s1" s1_range)
 
 (test-compiler "vectors" (compile-file vectors-passes)
 	       (check-passes "vectors" vectors-passes) 
-  	       "s2" (range 1 6))
+  	       "s2" s2_range)
 
 (test-compiler "functions" (compile-file functions-passes)
 	       (check-passes "functions" functions-passes) 
-  	       "s3" (range 1 5))
+  	       "s3" s3_range)
 
-)

@@ -4,7 +4,7 @@
 	 compile compile-file check-passes fix while 
 	 make-graph add-edge adjacent
 	 general-registers caller-save callee-save arg-registers
-	 register->color registers)
+	 register->color registers align)
 
 (define debug-state #f)
 
@@ -120,13 +120,21 @@
 	  (newline))
 	(void))))
 
+
+;; System V Application Binary Interface
+;; AMD64 Architecture Processor Supplement
+;; Edited by Jan Hubicˇka, Andreas Jaeger, Mark Mitchell
+;; December 2, 2003
+
 (define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
 
-(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r12))
-(define callee-save (set 'rbx 'r10 'r11 'r13 'r14 'r15))
+(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11 ))
+(define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
 
+;; there are 13 general registers:
 (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
-    				  'r8 'r9 'r10 'r11 'r12 'r13 'r14 'r15))
+    				  'r8 'r9 'r10 'r11 'r12 
+				  'r13 'r14 'r15))
 (define reg-colors
   '((rax . -1) (__flag . -1)
     (rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
@@ -138,6 +146,12 @@
 
 (define registers (set-union (list->set (vector->list general-registers))
 			     (set 'rax 'rsp 'rbp '__flag)))
+
+(define (align n alignment)
+  (cond [(eq? 0 (modulo n alignment))
+	 n]
+	[else
+	 (+ n (- alignment (modulo n alignment)))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Graph ADT

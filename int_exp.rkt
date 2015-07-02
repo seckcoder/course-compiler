@@ -146,7 +146,10 @@
 			      (map make-stack-loc
 				   (stream->list (in-range 0 (length xs)))))))
 	    (define stack-space (+ (send this first-offset)
-				   (* (length xs) (send this variable-size))))
+				   (align 
+				    (* (length xs)
+				       (send this variable-size))
+				    16)))
 	    `(program ,stack-space
 		      ,@(map (send this assign-locations new-homes) ss))]
 	   [`(,instr-name ,as ...) 
