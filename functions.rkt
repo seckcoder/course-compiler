@@ -285,7 +285,13 @@
 (define functions-passes
   (let ([compiler (new compile-S3)]
 	[interp (new interp-S3)])
-    (list `("programify" ,(lambda (ast) ast)
+    (list `("programify"
+	    ,(lambda (ast) 
+	       (match ast
+		  [`(program ,ds ... ,body)
+		   `(program ,@ds ,body)]
+		  [else ;; for backwards compatibility with S0 thru S2
+		   `(program ,ast)]))
 	    ,(send interp interp-scheme '()))
 	  `("type-check" ,(send compiler type-check '())
 	    ,(send interp interp-scheme '()))
