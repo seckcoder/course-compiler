@@ -50,21 +50,22 @@
 (define s2_range (range 1 6))
 (define s3_range (range 1 5))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "int_exp" (compile-file int-exp-passes)
 	       (check-passes "int_exp" int-exp-passes) 
   	       "s0" s0_range)
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "reg_int_exp" (compile-file reg-int-exp-passes)
 	       (check-passes "reg_int_exp" reg-int-exp-passes) 
    	       "s0" s0_range)
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "conditionals" (compile-file conditionals-passes) 
 	       (check-passes "conditionals" conditionals-passes) 
   	       "s0" s0_range)
 (test-compiler "conditionals" (compile-file conditionals-passes)
 	       (check-passes "conditionals" conditionals-passes) 
   	       "s1" s1_range)
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "vectors" (compile-file vectors-passes)
 	       (check-passes "vectors" vectors-passes) 
   	       "s0" s0_range)
@@ -74,7 +75,7 @@
 (test-compiler "vectors" (compile-file vectors-passes)
 	       (check-passes "vectors" vectors-passes) 
   	       "s2" s2_range)
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "functions" (compile-file functions-passes)
 	       (check-passes "functions" functions-passes) 
   	       "s0" s0_range)
@@ -87,4 +88,5 @@
 (test-compiler "functions" (compile-file functions-passes)
 	       (check-passes "functions" functions-passes) 
   	       "s3" s3_range)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
