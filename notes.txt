@@ -67,7 +67,7 @@ Type System
 |- (vector-set! e_1 i e_2) : Void
 
 --------------------------------------------------------------------------------
-Functions (functions.rkt)
+Functions (functions.rkt) (second-class)
 
 p ::= (program d ... e)
 d ::= (define (f [x : T] ...) : T e)
@@ -132,7 +132,7 @@ e ::= ...
       (set-mcdr! e e)
 
 --------------------------------------------------------------------------------
-Parametric Polymorphism
+Parametric Polymorphism (strech goal)
 
 
 --------------------------------------------------------------------------------
