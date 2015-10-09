@@ -87,7 +87,7 @@ idea:
   
 
 --------------------------------------------------------------------------------
-First-Class Functions
+First-Class Functions (lambda.rkt)
 
 T ::= Integer | Boolean | (Vectorof T) | (T ... -> T)
 e ::= ...
