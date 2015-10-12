@@ -101,7 +101,7 @@ idea:
   
 
 --------------------------------------------------------------------------------
-First-Class Functions
+First-Class Functions (lambda.rkt)
 
 e ::= ...
     | (lambda: ([x1 : T1] ... [xn : Tn]) : T e)
