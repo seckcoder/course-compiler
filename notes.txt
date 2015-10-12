@@ -67,12 +67,26 @@ Type System
 |- (vector-set! e_1 i e_2) : Void
 
 --------------------------------------------------------------------------------
-Functions (functions.rkt) (second-class)
+Functions (functions.rkt) (top-level functions)
 
+T ::= Integer | Boolean | (Vectorof T) | (T1 ... Tn -> T)
 p ::= (program d ... e)
 d ::= (define (f [x : T] ...) : T e)
 e ::= ...
-    | (f e ...)
+    | (e0 e1 ... en)
+
+Γ,x1 : T1, ..., xn : Tn ⊢ e : T
+------------------------------------------------------------------
+Γ ⊢ (define (f [x1 : T1] ... [xn : Tn]) : T e) : (T1 ... Tn -> T)
+
+where Γ is the top-level environment obtained by collecting
+all of the types for the defines.
+
+
+Γ ⊢ e0 : (T1 ... Tn -> T)       for i ∈ 1..n, Γ ⊢ ei : Ti 
+---------------------------------------------------------
+Γ ⊢ (e0 e1 ... en) : T
+
 
 --------------------------------------------------------------------------------
 Garbage Collection (Copying Collector)
@@ -89,10 +103,13 @@ idea:
 --------------------------------------------------------------------------------
 First-Class Functions
 
-T ::= Integer | Boolean | (Vectorof T) | (T ... -> T)
 e ::= ...
-    | (lambda: ([x : T] ...) e) 
+    | (lambda: ([x1 : T1] ... [xn : Tn]) : T e)
     | (e e ...)
+
+Γ, x1 : T1, ..., xn : Tn ⊢ e : T
+----------------------------------------------------------------
+Γ ⊢ (lambda: ([x1 : T1] ... [xn : Tn]) : T e) : (T1 ... Tn -> T)
 
 --------------------------------------------------------------------------------
 Type dynamic
