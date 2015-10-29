@@ -8,6 +8,9 @@ long int read_int() {
   return i;
 }
 
+static void copy_vector(ptr* vec, ptr* free_ptr);
+static void process_vector(ptr* scan_ptr, ptr* free_ptr);
+
 /*
   Garbage collection via copying collection.
 
@@ -153,11 +156,11 @@ ptr collect(long int bytes_requested, ptr rootstack_ptr)
   return free_ptr;
 }
 
-inline int is_forwarding(long int tag) {
+static inline int is_forwarding(long int tag) {
   return (tag & 1) == 0;
 }
 
-inline long int six_ones() {
+static inline long int six_ones() {
   long int all_ones = ~0;
   long int six_zeroes = all_ones << 6;
   return ~six_zeroes;
