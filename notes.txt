@@ -92,13 +92,19 @@ all of the types for the defines.
 Garbage Collection (Copying Collector)
 
 idea:
-  * Put pointers (GC roots) on a separate stack to differentiate from non-pointers.
-  * We still need to have type information about the objects on the heap to facilitate
-    recursively exploring them during collection.
-    - Create a table for type information, with a unique natural number for each type,
-      assigned during compilation.
-      Allocate the table during initialization of the program.
-  
+  * Put pointers (GC roots) on a separate stack to differentiate from 
+    non-pointers. At this stage in the compiler, the only heap-allocated 
+    things are vectors. So we're putting vectors (which are pointers) onto 
+    the separate stack.
+
+  * We still need to have type information about the objects on the heap 
+    to facilitate recursively exploring them during collection.
+    Here's a couple options:
+    1. Create a table for type information, with a unique natural number for 
+       each type, assigned during compilation.
+       Allocate the table during initialization of the program.
+    2. Add a bitmask at the front of each vector that indicates 
+       which elements are pointers to the heap and which ones are not.
 
 --------------------------------------------------------------------------------
 First-Class Functions (lambda.rkt)
