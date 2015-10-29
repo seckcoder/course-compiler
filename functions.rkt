@@ -12,6 +12,20 @@
       (set-union (send this primitives)
 		 (set 'if 'let 'define 'program)))
 
+    (define (fun-def-name d)
+      (match d
+	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+	  f]
+	 [else (error "ill-formed function definition")]))
+      
+    (define (fun-def-type d)
+      (match d
+	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+	  `(,@ps -> ,rt)]
+	 [else (error "ill-formed function definition")]))
+      
+
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S3 -> S3 (for programs)
     ;; type-check : env -> S3 -> type (for expressions)
@@ -30,12 +44,8 @@
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	    ((send this type-check (append (map cons xs ps) env)) body)]
 	   [`(program ,ds ... ,body)
-	    (define new-env
-	      (for/list ([d ds])
-	         (match d
-                    [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-		     `(,f . (,@ps -> ,rt))]
-		    [else (error "type-check, ill-formed function def")])))
+	    (define new-env (for/list ([d ds]) 
+				      (cons (fun-def-name d) (fun-def-type d))))
 	    (for ([d ds])
 	       ((send this type-check new-env) d))
 	    ((send this type-check new-env) body)
@@ -75,12 +85,6 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; reveal functions and application
 
-    (define (function-def-name d)
-      (match d
-	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	  f]
-	 [else (error "ill-formed function definition")]))
-      
     (define/public (reveal-functions funs)
       (lambda (e)
 	(let ([recur (send this reveal-functions funs)])
@@ -99,7 +103,7 @@
 	     [`(define (,f ,params ...) : ,rt ,body)
 	      `(define (,f ,@params) : ,rt ,(recur body))]
 	     [`(program ,ds ... ,body)
-	      (define funs (for/list ([d ds]) (function-def-name d)))
+	      (define funs (for/list ([d ds]) (fun-def-name d)))
 	      `(program ,@(map (send this reveal-functions funs) ds)
 			,((send this reveal-functions funs) body))]
 	     [`(,op ,es ...) #:when (set-member? (send this primitives) op)
