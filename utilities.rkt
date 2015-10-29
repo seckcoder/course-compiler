@@ -1,6 +1,6 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 make-dispatcher assert 
+(provide debug map2 lookup make-dispatcher assert 
 	 compile compile-file check-passes fix while 
 	 make-graph add-edge adjacent
 	 general-registers caller-save callee-save arg-registers
@@ -31,6 +31,12 @@
          (let-values ([(x1 x2) (f (car ls))]
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
+
+(define lookup
+  (lambda (x ls)
+    (cond [(assq x ls) => cdr]
+	  [else
+	   (error "lookup failed for " x)])))
 
 (define (make-dispatcher mt)
   (lambda (e . rest)

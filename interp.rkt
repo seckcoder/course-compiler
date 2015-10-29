@@ -6,7 +6,7 @@
 (define program (make-parameter '()))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S0
+;; Interpreters for S0: integer arithmetic and 'let'
 
 (define interp-S0
   (class object%
@@ -29,8 +29,7 @@
       (lambda (ast)
 	(match ast
            [(? symbol?)
-	    (cond [(assq ast env) => (lambda (p) (cdr p))]
-		  [else (error "interp-scheme S0, undefined variable " ast)])]
+	    (lookup ast env)]
 	   [(? integer?) ast]
 	   [`(let ([,x ,e]) ,body)
 	    (let ([v ((send this interp-scheme env) e)])
@@ -63,8 +62,7 @@
       (lambda (ast)
 	(match ast
            [(? symbol?)
-	    (cond [(assq ast env) => cdr]
-		  [else (error "in interp-C0, undefined variable " ast)])]
+	    (lookup ast env)]
 	   [(? integer?) ast]
 	   [`(assign ,x ,e)
 	    (let ([v ((send this interp-C env) e)])
@@ -76,8 +74,7 @@
 	      (cons (cons result v) env))]
 	   [`(program ,xs ,ss ...)
 	    (define env ((send this seq-C '()) ss))
-	    (cond [(assq result env) => cdr]
-		  [else (error "missing return statement")])]
+	    (lookup result env)]
 	   [`(,op ,args ...) #:when (set-member? (send this primitives) op)
 	    (apply (interp-op op) (map (send this interp-C env) args))]
 	   [else
@@ -109,8 +106,7 @@
       (lambda (ast)
 	(match ast
 	   [(or `(var ,x) `(register ,x) `(stack-loc ,x))
-	    (cond [(assq x env) => cdr]
-		  [else (error "in interp-x86, undefined variable " x)])]
+	    (lookup x env)]
 	   [`(int ,n) n]
 	   ['()
 	    env]
@@ -127,8 +123,7 @@
 	    ((send this interp-x86 (cons (cons x v) env)) ss)]
 	   [`(program ,xs ,ss ...) 
 	    (let ([env ((send this interp-x86 '()) ss)])
-	      (cond [(assq 'rax env) => cdr]
-		    [else (error "in interp-x86, return rax absent")]))]
+	      (lookup 'rax env))]
 	   [`((,binary-op ,s ,d) . ,ss)
 	    (let ([s ((send this interp-x86 env) s)] 
 		  [d ((send this interp-x86 env) d)]
@@ -146,7 +141,7 @@
     )) ;; class interp-S0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S1
+;; Interpreters for S1: Booleans and conditionals
 
 (define interp-S1
   (class interp-S0
@@ -258,8 +253,7 @@
 	   [`((jmp ,label) . ,ss)
 	    ((send this interp-x86 env) (goto-label label (program)))]
 	   [`((je ,label) . ,ss)
-	    (let ([flag (cond [(assq '__flag env) => (lambda (p) (cdr p))]
-			      [else (error "flag not set before je")])])
+	    (let ([flag (lookup '__flag env)])
 	      (cond [(i2b flag)
 		     ((send this interp-x86 env) (goto-label label (program)))]
 		    [else ((send this interp-x86 env) ss)]))]
@@ -272,7 +266,7 @@
     ));; class interp-S1
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S2
+;; Interpreters for S2: Vectors
 
 (define interp-S2
   (class interp-S1
@@ -307,7 +301,7 @@
     ));; interp-S2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S3
+;; Interpreters for S3: functions
 
 
 (define interp-S3
@@ -315,20 +309,28 @@
     (super-new)
     (inherit-field result)
 
+    (define/public (non-apply-ast)
+      (set-union (send this primitives)
+		 (set 'if 'let 'define 'program)))
+
     (define/override (interp-scheme env)
       (lambda (ast)
+	(debug "interp-scheme: " ast)
 	(match ast
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	    (cons f `(lambda ,xs ,body))]
-	   [`(,f ,args ...) #:when (assq f env)
+	   [`(function-ref ,f)
+	    (lookup f env)]
+	   [`(app ,f ,args ...)
 	    (define new-args (map (send this interp-scheme env) args))
-	    (match (cdr (assq f env))
-	       [`(lambda (,xs ...) ,body)
-		(define new-env 
-		  (append (map cons xs new-args) env))
-		((send this interp-scheme new-env) body)]
-	       [else (error "interp-scheme, expected a funnction, not" 
-			    (cdr (assq f env)))])]
+	    (let ([f-val ((send this interp-scheme env) f)])
+	      (match f-val
+	         [`(lambda (,xs ...) ,body)
+		  (define new-env (append (map cons xs new-args) env))
+		  ((send this interp-scheme new-env) body)]
+		 [else (error "interp-scheme, expected a funnction, not" f-val)]))]
+	   [`(,f ,args ...) #:when (not (set-member? (send this non-apply-ast) f))
+	    ((send this interp-scheme env) `(app ,f ,@args))]
 	   [`(program ,ds ... ,body)
 	    (define new-env (map (send this interp-scheme '()) ds))
 	    ((send this interp-scheme new-env) body)]
@@ -340,23 +342,21 @@
 	(match ast
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
 	    (cons f `(lambda ,xs ,@ss))]
-	   [`(,f ,args ...) #:when (assq f env)
+	   [`(function-ref ,f)
+	    (lookup f env)]
+	   [`(app ,f ,args ...)
 	    (define new-args (map (send this interp-C env) args))
-	    (match (cdr (assq f env))
+	    (define f-val ((send this interp-C env) f))
+	    (match f-val
 	       [`(lambda (,xs ...) ,ss ...)
-		(define new-env 
-		  (append (map cons xs new-args) env))
-		(define result-env
-		  ((send this seq-C new-env) ss))
-		(cond [(assq result result-env) => cdr]
-		  [else (error "missing return statement")])]
-	       [else (error "interp-C, expected a funnction, not" 
-			    (cdr (assq f env)))])]
+		(define new-env (append (map cons xs new-args) env))
+		(define result-env ((send this seq-C new-env) ss))
+		(lookup result result-env)]
+	       [else (error "interp-C, expected a funnction, not" f-val)])]
 	   [`(program ,locals ,ds ,ss ...)
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
-	    (cond [(assq result result-env) => cdr]
-		  [else (error "missing return statement")])]
+	    (lookup result result-env)]
 	   [else ((super interp-C env) ast)]
 	   )))
 
@@ -372,51 +372,58 @@
 	 [else (super get-name ast)]
 	 ))
 
+    (define (call-function f-val ss env)
+      (match f-val
+	 [`(lambda ,n ,body-ss ...)
+	  ;; copy some register and stack locations over to new-env
+	  (define passing-regs
+	    (filter (lambda (p) p) (for/list ([r arg-registers])
+					     (assq r env))))
+	  (debug "passing regs" passing-regs)
+	  (define passing-stack
+	    (for/list ([i (in-range 
+			   0 (max 0 (- n (vector-length
+					  arg-registers))))])
+		      (define name (stack-arg-name (* i 8)))
+		      (define val (lookup name env))
+		      (define index (- (+ 16 (* i 8))))
+		      (cons index val)))
+	  (debug "passing stack" passing-stack)
+	  (define new-env (append passing-regs passing-stack env))
+	  (define result-env
+	    (parameterize ([program body-ss])
+			  ((send this interp-x86 new-env) body-ss)))
+	  (define res (lookup 'rax result-env))
+	  ((send this interp-x86 (cons (cons 'rax res) env)) ss)]
+	 [else (error "interp-x86, expected a funnction, not" f-val)]))
+      
     (define/override (interp-x86 env)
       (lambda (ast)
+	(debug "interp-x86: " ast)
 	(match ast
 	   [`(stack-arg ,n)
 	    (define x (stack-arg-name n))
-	    (cond [(assq x env) => cdr]
-		  [else (error "in interp-x86, undefined stack-arg " x)])]
+	    (lookup x env)]
+	   [`(function-ref ,f)
+	    (lookup f env)]
 	   [`(define (,f) ,n ,extra ,ss ...)
 	    (cons f `(lambda ,n ,@ss))]
-	   [`((call ,f) . ,ss) 
-	    #:when (not (set-member? (send this builtin-funs) f))
-	    (match (cdr (assq f env))
-	       [`(lambda ,n ,body-ss ...)
-		;; copy some register and stack locations over to new-env
-		(define passing-regs
-		  (filter (lambda (p) p) (for/list ([r arg-registers])
-						   (assq r env))))
-		(debug "passing regs" passing-regs)
-		(define passing-stack
-		  (for/list ([i (in-range 
-				 0 (max 0 (- n (vector-length
-						arg-registers))))])
-			    (define name (stack-arg-name (* i 8)))
-			    (define val
-			      (cond [(assq name env) => cdr]
-				    [else (error "passing stack undefined" (list n name))])) 
-			    (define index (- (+ 16 (* i 8))))
-			    (cons index val)))
-		(debug "passing stack" passing-stack)
-		(define new-env (append passing-regs passing-stack env))
-		(define result-env
-		  (parameterize ([program body-ss])
-		     ((send this interp-x86 new-env) body-ss)))
-		(define res (cond [(assq 'rax result-env) => cdr]
-				  [else (error "missing rax for return")]))
-		((send this interp-x86 (cons (cons 'rax res) env)) ss)]
-	       [else (error "interp-x86, expected a funnction, not" 
-			    (cdr (assq f env)))])
-	    ]
+	   ;; Treat lea like mov -Jeremy
+	   [`((lea ,s ,d) . ,ss)
+	    (define x (send this get-name d))
+	    (define v ((send this interp-x86 env) s))
+	    ((send this interp-x86 (cons (cons x v) env)) ss)]
+
+	   [`((indirect-call ,f) . ,ss)
+	    (define f-val ((send this interp-x86 env) f))
+	    (call-function f-val ss env)]
+	   [`((call ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
+	    (call-function (lookup f env) ss env)]
 	   [`(program ,extra ,ds ,ss ...)
 	    (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
-	       (cond [(assq 'rax result-env) => cdr]
-		     [else (error "missing rax for return")]))]
+	       (lookup 'rax result-env))]
 	   [else ((super interp-x86 env) ast)]
 	   )))
 

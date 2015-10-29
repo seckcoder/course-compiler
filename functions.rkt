@@ -7,15 +7,20 @@
 (define compile-S3
   (class compile-S2
     (super-new)
-    
+
+    (define/public (non-apply-ast)
+      (set-union (send this primitives)
+		 (set 'if 'let 'define 'program)))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; type-check : env -> S3 -> S3
+    ;; type-check : env -> S3 -> S3 (for programs)
+    ;; type-check : env -> S3 -> type (for expressions)
     (define/override (type-check env)
       (lambda (e)
 	(match e
-	   [`(,f ,es ...) #:when (and (symbol? f) (assq f env))
+	   [`(,f ,es ...) #:when (not (set-member? (send this non-apply-ast) f))
 	    (define t-args (map (send this type-check env) es))
-	    (define f-t (cdr (assq f env)))
+	    (define f-t ((send this type-check env) f))
 	    (match f-t
 	       [`(,ps ... -> ,rt)
 		(unless (equal? t-args ps)
@@ -40,12 +45,13 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S3 -> S3
+
     (define/override (uniquify env)
       (lambda (e)
 	(match e
-	   [`(,f ,es ...) #:when (and (symbol? f) (assq f env))
+	   [`(,f ,es ...) #:when (not (set-member? (send this non-apply-ast) f))
 	    (define new-es (map (send this uniquify env) es))
-	    (define new-f (cdr (assq f env)))
+	    (define new-f ((send this uniquify env) f))
 	    `(,new-f ,@new-es)]
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	    (define new-xs (map gensym xs))
@@ -67,6 +73,43 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; reveal functions and application
+
+    (define (function-def-name d)
+      (match d
+	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+	  f]
+	 [else (error "ill-formed function definition")]))
+      
+    (define/public (reveal-functions funs)
+      (lambda (e)
+	(let ([recur (send this reveal-functions funs)])
+        (define ret
+	  (match e
+	     [(? number?) e]
+	     [(? symbol?)
+	      (cond [(memq e funs) `(function-ref ,e)]
+		    [else e])]
+	     [`(let ([,x ,e]) ,body)
+	      `(let ([,x ,(recur e)]) ,(recur body))]
+	     [#t #t]
+	     [#f #f]
+	     [`(if ,cnd ,thn ,els)
+	      `(if ,(recur cnd) ,(recur thn) ,(recur els))]
+	     [`(define (,f ,params ...) : ,rt ,body)
+	      `(define (,f ,@params) : ,rt ,(recur body))]
+	     [`(program ,ds ... ,body)
+	      (define funs (for/list ([d ds]) (function-def-name d)))
+	      `(program ,@(map (send this reveal-functions funs) ds)
+			,((send this reveal-functions funs) body))]
+	     [`(,op ,es ...) #:when (set-member? (send this primitives) op)
+	      `(,op ,@(map recur es))]
+	     [`(,f ,es ...)
+	      `(app ,(recur f) ,@(map recur es))]
+	     ))
+	ret)))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S3 -> C3-expr x (C3-stmt list)
 
     (define (flatten-body body)
@@ -86,13 +129,14 @@
 	    (define-values (locals new-body) (flatten-body body))
 	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs ps)) : ,rt ,locals
 			 ,@new-body)]
-	   [`(,f ,es ...) 
-	    #:when (and (symbol? f) 
-			(not (set-member? (set 'if 'let) f))
-			(not (set-member? (send this primitives) f)))
+	   [`(function-ref ,f)
+	    (define tmp (gensym 'tmp))
+	    (values tmp (list `(assign ,tmp (function-ref ,f))))]
+	   [`(app ,f ,es ...) 
+	    (define-values (new-f f-ss) ((send this flatten #t) f))
 	    (define-values (new-es sss) (map2 (send this flatten #t) es))
-	    (define ss (append* sss))
-	    (define fun-apply `(,f ,@new-es))
+	    (define ss (append f-ss (append* sss)))
+	    (define fun-apply `(app ,new-f ,@new-es))
 	    (cond [need-atomic
 		   (define tmp (gensym 'tmp))
 		   (values tmp (append ss `((assign ,tmp ,fun-apply))))]
@@ -127,10 +171,12 @@
 	    ;; parameters become locals
 	    `(define (,f) ,(length xs) (,(append xs locals) ,max-stack)
 	       ,@new-ss)]
-	   [`(assign ,lhs (,f ,es ...))
-	    #:when (and (symbol? f) 
-			(not (set-member? (send this primitives) f)))
+	   [`(assign ,lhs (function-ref ,f))
 	    (define new-lhs ((send this select-instructions) lhs))
+	    `((lea (function-ref ,f) ,new-lhs))]
+	   [`(assign ,lhs (app ,f ,es ...))
+	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-f ((send this select-instructions) f))
 	    (define new-es (map (send this select-instructions) es))
 	    (define n (vector-length arg-registers))
 	    (define-values (first-args last-args) 
@@ -144,7 +190,7 @@
 	         `(mov ,arg (stack-arg ,(* i 8)))))
 	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
-	     `((call ,f) (mov (register rax) ,new-lhs)))]
+	     `((indirect-call ,new-f) (mov (register rax) ,new-lhs)))]
 	   [`(program ,locals ,ds ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
@@ -155,6 +201,18 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
+
+    (define/override (read-vars instr)
+      (match instr
+         [`(lea ,s ,d) (send this free-vars s)]
+	 [`(indirect-call ,f) (send this free-vars f)]
+     	 [else (super read-vars instr)]))
+
+    (define/override (write-vars instr)
+      (match instr
+	 [`(indirect-call ,f) caller-save]
+	 [`(lea ,s ,d)  (send this free-vars d)]
+     	 [else (super write-vars instr)]))
 
     (define/override (uncover-live live-after)
       (lambda (ast)
@@ -195,11 +253,18 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
+
+    (define/override (instructions)
+      (set-union (super instructions)
+		 (set 'lea)))
+
     (define/override (assign-locations homes)
       (lambda (e)
 	(match e
 	   [`(stack-loc ,i) `(stack-loc ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
+	   [`(indirect-call ,f) `(indirect-call ,((send this assign-locations homes) f))]
+	   [`(function-ref ,f) `(function-ref ,f) ]
 	   [else ((super assign-locations homes) e)]
 	   )))
 
@@ -231,6 +296,8 @@
 	   [`(define (,f) ,n ,stack-space ,ss ...)
 	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
+	   [`(indirect-call ,f)
+	    `((indirect-call ,f))]
 	   [`(program ,stack-space ,ds ,ss ...)
 	    (define new-ds (for/list ([d ds])
 				     ((send this insert-spill-code) d)))
@@ -244,6 +311,10 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
+	   [`(function-ref ,f)
+	    (format "~a(%rip)" f)]
+	   [`(indirect-call ,f)
+	    (format "\tcallq\t*~a\n" ((send this print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
 	   [`(define (,f) ,n ,stack-space ,ss ...)
@@ -296,6 +367,8 @@
 	  `("type-check" ,(send compiler type-check '())
 	    ,(send interp interp-scheme '()))
 	  `("uniquify" ,(send compiler uniquify '())
+	    ,(send interp interp-scheme '()))
+	  `("reveal-functions" ,(send compiler reveal-functions '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
 	    ,(send interp interp-C '()))

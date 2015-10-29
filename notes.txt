@@ -67,7 +67,7 @@ Type System
     Γ ⊢ (vector-set! e_1 i e_2) : Void
 
 --------------------------------------------------------------------------------
-Functions (functions.rkt) (top-level functions)
+S3: Functions (functions.rkt) (top-level functions)
 
 T ::= Integer | Boolean | (Vectorof T) | (T1 ... Tn -> T)
 p ::= (program d ... e)

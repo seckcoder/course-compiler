@@ -17,7 +17,7 @@
     (define/public (type-check env)
       (lambda (e)
 	(match e
-	   [(? symbol?) (cdr (assq e env))]
+	   [(? symbol?) (lookup e env)]
 	   [(? integer?) 'Integer]
 	   [`(let ([,x ,e]) ,body)
 	    (let ([T ((send this type-check env) e)])
@@ -142,8 +142,7 @@
 	(match e
 	   [#t `(int 1)]
 	   [#f `(int 0)]
-	   [`(assign ,lhs ,b)
-	    #:when (boolean? b)
+	   [`(assign ,lhs ,b) #:when (boolean? b)
 	    (let ([lhs ((send this select-instructions) lhs)]
 		  [b ((send this select-instructions) b)])
 	      `((mov ,b ,lhs)))]
