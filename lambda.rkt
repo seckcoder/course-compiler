@@ -16,8 +16,7 @@
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S4 -> S4
-
-    ;; How do I test just this? Is there a way?
+    ;; How do I test individual methods? Is there a way?
     (define/override (type-check env)
       (lambda (e)
         (match e
@@ -40,13 +39,27 @@
     ;; - would it be beneficial to just list first-class functions into `define`s now?
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; lift-lambda : env -> S4 -> S3
+    ;; Do I want to lift ALL (including ones that appear in define bodies)
+    ;; - Does order of defines matter?
+    ;; - How do I lift curried functions?
+    ;; - (Yes) -> `dep` refers to dependency
+    ;; - (No)  -> I'll rewrite this
     (define/public (lift-lambda env)
       (lambda (e)
         (match e
-          [`(,f ,arg* ...) #:when (not (set-member? (send this non-apply-ast) e))
-           (define new-f )]
-          [`(lambda ([,x : ,T] ...) : ,rT ,body) ...]
-          [`(program ,d* ... ,body)]
+          [`(,f ,arg ...) #:when (not (set-member? (send this non-apply-ast) e))
+           ...]
+          [`(define (,f ,fml ...) : ,rT ,body)
+           ...]
+          [`(lambda ,fml : ,rT ,body)
+           (define abs-name (gensym))
+           (define-values (new-b b-dep) ((send this lift-lambda env) body))
+           (values `(define (,abs-name ,fml ...) : ,rT ,new-b) b-dep)]
+          [`(program ,d ... ,body)
+           (define-values (new-d d-dep) (map (send this lift-lambda env) d))
+           (define-values (new-b b-dep) ((send this lift-lambda env) body))
+           (define final-ds (append d-dep b-dep new-d))
+           `(program ,final-ds new-b)]
           )))
     ))
 
