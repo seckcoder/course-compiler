@@ -19,10 +19,11 @@
     ;; How do I test individual methods? Is there a way?
     (define/override (type-check env)
       (lambda (e)
+        (define (recur e) (send this type-check env))
         (match e
           [`(,e ,e* ...) #:when (not (set-member? (send this non-apply-ast) e))
-           (define ran-type* (map (send this type-check env) e*))
-           (define rat-type ((send this type-check env) e))
+           (define ran-type* (map recur e*))
+           (define rat-type (recur e))
            (match rat-type
              [`(,fml* ... -> ,rT)
               (unless (equal? ran-type* fml*)
@@ -31,7 +32,6 @@
              [else (error "expected a function, not" e)])]
           [`(lambda: ([,x : ,T] ...) : ,rT ,body)
            ((send this type-check (append (map cons x T) env)) body)]
-          ;; other ASTs handled by super-class (hopefully)
           [else ((super type-check env) e)]
           )))
 
@@ -46,21 +46,27 @@
     ;; - (No)  -> I'll rewrite this
     (define/public (lift-lambda env)
       (lambda (e)
+        (define (recur e) (send this lift-lambda env))
         (match e
-          [`(,f ,arg ...) #:when (not (set-member? (send this non-apply-ast) e))
-           ...]
-          [`(define (,f ,fml ...) : ,rT ,body)
-           ...]
-          [`(lambda ,fml : ,rT ,body)
+          [`((lambda ,fml* : ,rT ,body) ,arg*)
            (define abs-name (gensym))
-           (define-values (new-b b-dep) ((send this lift-lambda env) body))
-           (values `(define (,abs-name ,fml ...) : ,rT ,new-b) b-dep)]
+           (define-values (new-b b-dep) (recur body))
+           (values `(,abs-name ,@arg*) b-dep)]
+          [`(lambda ,fml* : ,rT ,body)
+           (define abs-name (gensym))
+           (define-values (new-b b-dep) (recur body))
+           (values `(define (,abs-name ,@fml*) : ,rT ,new-b) b-dep)]
+          [`(define (,f ,fml ...) : ,rT ,body)
+           (define-values (new-b b-dep) (recur body))
+           (values `(define (,f ,@fml) : ,rT ,new-b) b-dep)]
           [`(program ,d ... ,body)
-           (define-values (new-d d-dep) (map (send this lift-lambda env) d))
-           (define-values (new-b b-dep) ((send this lift-lambda env) body))
+           (define-values (new-d d-dep) (map recur d))
+           (define-values (new-b b-dep) (recur body))
            (define final-ds (append d-dep b-dep new-d))
            `(program ,final-ds new-b)]
           )))
+
+    ;; theoretically, this is done.
     ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -68,4 +74,4 @@
 (define lambda-passes
   (let ([compiler (new compile-S4)]
         [interp (new interp-S4)])
-    (list 5)))
+    (list 'idk?)))
