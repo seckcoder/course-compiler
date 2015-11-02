@@ -6,13 +6,6 @@
 (define compile-S4
   (class compile-S3
     (super-new)
-
-    ;; from `functions.rkt`
-    ;; - where is `primitives` defined?
-    ;; - do I even need to include this?
-    (define/public (non-apply-ast)
-      (set-union (send this primitives)
-        	 (set 'if 'let 'define 'program)))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S4 -> S4
@@ -34,6 +27,11 @@
            ((send this type-check (append (map cons x T) env)) body)]
           [else ((super type-check env) e)]
           )))
+
+    ;; - Lift implicit lambdas from `define` bodies
+    ;; - add FVs parameter
+
+    ;; - applying function pointers using `functions.rkt`
 
     ;; - What do I have to uniquify for first-class functions?
     ;; - would it be beneficial to just list first-class functions into `define`s now?
