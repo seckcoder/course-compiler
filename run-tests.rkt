@@ -45,7 +45,7 @@
   (newline)(display "tests passed")(newline)
   )
 
-(define s0_range (range 1 17))
+(define s0_range (range 1 21))
 (define s1_range (range 1 19))
 (define s2_range (range 1 6))
 (define s3_range (range 1 8))
@@ -54,6 +54,7 @@
 (test-compiler "int_exp" (compile-file int-exp-passes)
 	       (check-passes "int_exp" int-exp-passes) 
   	       "s0" s0_range)
+(if #f (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "reg_int_exp" (compile-file reg-int-exp-passes)
 	       (check-passes "reg_int_exp" reg-int-exp-passes) 
@@ -90,3 +91,4 @@
   	       "s3" s3_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+) '())

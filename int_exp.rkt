@@ -124,7 +124,7 @@
     ;; will assign some variables to registers. 
 
     (define/public (variable-size) 8)
-    (define/public (first-offset) 16)
+    (define/public (first-offset) 8)
 
     (define/public (instructions)
       (set 'add 'sub 'imul 'neg 'mov))
@@ -145,11 +145,10 @@
 	      (make-hash (map cons xs
 			      (map make-stack-loc
 				   (stream->list (in-range 0 (length xs)))))))
-	    (define stack-space (+ (send this first-offset)
-				   (align 
-				    (* (length xs)
-				       (send this variable-size))
-				    16)))
+	    (define stack-space (align 
+				 (* (length xs)
+				    (send this variable-size))
+				 16))
 	    `(program ,stack-space
 		      ,@(map (send this assign-locations new-homes) ss))]
 	   [`(,instr-name ,as ...) 
@@ -190,6 +189,7 @@
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
+		   (debug 'spill-code "spilling")
 		   `((mov ,s (register rax)) (,instr-name (register rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
 	   [`(,instr-name ,d)
