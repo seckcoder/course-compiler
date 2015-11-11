@@ -112,12 +112,12 @@
 	      [else c])))
 
     (define variable-size 8)
-    (define first-offset 16)
+    (define first-offset 8)
 
     (define (identify-home c)
-      (define n (vector-length general-registers))
+      (define n (vector-length registers-for-alloc))
       (cond [(< c n)
-	     `(register ,(vector-ref general-registers c))]
+	     `(register ,(vector-ref registers-for-alloc c))]
 	    [else 
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 
@@ -157,7 +157,7 @@
 			     (cons x (identify-home (hash-ref color x))))))
       ;;(printf "largest color: ~a" largest-color)(newline)
       (define num-spills 
-	(max 0 (- (add1 largest-color) (vector-length general-registers))))
+	(max 0 (- (add1 largest-color) (vector-length registers-for-alloc))))
       ;;(printf "num spills: ~a" num-spills)(newline)
       (define stack-size
 	(+ (send this first-offset)
