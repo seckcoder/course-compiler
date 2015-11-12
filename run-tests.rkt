@@ -58,7 +58,7 @@
 (test-compiler "reg_int_exp" (compile-file reg-int-exp-passes)
 	       (check-passes "reg_int_exp" reg-int-exp-passes) 
    	       "s0" s0_range)
-(if #t (begin
+(if #f (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "conditionals" (compile-file conditionals-passes) 
 	       (check-passes "conditionals" conditionals-passes) 

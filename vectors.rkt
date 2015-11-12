@@ -94,15 +94,18 @@
 
     (define/override (on-stack? a)
       (match a
-	 [`(offset ,e ,i) (send this on-stack? e)]
-	 [else #f]))
+	 [`(offset ,e ,i) #t]
+	 [else (super on-stack? a)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
     (define/override (print-x86)
       (lambda (e)
 	(match e
-	   [`(offset ,e ,i) (format "~a(~a)" i ((send this print-x86) e))]
+	   [`(offset (stack-loc ,n) ,i)
+	    (format "~a(%rbp)" (- i n))]
+	   [`(offset ,e ,i)
+	    (format "~a(~a)" i ((send this print-x86) e))]
 	   [else ((super print-x86) e)]
 	   )))
 

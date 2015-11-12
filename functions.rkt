@@ -267,7 +267,8 @@
 	(match e
 	   [`(stack-loc ,i) `(stack-loc ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
-	   [`(indirect-call ,f) `(indirect-call ,((send this assign-locations homes) f))]
+	   [`(indirect-call ,f)
+	    `(indirect-call ,((send this assign-locations homes) f))]
 	   [`(function-ref ,f) `(function-ref ,f) ]
 	   [else ((super assign-locations homes) e)]
 	   )))
@@ -294,6 +295,11 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; insert-spill-code : psuedo-x86 -> x86
 
+    (define/override (on-stack? a)
+      (match a
+	 [`(function-ref ,f) #t]
+	 [else (super on-stack? a)]))
+
     (define/override (insert-spill-code)
       (lambda (e)
 	(match e
@@ -307,6 +313,12 @@
 				     ((send this insert-spill-code) d)))
 	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
 	    `(program ,stack-space ,new-ds ,@(append* sss))]
+	   [`(lea ,s ,d)
+	    (cond [(on-stack? d)
+		   `((lea ,s (register rax))
+		     (mov (register rax) ,d))]
+		  [else
+		   `((lea ,s ,d))])]
 	   [else ((super insert-spill-code) e)]
 	   )))
 

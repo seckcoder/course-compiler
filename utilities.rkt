@@ -142,7 +142,8 @@
     				  'r8 'r9 'r10 'r11 'r12 
 				  'r13 'r14 'r15))
 
-(define registers-for-alloc general-registers)
+(define registers-for-alloc (vector 'rbx))
+;(define registers-for-alloc general-registers)
 
 
 (define reg-colors
