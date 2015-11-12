@@ -147,6 +147,7 @@
 	     (define c (choose-color v (hash-ref unavail-colors v)))
 	     (cond [(> c largest-color) (set! largest-color c)])
 	     (hash-set! color v c)
+	     (debug "colored " (cons v c))
 	     (for ([u (adjacent G v)])
 		  (when (not (set-member? registers u))
 			(hash-set! unavail-colors u

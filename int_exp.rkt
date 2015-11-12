@@ -78,6 +78,11 @@
 	 ['- 'neg] [else (error "in unary-op->inst unmatched" op)]
 	 ))
 
+    (define/public (commutative? op)
+      (match op
+         ['+ #t] ['* #t] 
+         [else #f]))
+
     (define/public (select-instructions)
       (lambda (e)
 	(match e
@@ -105,6 +110,10 @@
 		   `((,inst ,new-e2 ,new-lhs))]
 		  [(equal? new-e2 new-lhs)
 		   `((,inst ,new-e1 ,new-lhs))]
+		  ;; The following can shorten the live range of e2. -JGS
+		  [(and (send this commutative? op) 
+			(integer? e1) (symbol? e2))
+		   `((mov ,new-e2 ,new-lhs) (,inst ,new-e1 ,new-lhs))]
 		  [else `((mov ,new-e1 ,new-lhs) (,inst ,new-e2 ,new-lhs))])]
 	   [`(assign ,lhs (,op ,e1))	
 	    (define new-lhs ((send this select-instructions) lhs))
