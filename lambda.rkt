@@ -9,7 +9,6 @@
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S4 -> S4
-    ;; How do I test individual methods? Is there a way?
     (define/override (type-check env)
       (lambda (e)
         (define (recur e) (send this type-check env))
@@ -28,20 +27,8 @@
           [else ((super type-check env) e)]
           )))
 
-    ;; - Lift implicit lambdas from `define` bodies
-    ;; - add FVs parameter
-
-    ;; - applying function pointers using `functions.rkt`
-
-    ;; - What do I have to uniquify for first-class functions?
-    ;; - would it be beneficial to just list first-class functions into `define`s now?
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; lift-lambda : env -> S4 -> S3
-    ;; Do I want to lift ALL (including ones that appear in define bodies)
-    ;; - Does order of defines matter?
-    ;; - How do I lift curried functions?
-    ;; - (Yes) -> `dep` refers to dependency
-    ;; - (No)  -> I'll rewrite this
     (define/public (lift-lambda env)
       (lambda (e)
         (define (recur e) (send this lift-lambda env))
@@ -63,8 +50,6 @@
            (define final-ds (append d-dep b-dep new-d))
            `(program ,final-ds new-b)]
           )))
-
-    ;; theoretically, this is done.
     ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
