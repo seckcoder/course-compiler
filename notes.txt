@@ -46,6 +46,7 @@ Tuples (Racket Vectors) and heap allocation (vectors.rkt)
   [136 lines] (too easy?)
 
 (needed to represent closures)
+(do we need mutation here, or can that be delayed?)
 
 T ::= Integer | (Vector T_1 ... T_n) | Void
 e ::= ...

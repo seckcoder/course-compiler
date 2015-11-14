@@ -45,8 +45,8 @@
     (define/public (liveness-ss orig-live-after)
       (lambda (orig-ss)
 	(let loop ([ss (reverse orig-ss)] [live-after orig-live-after] 
-		   [lives '()] [new-ss '()])
-	  (cond [(null? ss) (values new-ss lives)]
+		   [lives (list orig-live-after)] [new-ss '()])
+	  (cond [(null? ss) (values new-ss (cdr lives))]
 		[else
 		 (define-values (new-s new-live-after)
 		   ((send this uncover-live live-after) (car ss)))
@@ -58,6 +58,7 @@
 	(match ast
            [`(program ,xs ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    (assert "lives ss size" (= (length lives) (length new-ss)))
 	    `(program (,xs ,lives) ,@new-ss)]
 	   [else
 	    (values ast (set-union (set-subtract live-after (write-vars ast))
@@ -74,13 +75,13 @@
 	   [`(mov ,s ,d)
 	    (for ([v live-after])
 		 (for ([d (write-vars `(mov ,s ,d))]
-		       #:when (not (or (eq? v s) (eq? v d))))
+		       #:when (not (or (equal? v s) (equal? v d))))
 		      (add-edge G d v)))
 	    ast]
 	   [`(call ,f)
 	    (for ([v live-after])
 		 (for ([u caller-save]
-		       #:when (not (eq? v u)))
+		       #:when (not (equal? v u)))
 		      (add-edge G u v)))
 	    ast]
            [`(program (,xs ,lives) ,ss ...)
@@ -91,7 +92,7 @@
 	    `(program (,xs ,G) ,@new-ss)]
 	   [else
 	    (for ([v live-after])
-		 (for ([d (write-vars ast)] #:when (not (eq? v d)))
+		 (for ([d (write-vars ast)] #:when (not (equal? v d)))
 		      (add-edge G d v)))
 	    ast])))
 
@@ -112,12 +113,12 @@
 	      [else c])))
 
     (define variable-size 8)
-    (define first-offset 16)
+    (define first-offset 8)
 
     (define (identify-home c)
-      (define n (vector-length general-registers))
+      (define n (vector-length registers-for-alloc))
       (cond [(< c n)
-	     `(register ,(vector-ref general-registers c))]
+	     `(register ,(vector-ref registers-for-alloc c))]
 	    [else 
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 
@@ -146,6 +147,7 @@
 	     (define c (choose-color v (hash-ref unavail-colors v)))
 	     (cond [(> c largest-color) (set! largest-color c)])
 	     (hash-set! color v c)
+	     (debug "colored " (cons v c))
 	     (for ([u (adjacent G v)])
 		  (when (not (set-member? registers u))
 			(hash-set! unavail-colors u
@@ -157,7 +159,7 @@
 			     (cons x (identify-home (hash-ref color x))))))
       ;;(printf "largest color: ~a" largest-color)(newline)
       (define num-spills 
-	(max 0 (- (add1 largest-color) (vector-length general-registers))))
+	(max 0 (- (add1 largest-color) (vector-length registers-for-alloc))))
       ;;(printf "num spills: ~a" num-spills)(newline)
       (define stack-size
 	(+ (send this first-offset)

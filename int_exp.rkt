@@ -78,6 +78,11 @@
 	 ['- 'neg] [else (error "in unary-op->inst unmatched" op)]
 	 ))
 
+    (define/public (commutative? op)
+      (match op
+         ['+ #t] ['* #t] 
+         [else #f]))
+
     (define/public (select-instructions)
       (lambda (e)
 	(match e
@@ -105,6 +110,10 @@
 		   `((,inst ,new-e2 ,new-lhs))]
 		  [(equal? new-e2 new-lhs)
 		   `((,inst ,new-e1 ,new-lhs))]
+		  ;; The following can shorten the live range of e2. -JGS
+		  [(and (send this commutative? op) 
+			(integer? e1) (symbol? e2))
+		   `((mov ,new-e2 ,new-lhs) (,inst ,new-e1 ,new-lhs))]
 		  [else `((mov ,new-e1 ,new-lhs) (,inst ,new-e2 ,new-lhs))])]
 	   [`(assign ,lhs (,op ,e1))	
 	    (define new-lhs ((send this select-instructions) lhs))
@@ -124,7 +133,7 @@
     ;; will assign some variables to registers. 
 
     (define/public (variable-size) 8)
-    (define/public (first-offset) 16)
+    (define/public (first-offset) 8)
 
     (define/public (instructions)
       (set 'add 'sub 'imul 'neg 'mov))
@@ -145,11 +154,10 @@
 	      (make-hash (map cons xs
 			      (map make-stack-loc
 				   (stream->list (in-range 0 (length xs)))))))
-	    (define stack-space (+ (send this first-offset)
-				   (align 
-				    (* (length xs)
-				       (send this variable-size))
-				    16)))
+	    (define stack-space (align 
+				 (* (length xs)
+				    (send this variable-size))
+				 16))
 	    `(program ,stack-space
 		      ,@(map (send this assign-locations new-homes) ss))]
 	   [`(,instr-name ,as ...) 
@@ -190,6 +198,7 @@
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
+		   (debug 'spill-code "spilling")
 		   `((mov ,s (register rax)) (,instr-name (register rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
 	   [`(,instr-name ,d)

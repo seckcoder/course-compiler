@@ -3,8 +3,8 @@
 (provide debug map2 lookup make-dispatcher assert 
 	 compile compile-file check-passes fix while 
 	 make-graph add-edge adjacent
-	 general-registers caller-save callee-save arg-registers
-	 register->color registers align)
+	 general-registers registers-for-alloc caller-save callee-save
+	 arg-registers register->color registers align)
 
 (define debug-state #f)
 
@@ -141,6 +141,11 @@
 (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
     				  'r8 'r9 'r10 'r11 'r12 
 				  'r13 'r14 'r15))
+
+(define registers-for-alloc (vector 'rbx))
+;(define registers-for-alloc general-registers)
+
+
 (define reg-colors
   '((rax . -1) (__flag . -1)
     (rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
