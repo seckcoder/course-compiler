@@ -4,3 +4,6 @@
 *.out
 *.dSYM
 *~
+*.aux
+*.log
+*.pdf
