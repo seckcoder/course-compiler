@@ -141,6 +141,8 @@ is tranformed into:
   (mov (var g31) (register rax))
   (add (var g30) (register rax)))
 \end{verbatim}
+
+Talk about the rules of converting {\tt assign} into {\tt mov} instructions.
 \subsubsection*{5. {\tt assign-instructions : Homes -> Pseudo-x86 -> Pseudo-x86}}
 \subsubsection*{6. {\tt insert-spill-code : Pseudo-x86 -> x86}}
 \subsubsection*{7. {\tt print-x86 : x86 -> String}}
