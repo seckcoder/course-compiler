@@ -31,7 +31,7 @@
 	   [else (error "uniquify couldn't match" e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; flatten : S0 -> C0-expr x (C0-stmt list)
+    ;; flatten : Bool -> S0 -> C0-expr x (C0-stmt list)
     (define/public (collect-locals)
       (lambda (ast)
 	(match ast
