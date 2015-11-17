@@ -115,12 +115,12 @@ wrapper (viz. {\tt g30,g31}).
 \subsection*{Pseudo-x86 to x86}
 \subsubsection*{4. {\tt select-instructions : C0 -> Pseudo-x86}}
 In this pass, we transform {\tt C0} into the pre-x86 IL {\tt Pseudo-x86} (Px86).
-This IL is contained within this following grammar.
+This IL is contained within the following grammar.
 
 \begin{verbatim}
 Atomic  ::= (int Int) | (var Sym) | (register Reg)
-Expr    ::= (add Atomic Atomic) | (sub Atomic Atomic) | (imul Atomic Atomic) |
-            (mov Atomic Atomic)
+Expr    ::= (add Atomic Atomic) | (sub Atomic Atomic) | 
+            (imul Atomic Atomic) | (mov Atomic Atomic)
 Program ::= (program Sym* Expr*)
 \end{verbatim}
 
