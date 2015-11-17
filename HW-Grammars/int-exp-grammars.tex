@@ -1,0 +1,147 @@
+\title{CSCI-P523/423 Project One: Integers, Expressions and Variables (oh my!)}
+\author{Carl Factora | Jeremy Siek}
+\date{\today}
+
+\documentclass[12pt]{article}
+\usepackage{mathpartir}
+\usepackage{titlesec}
+\usepackage{proof}
+\usepackage{bussproofs}
+\usepackage{tabu}
+\usepackage{array}
+\usepackage{tikz}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{amsthm}
+\usetikzlibrary{matrix}
+\usetikzlibrary{arrows}
+
+\begin{document}
+\maketitle
+
+\subsection*{The {\tt S0} Language}
+For this project, our compiler will be targetting the {\tt S0} langauge, which
+we include below.
+
+\begin{verbatim}
+S0 ::= Int | Sym | (+ S0 S0) | (- S0 S0) | (- S0) | (read) | 
+       (let ([Sym S0]) S0)
+\end{verbatim}
+
+In this document, we include the Backus-Naur Form (BNF) of each intermediate
+language (IL) and brief descriptions of the respective \textit{compiler passes}
+each IL is handled by. This week, we encounter the {\tt C0} and {\tt Pseudo-x86}
+ILs as we compile down to x86 Assembly.
+
+\subsection*{Scheme to C}
+\subsubsection*{1. {\tt programify : S0 -> S0}}
+The preliminary pass, {\tt programify}, wraps each {\tt S0} expression with a
+{\tt program} tag.
+\begin{verbatim}
+(+ 5 5) => (program () (+ 5 5))
+\end{verbatim}
+
+The {\tt programify} pass transforms {\tt S0} into the intended input language
+of {\tt uniquify}.
+
+\begin{verbatim}
+Program ::= (program S0* S0) 
+S0      ::= Int | Sym | (+ S0 S0) | (- S0 S0) | (- S0) | 
+            (read) | (let ([Sym S0]) S0)
+\end{verbatim}
+
+\subsubsection*{2. {\tt uniquify : Env -> S0 -> S0}}
+The {\tt uniquify} pass is responsible for handling this week's binding
+construct: {\tt let}. Here, we use Racket's {\tt gensym} to generate unique
+names for each let-bound variable. For example, the {\tt s0\_8.scm} test case:
+\begin{verbatim}
+(program ()
+  (let ([x 20])
+    (+ (let ([x 22]) x) x)))
+\end{verbatim}
+is transformed into:
+\begin{verbatim}
+(program ()
+  (let ([g30 20])
+    (+ (let ([g31 22]) g31) g30)))
+\end{verbatim}
+Due to the behavior of {\tt gensym}, your {\tt uniquify} pass may generate
+different names than the one above (viz. {\tt g30,g31}). This is normal and
+should be expected.
+
+For simplicity, we recommend using an environment to store and associate the
+names of generated variables to their respective names in the original program.
+
+\subsubsection*{3. {\tt flatten : Bool -> S0 -> C0}}
+In {\tt flatten}, we transform the {\tt S0} language into the {\tt C0} IL.
+This pass should generate an expression from the grammar below.
+\begin{verbatim}
+Atomic    ::= Int | Sym
+Expr      ::= Atomic | (prim op Atomic*)
+Statement ::= (assign Sym Expr) | (return Atomic)
+Program   ::= (program Sym* Statement*)
+\end{verbatim}
+
+Essentially, this pass is responsible for removing complex (i.e., nested) calls
+to primitive operators (e.g. {\tt +, -, *}). This pass also converts {\tt let}
+into a series of {\tt assign} and {\tt return} expressions, while lifting the
+names of all assigned variables. For example, if we return to our earlier
+example (after {\tt uniquify}):
+\begin{verbatim}
+(program ()
+  (let ([g30 20])
+    (+ (let ([g31 22]) g31) g30)))
+\end{verbatim}
+is transformed into:
+\begin{verbatim}
+(program (g30 g31) 
+  (assign g30 20)
+  (assign g31 22)
+  (return (+ g31 g30)))
+\end{verbatim}
+
+To clarify, this pass \textit{flattens} complex operation calls. For example,
+in our ongoing example, the call to {\tt +} contained a call to a {\tt let}.
+Thus, {\tt flatten} converts this expression into an expression containing only
+{\tt Atomic} values. To keep this pass simple, we recommend passing around a
+boolean value that determines whether a given subexpression is required to be
+simple.
+
+This pass is also responsible for \textit{lifting} every variable that appears
+in the \textit{left-hand side} (LHS) of each generated call to {\tt assign}
+(e.g. {\tt (assign Sym Expr)}) into the symbol list of the main {\tt program}
+wrapper (viz. {\tt g30,g31}).
+
+\subsection*{Pseudo-x86 to x86}
+\subsubsection*{4. {\tt select-instructions : C0 -> Pseudo-x86}}
+In this pass, we transform {\tt C0} into the pre-x86 IL {\tt Pseudo-x86} (Px86).
+This IL is contained within this following grammar.
+
+\begin{verbatim}
+Atomic  ::= (int Int) | (var Sym) | (register Reg)
+Expr    ::= (add Atomic Atomic) | (sub Atomic Atomic) | (imul Atomic Atomic) |
+            (mov Atomic Atomic)
+Program ::= (program Sym* Expr*)
+\end{verbatim}
+
+This pass is not responsible for handling \textit{register allocation}. Instead,
+this pass is simply responsible for introducing the Px86 IL. Returing to our
+running example:
+\begin{verbatim}
+(program (g30 g31) 
+  (assign g30 20)
+  (assign g31 22)
+  (return (+ g31 g30)))
+\end{verbatim}
+is tranformed into:
+\begin{verbatim}
+(program (g30 g31)
+  (mov (int 20) (var g30))
+  (mov (int 22) (var g31))
+  (mov (var g31) (register rax))
+  (add (var g30) (register rax)))
+\end{verbatim}
+\subsubsection*{5. {\tt assign-instructions : Homes -> Pseudo-x86 -> Pseudo-x86}}
+\subsubsection*{6. {\tt insert-spill-code : Pseudo-x86 -> x86}}
+\subsubsection*{7. {\tt print-x86 : x86 -> String}}
+\end{document}
