@@ -144,6 +144,9 @@ is tranformed into:
 
 Talk about the rules of converting {\tt assign} into {\tt mov} instructions.
 \subsubsection*{5. {\tt assign-instructions : Homes -> Pseudo-x86 -> Pseudo-x86}}
+Converts variables into stack-references
 \subsubsection*{6. {\tt insert-spill-code : Pseudo-x86 -> x86}}
+Converts memory to memory instructions to proper x86
 \subsubsection*{7. {\tt print-x86 : x86 -> String}}
+Converts expression into a string to be written into a {\tt .s} file.
 \end{document}
