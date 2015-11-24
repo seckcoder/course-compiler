@@ -62,6 +62,7 @@
 	    (define-values (new-e ss) ((send this flatten #f) e))
 	    (define xs (append* (map (send this collect-locals) ss)))
 	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
+           [else (error "flatten could not match" e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
