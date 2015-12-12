@@ -5,6 +5,7 @@
 (require "conditionals.rkt")
 (require "vectors.rkt")
 (require "functions.rkt")
+(require "lambda.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])
@@ -48,8 +49,10 @@
 (define s0_range (range 1 23))
 (define s1_range (range 1 19))
 (define s2_range (range 1 6))
-(define s3_range (range 1 8))
+(define s3_range (range 1 10))
+(define s4_range (range 0 4))
 
+(if #t (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "int_exp" (compile-file int-exp-passes)
 	       (check-passes "int_exp" int-exp-passes) 
@@ -58,7 +61,6 @@
 (test-compiler "reg_int_exp" (compile-file reg-int-exp-passes)
 	       (check-passes "reg_int_exp" reg-int-exp-passes) 
    	       "s0" s0_range)
-(if #t (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "conditionals" (compile-file conditionals-passes) 
 	       (check-passes "conditionals" conditionals-passes) 
@@ -90,5 +92,10 @@
 	       (check-passes "functions" functions-passes) 
   	       "s3" s3_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(test-compiler "lambda" (compile-file lambda-passes)
+	       (check-passes "lambda" lambda-passes) 
+  	       "s4" s4_range)
 
 ) '())
+
+

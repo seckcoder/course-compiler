@@ -16,18 +16,19 @@
     ;; uniquify : env -> S0 -> S0
     (define/public (uniquify env)
       (lambda (e)
+	(define recur (send this uniquify env))
 	(match e
 	   [(? symbol?) (cdr (assq e env))]
 	   [(? integer?) e]
 	   [`(let ([,x ,e]) ,body)
 	    (define new-x (gensym x))
-	    (define new-e ((send this uniquify env) e))
+	    (define new-e (recur e))
 	    `(let ([,new-x ,new-e])
 	       ,((send this uniquify (cons (cons x new-x) env)) body))]
 	   [`(program ,extra ,body)
-	    `(program ,extra ,((send this uniquify env) body))]
+	    `(program ,extra ,(recur body))]
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
-	    `(,op ,@(map (send this uniquify env) es))]
+	    `(,op ,@(map recur es))]
 	   [else (error "uniquify couldn't match" e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -48,7 +49,8 @@
 	   [(? integer?) (values e '())]
 	   [`(let ([,x ,e]) ,body)
 	    (define-values (new-e e-ss) ((send this flatten #f) e))
-	    (define-values (new-body body-ss) ((send this flatten #f) body))
+	    (define-values (new-body body-ss)
+	      ((send this flatten need-atomic) body))
 	    (values new-body (append e-ss `((assign ,x ,new-e)) body-ss))]
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    (define-values (new-es sss) (map2 (send this flatten #t) es))
@@ -59,7 +61,7 @@
 		   (values tmp (append ss `((assign ,tmp ,prim-apply))))]
 		  [else (values prim-apply ss)])]
 	   [`(program ,extra ,e)
-	    (define-values (new-e ss) ((send this flatten #f) e))
+	    (define-values (new-e ss) ((send this flatten #t) e))
 	    (define xs (append* (map (send this collect-locals) ss)))
 	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
            [else (error "flatten could not match" e)]

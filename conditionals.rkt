@@ -177,6 +177,13 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> S1 -> S1*
 
+    (define/override (free-vars a)
+      (match a
+	 [`(byte-register al) (set 'rax)]
+	 [else (super free-vars a)]
+	 ))
+    
+
     (define/override (read-vars instr)
       (match instr
      	 [`(cmp ,s1 ,s2) (set-union (send this free-vars s1)

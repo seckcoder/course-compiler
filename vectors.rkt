@@ -61,7 +61,7 @@
 	    (define n (length es))
 	    (define initializers
 	      (for/list ([e new-es] [i (in-range 0 (length new-es))])
-			`(mov ,e (offset ,new-lhs ,i))))
+			`(mov ,e (offset ,new-lhs ,(* i 8)))))
 	    (append `((mov (int ,(* n 8)) (register rdi))
 		      (call _malloc)
 		      (mov (register rax) ,new-lhs))
@@ -69,15 +69,24 @@
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
-	    `((mov (offset ,new-e-vec ,i) ,new-lhs))]
+	    `((mov (offset ,new-e-vec ,(* i 8)) ,new-lhs))]
 	   [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
 	    (define new-e-arg ((send this select-instructions) e-arg))
-	    `((mov ,new-e-arg (offset ,new-e-vec ,i)))]
+	    `((mov ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
 	   [else ((super select-instructions) e)]
 	   )))
     
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-live
+
+    (define/override (free-vars a)
+      (match a
+	 [`(offset ,e ,i) (send this free-vars e)]
+	 [else (super free-vars a)]
+	 ))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
     (define/override (assign-locations homes)

@@ -32,11 +32,19 @@
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
 
+;; This lookup function is complicated because it needs to
+;; work on association lists in which the bindings could be mutable pairs.
+;; -Jeremy
 (define lookup
   (lambda (x ls)
-    (cond [(assq x ls) => cdr]
-	  [else
-	   (error "lookup failed for " x)])))
+    (cond [(null? ls)
+	   (error "lookup failed for " x)]
+	  [(and (pair? (car ls)) (eq? x (car (car ls))))
+	   (cdr (car ls))]
+	  [(and (mpair? (car ls)) (eq? x (mcar (car ls))))
+	   (mcdr (car ls))]
+	  [else 
+	   (lookup x (cdr ls))])))
 
 (define (make-dispatcher mt)
   (lambda (e . rest)
@@ -142,8 +150,8 @@
     				  'r8 'r9 'r10 'r11 'r12 
 				  'r13 'r14 'r15))
 
-(define registers-for-alloc (vector 'rbx))
-;(define registers-for-alloc general-registers)
+;; registers-for-alloc should always inlcude the arg-registers. -Jeremy 
+(define registers-for-alloc general-registers)
 
 
 (define reg-colors

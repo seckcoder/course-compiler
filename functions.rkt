@@ -32,15 +32,15 @@
     (define/override (type-check env)
       (lambda (e)
 	(match e
-	   [`(,f ,es ...) #:when (not (set-member? (send this non-apply-ast) f))
+	   [`(,e ,es ...) #:when (not (set-member? (send this non-apply-ast) e))
 	    (define t-args (map (send this type-check env) es))
-	    (define f-t ((send this type-check env) f))
-	    (match f-t
+	    (define e-t ((send this type-check env) e))
+	    (match e-t
 	       [`(,ps ... -> ,rt)
 		(unless (equal? t-args ps)
-		  (error "parameter and argument type mismatch for function" f))
+		  (error "parameter and argument type mismatch for function" e))
 		rt]
-	       [else (error "expected a function, not" f-t)])]
+	       [else (error "expected a function, not" e-t)])]
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	    ((send this type-check (append (map cons xs ps) env)) body)]
 	   [`(program ,ds ... ,body)
@@ -117,7 +117,7 @@
     ;; flatten : S3 -> C3-expr x (C3-stmt list)
 
     (define (flatten-body body)
-      (define-values (new-body ss) ((send this flatten #f) body))
+      (define-values (new-body ss) ((send this flatten #t) body))
       (define locals (append* (map (send this collect-locals) ss)))
       (values (remove-duplicates locals) 
 	      (append ss `((return ,new-body)))))
@@ -129,9 +129,9 @@
 	    (define-values (locals new-body) (flatten-body body))
 	    (define new-ds (map (send this flatten #f) ds))
 	    `(program ,locals ,new-ds ,@new-body)]
-	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
 	    (define-values (locals new-body) (flatten-body body))
-	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs ps)) : ,rt ,locals
+	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
 			 ,@new-body)]
 	   [`(function-ref ,f)
 	    (define tmp (gensym 'tmp))
@@ -144,7 +144,8 @@
 	    (cond [need-atomic
 		   (define tmp (gensym 'tmp))
 		   (values tmp (append ss `((assign ,tmp ,fun-apply))))]
-		  [else (values fun-apply ss)])]
+		  [else
+		   (values fun-apply ss)])]
 	   [else ((super flatten need-atomic) ast)]
 	   )))
 
@@ -205,6 +206,13 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
+
+    (define/override (free-vars a)
+      (match a
+	 [`(function-ref ,f) (set)]
+	 [`(stack-arg ,i) (set)]
+	 [else (super free-vars a)]
+	 ))
 
     (define/override (read-vars instr)
       (match instr
@@ -282,7 +290,7 @@
 	   [`(define (,f) ,n (,xs ,max-stack ,G) ,ss ...)
 	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
 	    (define new-ss (map (send this assign-locations homes) ss))
-	    `(define (,f) ,n ,(+ stk-size (* 8 max-stack)) ,@new-ss)]
+	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
            [`(program (,locals ,max-stack ,G) ,ds ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 

@@ -11,7 +11,6 @@
   (class compile-S0
     (super-new)
 
-
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
     ;; *annotated program with live-after information for each stmt
@@ -20,7 +19,9 @@
       (match a
 	 [`(var ,x) (set x)]
 	 [`(register ,r) (set r)] ;; experimental -Jeremy
-	 [else (set)]))
+	 [`(stack-loc ,i) (set)]
+	 [`(int ,n) (set)]
+	 [else (error "free-vars, unhandled" a)]))
 
     (define/public (read-vars instr)
       (match instr
@@ -123,6 +124,7 @@
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 
     (define/public (allocate-homes G xs ss)
+      (debug "allocate-homes" xs)
       (set! largest-color 0)
       (define unavail-colors (make-hash)) ;; pencil marks
       (define (compare u v) 
@@ -147,7 +149,7 @@
 	     (define c (choose-color v (hash-ref unavail-colors v)))
 	     (cond [(> c largest-color) (set! largest-color c)])
 	     (hash-set! color v c)
-	     (debug "colored " (cons v c))
+	     (debug "coloring" (cons v c))
 	     (for ([u (adjacent G v)])
 		  (when (not (set-member? registers u))
 			(hash-set! unavail-colors u
@@ -157,10 +159,8 @@
       (define homes
 	(make-hash (for/list ([x xs])
 			     (cons x (identify-home (hash-ref color x))))))
-      ;;(printf "largest color: ~a" largest-color)(newline)
       (define num-spills 
 	(max 0 (- (add1 largest-color) (vector-length registers-for-alloc))))
-      ;;(printf "num spills: ~a" num-spills)(newline)
       (define stack-size
 	(+ (send this first-offset)
 	   (align (* num-spills (send this variable-size)) 16)))
