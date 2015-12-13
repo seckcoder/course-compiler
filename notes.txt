@@ -42,8 +42,8 @@ e ::= ...
 
 
 --------------------------------------------------------------------------------
-Tuples (Racket Vectors) and heap allocation (vectors.rkt)
-  [136 lines] (too easy?)
+Tuples (Racket Vectors) and heap allocation (vectors.rkt) [136 lines]
+  (too easy?)
 
 (needed to represent closures)
 (do we need mutation here, or can that be delayed?)
@@ -68,7 +68,7 @@ Type System
     Γ ⊢ (vector-set! e_1 i e_2) : Void
 
 --------------------------------------------------------------------------------
-S3: Functions (functions.rkt) (top-level functions)
+S3: Functions (functions.rkt) (top-level functions) [411 lines]
 
 T ::= Integer | Boolean | (Vectorof T) | (T1 ... Tn -> T)
 p ::= (program d ... e)
@@ -108,7 +108,7 @@ idea:
        which elements are pointers to the heap and which ones are not.
 
 --------------------------------------------------------------------------------
-First-Class Functions (lambda.rkt)
+First-Class Functions (lambda.rkt) [191 lines]
 
 e ::= ...
     | (lambda: ([x1 : T1] ... [xn : Tn]) : T e)
