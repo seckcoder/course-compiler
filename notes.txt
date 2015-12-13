@@ -108,7 +108,7 @@ idea:
        which elements are pointers to the heap and which ones are not.
 
 --------------------------------------------------------------------------------
-First-Class Functions (lambda.rkt) [191 lines]
+First-Class Functions (lambda.rkt) [182 lines]
 
 e ::= ...
     | (lambda: ([x1 : T1] ... [xn : Tn]) : T e)

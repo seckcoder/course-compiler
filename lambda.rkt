@@ -86,7 +86,7 @@
 	   [(? symbol?) (values e '())]
 	   [(? integer?) (values e '())]
 	   [`(function-ref ,f)
-	    (values `(vector (function-ref ,f)) '())]
+	    (values `(vector (function-ref ,f)) '())] ;; create closure
 	   [`(let ([,x ,e]) ,body)
 	    (define-values (new-e e-fs) (recur e))
 	    (define-values (new-body body-fs) (recur body))
@@ -114,16 +114,11 @@
 	   [`(app ,e ,es ...)
 	    (define-values (new-e e-fs) (recur e))
 	    (define tmp (gensym 'app))
-	    (let loop ([es es] [new-es '()] [fs e-fs])
-	      (cond [(null? es) 
-		     (values
-		      `(let ([,tmp ,new-e])
-			 (app (vector-ref ,tmp 0) ,tmp ,@(reverse new-es)))
-		      fs)]
-		    [else
-		     (define-values (new-e e-fs) (recur (car es)))
-		     (loop (cdr es) (cons new-e new-es) 
-			   (append e-fs fs))]))]
+	    (define-values (new-es es-fss) (map2 recur es))
+	    (values
+	     `(let ([,tmp ,new-e])
+		(app (vector-ref ,tmp 0) ,tmp ,@new-es))
+	     (append e-fs (apply append es-fss)))]
 	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
 	    (define-values (new-body body-fs) (recur body))
 	    (let ([params (map (lambda (x T) `[,x : ,T]) xs Ts)])
@@ -138,13 +133,9 @@
 		      ,new-body)]
 	   ;; Keep the below case last -Jeremy
 	   [`(,op ,es ...)
-	    (let loop ([es es] [new-es '()] [fs '()])
-	      (cond [(null? es) 
-		     (values `(,op ,@(reverse new-es)) fs)]
-		    [else
-		     (define-values (new-e e-fs) (recur (car es)))
-		     (loop (cdr es) (cons new-e new-es) 
-			   (append e-fs fs))]))]
+	    (define-values (new-es es-fss) (map2 recur es))
+	    (values `(,op ,@new-es) 
+		    (apply append es-fss))]
 	  )))
 
     ))
