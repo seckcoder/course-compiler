@@ -140,30 +140,13 @@
 	   [`(,op ,es ...)
 	    (let loop ([es es] [new-es '()] [fs '()])
 	      (cond [(null? es) 
-		     (values `(,op ,(reverse new-es)) fs)]
+		     (values `(,op ,@(reverse new-es)) fs)]
 		    [else
 		     (define-values (new-e e-fs) (recur (car es)))
 		     (loop (cdr es) (cons new-e new-es) 
 			   (append e-fs fs))]))]
 	  )))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; flatten : S3 -> C3-expr x (C3-stmt list)
-
-    ;; (define/override (flatten need-atomic)
-    ;;   (lambda (ast)
-    ;; 	(match ast
-    ;; 	   [`(letrec ([,xs ,es] ...) ,e)
-    ;; 	    (define-values (new-es sss) (map2 (send this flatten #f) es))
-    ;; 	    (define-values (new-e e-ss) ((send this flatten #f) e))
-    ;; 	    (let ([init (map (lambda (x) `(assign ,x 0)) xs)]
-    ;; 		  [xes (map (lambda (x e) `(assign ,x ,e)) xs new-es)])
-    ;; 	      (values new-e 
-    ;; 		      (append init (apply append sss) xes e-ss)))]
-
-    ;; 	   [else ((super flatten need-atomic) ast)]
-    ;; 	   )))
-    
     ))
 
 

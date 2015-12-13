@@ -108,12 +108,11 @@ idea:
        which elements are pointers to the heap and which ones are not.
 
 --------------------------------------------------------------------------------
-First-Class Functions and recursive binding (lambda.rkt)
+First-Class Functions (lambda.rkt)
 
 e ::= ...
     | (lambda: ([x1 : T1] ... [xn : Tn]) : T e)
     | (e e ...)
-    | (letrec ([x e] ...) e)
 
     Γ, x1 : T1, ..., xn : Tn ⊢ e : T
     ----------------------------------------------------------------

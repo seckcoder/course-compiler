@@ -92,23 +92,23 @@
 	       (check-passes "functions" functions-passes) 
   	       "s3" s3_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; to do: check these tests -Jeremy
-;; (test-compiler "lambda" (compile-file lambda-passes)
-;; 	       (check-passes "lambda" lambda-passes) 
-;;   	       "s0" s0_range)
-;; (test-compiler "lambda" (compile-file lambda-passes)
-;; 	       (check-passes "lambda" lambda-passes) 
-;;   	       "s1" s1_range)
-;; (test-compiler "lambda" (compile-file lambda-passes)
-;; 	       (check-passes "lambda" lambda-passes) 
-;;   	       "s2" s2_range)
-;; (test-compiler "lambda" (compile-file lambda-passes)
-;; 	       (check-passes "lambda" lambda-passes) 
-;;   	       "s3" s3_range)
+(test-compiler "lambda" (compile-file lambda-passes)
+	       (check-passes "lambda" lambda-passes) 
+  	       "s0" s0_range)
+(test-compiler "lambda" (compile-file lambda-passes)
+	       (check-passes "lambda" lambda-passes) 
+  	       "s1" s1_range)
+(test-compiler "lambda" (compile-file lambda-passes)
+	       (check-passes "lambda" lambda-passes) 
+  	       "s2" s2_range)
+(test-compiler "lambda" (compile-file lambda-passes)
+	       (check-passes "lambda" lambda-passes) 
+  	       "s3" s3_range)
 (test-compiler "lambda" (compile-file lambda-passes)
 	       (check-passes "lambda" lambda-passes) 
   	       "s4" s4_range)
 
 ) '())
+
 
 
