@@ -122,9 +122,21 @@ e ::= ...
 Type dynamic
 
 T ::= Integer | Boolean | (Vectorof T) | (-> T T ...) | Dyn
-G ::= Integer | Boolean | Vector | Function
+G ::= Integer | Boolean | (Vectorof Dyn) | (-> Dyn ... Dyn)
 e ::= ...
     | (inject e G) | (project e G) | (isa? G e)
+
+    Γ ⊢ e : G
+    ----------------------
+    Γ ⊢ (inject e G) : Dyn
+
+    Γ ⊢ e : Dyn
+    ----------------------
+    Γ ⊢ (project e G) : G
+
+    Γ ⊢ e : Dyn
+    ----------------------
+    Γ ⊢ (is? G e) : Boolean
 
 --------------------------------------------------------------------------------
 Dynamic typing
