@@ -117,18 +117,18 @@
 
     (define/override (instructions)
       (set-union (super instructions)
-		 (set 'cmp 'sete 'and 'or 'not)))
+		 (set 'cmpq 'sete 'andq 'orq 'notq)))
 
     (define/override (binary-op->inst op)
       (match op
-	 ['and 'and]
-	 ['or 'or]
+	 ['and 'andq]
+	 ['or 'orq]
 	 [else (super binary-op->inst op)]
 	 ))
 
     (define/override (unary-op->inst op)
       (match op
-	 ['not 'not]
+	 ['not 'notq]
 	 [else (super unary-op->inst op)]
 	 ))
 
@@ -145,24 +145,24 @@
 	   [`(assign ,lhs ,b) #:when (boolean? b)
 	    (let ([lhs ((send this select-instructions) lhs)]
 		  [b ((send this select-instructions) b)])
-	      `((mov ,b ,lhs)))]
+	      `((movq ,b ,lhs)))]
 	   [`(assign ,lhs (eq? ,e1 ,e2))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e1 ((send this select-instructions) e1))
 	    (define new-e2 ((send this select-instructions) e2))
-	    ;; second operand of cmp can't be an immediate
+	    ;; second operand of cmpq can't be an immediate
 	    (define comparison
 	      (cond [(and (immediate? new-e1) (immediate? new-e2))
-		     `((mov ,new-e2 (register rax))
-		       (cmp ,new-e1 (register rax)))]
+		     `((movq ,new-e2 (reg rax))
+		       (cmpq ,new-e1 (reg rax)))]
 		    [(immediate? new-e2)
-		     `((cmp ,new-e2 ,new-e1))]
+		     `((cmpq ,new-e2 ,new-e1))]
 		    [else 
-		     `((cmp ,new-e1 ,new-e2))]))
+		     `((cmpq ,new-e1 ,new-e2))]))
 	    (append comparison
-	      `((mov (int 0) (register rax))
+	      `((movq (int 0) (reg rax))
 		(sete (byte-register al))
-		(mov (register rax) ,new-lhs)))]
+		(movq (reg rax) ,new-lhs)))]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this select-instructions) cnd)]
@@ -186,19 +186,19 @@
 
     (define/override (read-vars instr)
       (match instr
-     	 [`(cmp ,s1 ,s2) (set-union (send this free-vars s1)
+     	 [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
-     	 [(or `(and ,s ,d) `(or ,s ,d))
+     	 [(or `(andq ,s ,d) `(orq ,s ,d))
 	  (set-union (send this free-vars s) (send this free-vars d))]
      	 [`(sete ,d) (set)]
-	 [`(not ,d) (send this free-vars d)]
+	 [`(notq ,d) (send this free-vars d)]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
       (match instr
-     	 [`(cmp ,s1 ,s2) (set '__flag)]
-     	 [(or `(and ,s ,d) `(or ,s ,d)) (send this free-vars d)]
-	 [`(not ,d) (send this free-vars d)]
+     	 [`(cmpq ,s1 ,s2) (set '__flag)]
+     	 [(or `(andq ,s ,d) `(orq ,s ,d)) (send this free-vars d)]
+	 [`(notq ,d) (send this free-vars d)]
      	 [`(sete ,d) (send this free-vars d)]
      	 [else (super write-vars instr)]))
 
@@ -263,9 +263,9 @@
 		  [cnd-inst ;; cmp's second operand can't be immediate
 		   (match cnd
 		      [`(int ,n)
-		       `((mov (int ,n) (register rax))
-			 (cmp (int 0) (register rax)))]
-		      [else `((cmp (int 0) ,cnd))])])
+		       `((movq (int ,n) (reg rax))
+			 (cmpq (int 0) (reg rax)))]
+		      [else `((cmpq (int 0) ,cnd))])])
 	      (append cnd-inst `((je ,else-label)) thn-ss `((jmp ,end-label))
 	       `((label ,else-label)) els-ss `((label ,end-label))
 	       ))]
@@ -278,7 +278,7 @@
 	(match e
 	   [`(byte-register ,r) (format "%~a" r)]
 	   [`(sete ,d) (format "\tsete\t~a\n" ((send this print-x86) d))]
-           [`(cmp ,s1 ,s2) 
+           [`(cmpq ,s1 ,s2) 
 	    (format "\tcmpq\t~a, ~a\n" ((send this print-x86) s1)
 		    ((send this print-x86) s2))]
 	   [`(je ,label) (format "\tje ~a\n" label)]

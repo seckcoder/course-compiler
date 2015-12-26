@@ -18,27 +18,27 @@
     (define/public (free-vars a)
       (match a
 	 [`(var ,x) (set x)]
-	 [`(register ,r) (set r)] ;; experimental -Jeremy
+	 [`(reg ,r) (set r)] ;; experimental -Jeremy
 	 [`(stack-loc ,i) (set)]
 	 [`(int ,n) (set)]
 	 [else (error "free-vars, unhandled" a)]))
 
     (define/public (read-vars instr)
       (match instr
-         [`(mov ,s ,d) (send this free-vars s)]
-	 [(or `(add ,s ,d) `(sub ,s ,d) `(imul ,s ,d)) 
+         [`(movq ,s ,d) (send this free-vars s)]
+	 [(or `(addq ,s ,d) `(subq ,s ,d) `(imulq ,s ,d)) 
 	  (set-union (send this free-vars s) (send this free-vars d))]
-	 [`(neg ,d) (send this free-vars d)]
+	 [`(negq ,d) (send this free-vars d)]
 	 [`(call ,f) (set)]
 	 [else (error "read-vars unmatched" instr)]
 	 ))
   
     (define/public (write-vars instr)
       (match instr
-         [`(mov ,s ,d) (send this free-vars d)]
-	 [(or `(add ,s ,d) `(sub ,s ,d) `(imul ,s ,d)) 
+         [`(movq ,s ,d) (send this free-vars d)]
+	 [(or `(addq ,s ,d) `(subq ,s ,d) `(imulq ,s ,d)) 
 	  (send this free-vars d)]
-	 [`(neg ,d) (send this free-vars d)]
+	 [`(negq ,d) (send this free-vars d)]
 	 [`(call ,f) caller-save]
 	 [else (error "write-vars unmatched" instr)]
 	 ))
@@ -73,9 +73,9 @@
     (define/public (build-interference live-after G)
       (lambda (ast)
 	(match ast
-	   [`(mov ,s ,d)
+	   [`(movq ,s ,d)
 	    (for ([v live-after])
-		 (for ([d (write-vars `(mov ,s ,d))]
+		 (for ([d (write-vars `(movq ,s ,d))]
 		       #:when (not (or (equal? v s) (equal? v d))))
 		      (add-edge G d v)))
 	    ast]
@@ -119,7 +119,7 @@
     (define (identify-home c)
       (define n (vector-length registers-for-alloc))
       (cond [(< c n)
-	     `(register ,(vector-ref registers-for-alloc c))]
+	     `(reg ,(vector-ref registers-for-alloc c))]
 	    [else 
 	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
 

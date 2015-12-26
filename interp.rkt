@@ -81,29 +81,30 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; psuedo-x86 and x86
-    ;; s,d ::= (var x) | (int n) | (register r) | (stack-loc n)
-    ;; i   ::= (mov s d) | (add s d) | (sub s d) | (neg d) | (call f)
+    ;; s,d ::= (var x) | (int n) | (reg r) | (stack-loc n)
+    ;; i   ::= (movq s d) | (addq s d) | (subq s d) | (imulq s d) 
+    ;;       | (negq d) | (call f)
     ;; psuedo-x86 ::= (program (x ...) i ...)
 
     (define/public (get-name ast)
       (match ast
-         [(or `(var ,x) `(register ,x) `(stack-loc ,x))
+         [(or `(var ,x) `(reg ,x) `(stack-loc ,x))
 	  x]
 	 [else
 	  (error "doesn't have a name: " ast)]))
 
     (define/public (interp-x86-op op)
       (match op
-	 ['add +]
-	 ['sub -]
-	 ['neg -]
-	 ['imul *]
+	 ['addq +]
+	 ['subq -]
+	 ['negq -]
+	 ['imulq *]
 	 [else (error "interp-x86-op, unmatched" op)]))
 
     (define/public (interp-x86-exp env)
       (lambda (ast)
 	(match ast
-	   [(or `(var ,x) `(register ,x) `(stack-loc ,x))
+	   [(or `(var ,x) `(reg ,x) `(stack-loc ,x))
 	    (lookup x env)]
 	   [`(int ,n) n]
 	   [else
@@ -117,11 +118,11 @@
 	   [`((call _read_int) . ,ss) 
 	    ((send this interp-x86 (cons (cons 'rax (read)) env)) ss)]
 	   [`((call _malloc) . ,ss)
-	    (define num-bytes ((send this interp-x86-exp env) '(register rdi)))
+	    (define num-bytes ((send this interp-x86-exp env) '(reg rdi)))
 	    (define vec (make-vector (/ num-bytes 8)))
 	    (define new-env (cons (cons 'rax vec) env))
 	    ((send this interp-x86 new-env) ss)]
-	   [`((mov ,s ,d) . ,ss)
+	   [`((movq ,s ,d) . ,ss)
 	    (define x (send this get-name d))
 	    (define v ((send this interp-x86-exp env) s))
 	    ((send this interp-x86 (cons (cons x v) env)) ss)]
@@ -213,7 +214,7 @@
     (define/override (get-name ast)
       (match ast
 	 [`(byte-register ,r)
-	  (super get-name `(register ,(byte2full-reg r)))]
+	  (super get-name `(reg ,(byte2full-reg r)))]
 	 [else (super get-name ast)]))
 
     (define (i2b i)
@@ -226,16 +227,16 @@
 
     (define/override (interp-x86-op op)
       (match op
-	 ['not not]
-	 ['and (lambda (a b) (b2i (and (i2b a) (i2b b))))]
-	 ['or (lambda (a b) (b2i (or (i2b a) (i2b b))))]
+	 ['notq not]
+	 ['andq (lambda (a b) (b2i (and (i2b a) (i2b b))))]
+	 ['orq (lambda (a b) (b2i (or (i2b a) (i2b b))))]
 	 [else (super interp-x86-op op)]))
 
     (define/override (interp-x86-exp env)
       (lambda (ast)
 	(match ast
 	   [`(byte-register ,r)
-	    ((send this interp-x86-exp env) `(register ,(byte2full-reg r)))]
+	    ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
            [#t 1]
            [#f 0]
 	   [else ((super interp-x86-exp env) ast)]
@@ -245,7 +246,7 @@
       (lambda (ast)
 	(match ast
 	   [`((sete ,d) . ,ss)
-	    (let ([v ((send this interp-x86-exp env) '(register __flag))]
+	    (let ([v ((send this interp-x86-exp env) '(reg __flag))]
 		  [d ((send this interp-x86-exp env) d)]
 		  [x (send this get-name d)])
 	      ((send this interp-x86 (cons (cons x v) env)) ss))]
@@ -257,7 +258,7 @@
 		((send this interp-x86 env) (append els ss)))]
 	   [`((label ,l) . ,ss)
 	    ((send this interp-x86 env) ss)]
-	   [`((cmp ,s1 ,s2) . ,ss)
+	   [`((cmpq ,s1 ,s2) . ,ss)
 	    (let ([v1 ((send this interp-x86-exp env) s1)] 
 		  [v2 ((send this interp-x86-exp env) s2)])
 	      ((send this interp-x86 (cons (cons '__flag 
@@ -309,7 +310,7 @@
     (define/override (interp-x86 env)
       (lambda (ast)
 	(match ast
-	   [`((mov ,s (offset ,d ,i)) . ,ss)
+	   [`((movq ,s (offset ,d ,i)) . ,ss)
 	    (define v ((send this interp-x86-exp env) s))
 	    (define vec ((send this interp-x86-exp env) d))
 	    (vector-set! vec (/ i 8) v)
@@ -441,7 +442,7 @@
 	   [`(define (,f) ,n ,extra ,ss ...)
 	    (cons f `(lambda ,n ,@ss))]
 	   ;; Treat lea like mov -Jeremy
-	   [`((lea ,s ,d) . ,ss)
+	   [`((leaq ,s ,d) . ,ss)
 	    (define x (send this get-name d))
 	    (define v ((send this interp-x86-exp env) s))
 	    ((send this interp-x86 (cons (cons x v) env)) ss)]

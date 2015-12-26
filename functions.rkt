@@ -166,11 +166,11 @@
 		   [else (values xs '())]))
 	    (define mov-regs
 	      (for/list ([param first-params] [r arg-registers])
-	         `(mov (register ,r) (var ,param))))
+	         `(movq (reg ,r) (var ,param))))
 	    (define mov-stack
 	      (for/list ([param last-params] 
 			 [i (in-range 0 (length last-params))])
-	         `(mov (stack-loc ,(- (+ 16 (* i 8)))) (var ,param))))
+	         `(movq (stack-loc ,(- (+ 16 (* i 8)))) (var ,param))))
 	    (define new-ss (append mov-stack mov-regs
               (append* (map (send this select-instructions) ss))))
 	    ;; parameters become locals
@@ -178,7 +178,7 @@
 	       ,@new-ss)]
 	   [`(assign ,lhs (function-ref ,f))
 	    (define new-lhs ((send this select-instructions) lhs))
-	    `((lea (function-ref ,f) ,new-lhs))]
+	    `((leaq (function-ref ,f) ,new-lhs))]
 	   [`(assign ,lhs (app ,f ,es ...))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-f ((send this select-instructions) f))
@@ -189,13 +189,13 @@
 		   [else (values new-es '())]))
 	    (define mov-regs
 	      (for/list ([arg first-args] [r arg-registers])
-	         `(mov ,arg (register ,r))))
+	         `(movq ,arg (reg ,r))))
 	    (define mov-stack
 	      (for/list ([arg last-args] [i (in-range 0 (length last-args))])
-	         `(mov ,arg (stack-arg ,(* i 8)))))
+	         `(movq ,arg (stack-arg ,(* i 8)))))
 	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
-	     `((indirect-call ,new-f) (mov (register rax) ,new-lhs)))]
+	     `((indirect-call ,new-f) (movq (reg rax) ,new-lhs)))]
 	   [`(program ,locals ,ds ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
@@ -216,14 +216,14 @@
 
     (define/override (read-vars instr)
       (match instr
-         [`(lea ,s ,d) (send this free-vars s)]
+         [`(leaq ,s ,d) (send this free-vars s)]
 	 [`(indirect-call ,f) (send this free-vars f)]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
       (match instr
 	 [`(indirect-call ,f) caller-save]
-	 [`(lea ,s ,d)  (send this free-vars d)]
+	 [`(leaq ,s ,d)  (send this free-vars d)]
      	 [else (super write-vars instr)]))
 
     (define/override (uncover-live live-after)
@@ -268,7 +268,7 @@
 
     (define/override (instructions)
       (set-union (super instructions)
-		 (set 'lea)))
+		 (set 'leaq)))
 
     (define/override (assign-locations homes)
       (lambda (e)
@@ -321,12 +321,12 @@
 				     ((send this insert-spill-code) d)))
 	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
 	    `(program ,stack-space ,new-ds ,@(append* sss))]
-	   [`(lea ,s ,d)
+	   [`(leaq ,s ,d)
 	    (cond [(on-stack? d)
-		   `((lea ,s (register rax))
-		     (mov (register rax) ,d))]
+		   `((leaq ,s (reg rax))
+		     (movq (reg rax) ,d))]
 		  [else
-		   `((lea ,s ,d))])]
+		   `((leaq ,s ,d))])]
 	   [else ((super insert-spill-code) e)]
 	   )))
 

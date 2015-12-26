@@ -72,13 +72,13 @@
 
     (define/public (binary-op->inst op)
       (match op
-         ['+ 'add] ['- 'sub] ['* 'imul]
+         ['+ 'addq] ['- 'subq] ['* 'imulq]
 	 [else (error "in binary-op->inst unmatched" op)]
 	 ))
 
     (define/public (unary-op->inst op)
       (match op
-	 ['- 'neg] [else (error "in unary-op->inst unmatched" op)]
+	 ['- 'negq] [else (error "in unary-op->inst unmatched" op)]
 	 ))
 
     (define/public (commutative? op)
@@ -91,19 +91,19 @@
 	(match e
            [(? symbol?) `(var ,e)]
 	   [(? integer?) `(int ,e)]
-	   [`(register ,r) `(register ,r)]
+	   [`(reg ,r) `(reg ,r)]
 	   [`(return ,e)
-	    ((send this select-instructions) `(assign (register rax) ,e))]
+	    ((send this select-instructions) `(assign (reg rax) ,e))]
 	   [`(assign ,lhs (read))
 	    (define new-lhs ((send this select-instructions) lhs))
-	    `((call _read_int) (mov (register rax) ,new-lhs))]
+	    `((call _read_int) (movq (reg rax) ,new-lhs))]
 	   [`(assign ,lhs ,x) #:when (symbol? x)
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (cond [(equal? `(var ,x) new-lhs) '()]
-		  [else `((mov (var ,x) ,new-lhs))])]
+		  [else `((movq (var ,x) ,new-lhs))])]
 	   [`(assign ,lhs ,n) #:when (integer? n)
 	    (define new-lhs ((send this select-instructions) lhs))
-	    `((mov (int ,n) ,new-lhs))]
+	    `((movq (int ,n) ,new-lhs))]
 	   [`(assign ,lhs (,op ,e1 ,e2))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e1 ((send this select-instructions) e1))
@@ -116,15 +116,15 @@
 		  ;; The following can shorten the live range of e2. -JGS
 		  [(and (send this commutative? op) 
 			(integer? e1) (symbol? e2))
-		   `((mov ,new-e2 ,new-lhs) (,inst ,new-e1 ,new-lhs))]
-		  [else `((mov ,new-e1 ,new-lhs) (,inst ,new-e2 ,new-lhs))])]
+		   `((movq ,new-e2 ,new-lhs) (,inst ,new-e1 ,new-lhs))]
+		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-e2 ,new-lhs))])]
 	   [`(assign ,lhs (,op ,e1))	
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e1 ((send this select-instructions) e1))
 	    (define inst (unary-op->inst op))
 	    (cond [(equal? new-e1 new-lhs)
 		   `((,inst ,new-lhs))]
-		  [else `((mov ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
+		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
 	   [`(program ,xs ,ss ...)
 	    `(program ,xs ,@(append* (map (send this select-instructions) ss)))]
 	   [else (error "instruction selection, unmatched " e)])))
@@ -139,14 +139,14 @@
     (define/public (first-offset) 8)
 
     (define/public (instructions)
-      (set 'add 'sub 'imul 'neg 'mov))
+      (set 'addq 'subq 'imulq 'negq 'movq))
 
     (define/public (assign-locations homes)
       (lambda (e)
 	(match e
 	   [`(var ,x) (hash-ref homes x)]
 	   [`(int ,n) `(int ,n)]
-	   [`(register ,r) `(register ,r)]
+	   [`(reg ,r) `(reg ,r)]
 	   [`(call ,f) `(call ,f)]
 	   [`(program ,xs ,ss ...)
 	    ;; create mapping of variables to stack locations
@@ -181,28 +181,28 @@
     (define/public (insert-spill-code)
       (lambda (e)
 	(match e
-           [`(mov ,s ,d)
+           [`(movq ,s ,d)
 	    (cond [(equal? s d) '()] ;; trivial move, delete it
 		  [(and (on-stack? s) (on-stack? d))
-		   `((mov ,s (register rax))
-		     (mov (register rax) ,d))]
-		  [else `((mov ,s ,d))])]
+		   `((movq ,s (reg rax))
+		     (movq (reg rax) ,d))]
+		  [else `((movq ,s ,d))])]
 	   [`(call ,f) `((call ,f))]
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
 		      ,@(append* (map (send this insert-spill-code) ss)))]
 	   ;; for imulq, destination must be a register -Jeremy
-	   [`(imul ,s (register ,d))
-	    `((imul ,s (register ,d)))]
-	   [`(imul ,s ,d)
-	    `((mov ,d (register rax))
-	      (imul ,s (register rax))
-	      (mov (register rax) ,d))]
+	   [`(imulq ,s (reg ,d))
+	    `((imulq ,s (reg ,d)))]
+	   [`(imulq ,s ,d)
+	    `((movq ,d (reg rax))
+	      (imulq ,s (reg rax))
+	      (movq (reg rax) ,d))]
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
 		   (debug 'spill-code "spilling")
-		   `((mov ,s (register rax)) (,instr-name (register rax) ,d))]
+		   `((movq ,s (reg rax)) (,instr-name (reg rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
 	   [`(,instr-name ,d)
 	    #:when (set-member? (send this instructions) instr-name)
@@ -217,7 +217,7 @@
            [`(stack-loc ,n) 
 	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
-	   [`(register ,r) (format "%~a" r)]
+	   [`(reg ,r) (format "%~a" r)]
 	   [`(call ,f) (format "\tcallq\t~a\n" f)]
 	   [`(program ,stack-space ,ss ...)
 	    (string-append
@@ -235,12 +235,12 @@
 	     )]
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
-	    (format "\t~aq\t~a, ~a\n" instr-name
+	    (format "\t~a\t~a, ~a\n" instr-name
 		    ((send this print-x86) s) 
 		    ((send this print-x86) d))]
 	   [`(,instr-name ,d)
 	    #:when (set-member? (send this instructions) instr-name)
-	    (format "\t~aq\t~a\n" instr-name ((send this print-x86) d))]
+	    (format "\t~a\t~a\n" instr-name ((send this print-x86) d))]
 	   [else (error "print-x86, unmatched" e)]
 	   )))
 

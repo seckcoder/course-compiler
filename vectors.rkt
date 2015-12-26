@@ -61,20 +61,20 @@
 	    (define n (length es))
 	    (define initializers
 	      (for/list ([e new-es] [i (in-range 0 (length new-es))])
-			`(mov ,e (offset ,new-lhs ,(* i 8)))))
-	    (append `((mov (int ,(* n 8)) (register rdi))
+			`(movq ,e (offset ,new-lhs ,(* i 8)))))
+	    (append `((movq (int ,(* n 8)) (reg rdi))
 		      (call _malloc)
-		      (mov (register rax) ,new-lhs))
+		      (movq (reg rax) ,new-lhs))
 		    initializers)]
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
-	    `((mov (offset ,new-e-vec ,(* i 8)) ,new-lhs))]
+	    `((movq (offset ,new-e-vec ,(* i 8)) ,new-lhs))]
 	   [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
 	    (define new-e-arg ((send this select-instructions) e-arg))
-	    `((mov ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
+	    `((movq ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
 	   [else ((super select-instructions) e)]
 	   )))
     
