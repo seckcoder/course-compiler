@@ -144,6 +144,10 @@
 
     )) ;; class interp-S0
 
+(define interpret-S0
+  (lambda (p)
+    ((send (new interp-S0) interp-scheme '()) p)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S1: Booleans and conditionals
 
