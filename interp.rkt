@@ -1,6 +1,18 @@
 #lang racket
 (require "utilities.rkt")
-(provide interp-S0 interp-S1 interp-S2 interp-S3 interp-S4)
+(provide interp-scheme interp-C interp-x86 interp-S0 interp-S1 interp-S2 interp-S3 interp-S4 )
+
+(define interp-scheme
+  (lambda (p)
+    ((send (new interp-S4) interp-scheme '()) p)))
+
+(define interp-C
+  (lambda (p)
+    ((send (new interp-S4) interp-C '()) p)))
+
+(define interp-x86
+  (lambda (p)
+    ((send (new interp-S4) interp-x86 '()) p)))
 
 ;; This (dynamically scoped) parameter is used for goto
 (define program (make-parameter '()))
@@ -144,10 +156,6 @@
 	   )))
 
     )) ;; class interp-S0
-
-(define interpret-S0
-  (lambda (p)
-    ((send (new interp-S0) interp-scheme '()) p)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S1: Booleans and conditionals
@@ -465,7 +473,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S4: lambda
 
-
 (define interp-S4
   (class interp-S3
     (super-new)
@@ -498,3 +505,4 @@
 	   )))
 
     )) ;; interp-S4
+
