@@ -88,14 +88,14 @@
 	 ))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
-    (define/override (assign-locations homes)
+    ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
+    (define/override (assign-homes homes)
       (lambda (e)
 	(match e
 	   [`(offset ,e ,i)
-	    (define new-e ((assign-locations homes) e))
+	    (define new-e ((assign-homes homes) e))
 	    `(offset ,new-e ,i)]
-	   [else ((super assign-locations homes) e)]
+	   [else ((super assign-homes homes) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

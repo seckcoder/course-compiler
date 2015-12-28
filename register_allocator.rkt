@@ -101,7 +101,7 @@
     ;; allocate-registers : pseudo-x86 -> pseudo-x86
     ;; Replaces variables with registers and stack locations
     ;; using graph coloring based on Soduko heuristics.
-    ;; This pass encompasses assign-locations.
+    ;; This pass encompasses assign-homes.
 
     (define largest-color 0)
 
@@ -175,7 +175,7 @@
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes G locals ss))
 	    `(program ,stk-size 
-		      ,@(map (send this assign-locations homes) ss))]
+		      ,@(map (send this assign-homes homes) ss))]
 	   )))
 
     )) ;; compile-reg-S0

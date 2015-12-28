@@ -130,7 +130,7 @@
 	   [else (error "instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
+    ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
     ;;
     ;; Replace variables with stack locations. Later versions of this pass
     ;; will assign some variables to registers. 
@@ -141,7 +141,7 @@
     (define/public (instructions)
       (set 'addq 'subq 'imulq 'negq 'movq))
 
-    (define/public (assign-locations homes)
+    (define/public (assign-homes homes)
       (lambda (e)
 	(match e
 	   [`(var ,x) (hash-ref homes x)]
@@ -162,11 +162,11 @@
 				    (send this variable-size))
 				 16))
 	    `(program ,stack-space
-		      ,@(map (send this assign-locations new-homes) ss))]
+		      ,@(map (send this assign-homes new-homes) ss))]
 	   [`(,instr-name ,as ...) 
 	    #:when (set-member? (send this instructions) instr-name)
-	    `(,instr-name ,@(map (send this assign-locations homes) as))]
-	   [else (error "in assign-locations S0, unmatched" e)]
+	    `(,instr-name ,@(map (send this assign-homes homes) as))]
+	   [else (error "in assign-homes S0, unmatched" e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -259,7 +259,7 @@
 	    ,(send interp interp-C '()))
 	  `("instruction selection" ,(send compiler select-instructions)
 	    ,(send interp interp-x86 '()))
-	  `("assign locations" ,(send compiler assign-locations (void))
+	  `("assign homes" ,(send compiler assign-homes (void))
 	    ,(send interp interp-x86 '()))
 	  `("insert spill code" ,(send compiler insert-spill-code)
 	    ,(send interp interp-x86 '()))

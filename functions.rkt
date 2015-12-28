@@ -264,21 +264,21 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
+    ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
 
     (define/override (instructions)
       (set-union (super instructions)
 		 (set 'leaq)))
 
-    (define/override (assign-locations homes)
+    (define/override (assign-homes homes)
       (lambda (e)
 	(match e
 	   [`(stack-loc ,i) `(stack-loc ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
 	   [`(indirect-call ,f)
-	    `(indirect-call ,((send this assign-locations homes) f))]
+	    `(indirect-call ,((send this assign-homes homes) f))]
 	   [`(function-ref ,f) `(function-ref ,f) ]
-	   [else ((super assign-locations homes) e)]
+	   [else ((super assign-homes homes) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -289,13 +289,13 @@
 	(match ast
 	   [`(define (,f) ,n (,xs ,max-stack ,G) ,ss ...)
 	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
-	    (define new-ss (map (send this assign-locations homes) ss))
+	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
            [`(program (,locals ,max-stack ,G) ,ds ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes G locals ss))
-	    (define new-ss (map (send this assign-locations homes) ss))
+	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(program ,(align (+ stk-size (* 8 max-stack)) 16)
 		      ,new-ds ,@new-ss)]
 	   )))

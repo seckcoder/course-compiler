@@ -237,17 +237,17 @@
 	     )))
       
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; assign-locations : homes -> pseudo-x86 -> pseudo-x86
-    (define/override (assign-locations homes)
+    ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
+    (define/override (assign-homes homes)
       (lambda (e)
 	(match e
 	   [`(byte-register ,r) `(byte-register ,r)]
 	   [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([cnd ((send this assign-locations homes) cnd)]
-		  [thn-ss (map (send this assign-locations homes) thn-ss)]
-		  [els-ss (map (send this assign-locations homes) els-ss)])
+	    (let ([cnd ((send this assign-homes homes) cnd)]
+		  [thn-ss (map (send this assign-homes homes) thn-ss)]
+		  [els-ss (map (send this assign-homes homes) els-ss)])
 	      `(if ,cnd ,thn-ss ,els-ss))]
-	   [else ((super assign-locations homes) e)]
+	   [else ((super assign-homes homes) e)]
 	   )))
       
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
