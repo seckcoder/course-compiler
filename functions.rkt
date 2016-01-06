@@ -170,7 +170,7 @@
 	    (define mov-stack
 	      (for/list ([param last-params] 
 			 [i (in-range 0 (length last-params))])
-	         `(movq (stack-loc ,(- (+ 16 (* i 8)))) (var ,param))))
+	         `(movq (stack ,(- (+ 16 (* i 8)))) (var ,param))))
 	    (define new-ss (append mov-stack mov-regs
               (append* (map (send this select-instructions) ss))))
 	    ;; parameters become locals
@@ -273,7 +273,7 @@
     (define/override (assign-homes homes)
       (lambda (e)
 	(match e
-	   [`(stack-loc ,i) `(stack-loc ,i)]
+	   [`(stack ,i) `(stack ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
 	   [`(indirect-call ,f)
 	    `(indirect-call ,((send this assign-homes homes) f))]
@@ -301,25 +301,25 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; insert-spill-code : psuedo-x86 -> x86
+    ;; patch-instructions : psuedo-x86 -> x86
 
     (define/override (on-stack? a)
       (match a
 	 [`(function-ref ,f) #t]
 	 [else (super on-stack? a)]))
 
-    (define/override (insert-spill-code)
+    (define/override (patch-instructions)
       (lambda (e)
 	(match e
 	   [`(define (,f) ,n ,stack-space ,ss ...)
-	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
+	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
 	   [`(indirect-call ,f)
 	    `((indirect-call ,f))]
 	   [`(program ,stack-space ,ds ,ss ...)
 	    (define new-ds (for/list ([d ds])
-				     ((send this insert-spill-code) d)))
-	    (define sss (for/list ([s ss]) ((send this insert-spill-code) s)))
+				     ((send this patch-instructions) d)))
+	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
 	    `(program ,stack-space ,new-ds ,@(append* sss))]
 	   [`(leaq ,s ,d)
 	    (cond [(on-stack? d)
@@ -327,7 +327,7 @@
 		     (movq (reg rax) ,d))]
 		  [else
 		   `((leaq ,s ,d))])]
-	   [else ((super insert-spill-code) e)]
+	   [else ((super patch-instructions) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -405,7 +405,7 @@
 	    ,(send interp interp-x86 '()))
 	  `("allocate registers" ,(send compiler allocate-registers)
 	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler patch-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

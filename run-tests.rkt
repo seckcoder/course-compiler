@@ -21,7 +21,7 @@
   (newline)(display "tests passed")(newline)
   )
 
-(define s0_range (range 1 23))
+(define s0_range (range 1 24))
 (define s1_range (range 1 19))
 (define s2_range (range 1 6))
 (define s3_range (range 1 10))

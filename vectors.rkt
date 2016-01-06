@@ -99,7 +99,7 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; insert-spill-code : psuedo-x86 -> x86
+    ;; patch-instructions : psuedo-x86 -> x86
 
     (define/override (on-stack? a)
       (match a
@@ -111,7 +111,7 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
-	   [`(offset (stack-loc ,n) ,i)
+	   [`(offset (stack ,n) ,i)
 	    (format "~a(%rbp)" (- i n))]
 	   [`(offset ,e ,i)
 	    (format "~a(~a)" i ((send this print-x86) e))]
@@ -141,7 +141,7 @@
 	    ,(send interp interp-x86 '()))
 	  `("allocate registers" ,(send compiler allocate-registers)
 	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler patch-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

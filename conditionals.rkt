@@ -251,13 +251,13 @@
 	   )))
       
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; insert-spill-code : psuedo-x86 -> x86
-    (define/override (insert-spill-code)
+    ;; patch-instructions : psuedo-x86 -> x86
+    (define/override (patch-instructions)
       (lambda (e)
 	(match e
            [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([thn-ss (append* (map (send this insert-spill-code) thn-ss))]
-		  [els-ss (append* (map (send this insert-spill-code) els-ss))]
+	    (let ([thn-ss (append* (map (send this patch-instructions) thn-ss))]
+		  [els-ss (append* (map (send this patch-instructions) els-ss))]
 		  [else-label (gensym 'else)]
 		  [end-label (gensym 'if_end)]
 		  [cnd-inst ;; cmp's second operand can't be immediate
@@ -269,7 +269,7 @@
 	      (append cnd-inst `((je ,else-label)) thn-ss `((jmp ,end-label))
 	       `((label ,else-label)) els-ss `((label ,end-label))
 	       ))]
-	   [else ((super insert-spill-code) e)])))
+	   [else ((super patch-instructions) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
@@ -311,7 +311,7 @@
 	    ,(send interp interp-x86 '()))
 	  `("allocate registers" ,(send compiler allocate-registers)
 	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler patch-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

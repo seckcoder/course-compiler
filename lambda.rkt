@@ -173,7 +173,7 @@
 	    ,(send interp interp-x86 '()))
 	  `("allocate registers" ,(send compiler allocate-registers)
 	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler patch-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

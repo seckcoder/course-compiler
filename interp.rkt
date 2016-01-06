@@ -93,14 +93,14 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; psuedo-x86 and x86
-    ;; s,d ::= (var x) | (int n) | (reg r) | (stack-loc n)
+    ;; s,d ::= (var x) | (int n) | (reg r) | (stack n)
     ;; i   ::= (movq s d) | (addq s d) | (subq s d) | (imulq s d) 
     ;;       | (negq d) | (call f)
     ;; psuedo-x86 ::= (program (x ...) i ...)
 
     (define/public (get-name ast)
       (match ast
-         [(or `(var ,x) `(reg ,x) `(stack-loc ,x))
+         [(or `(var ,x) `(reg ,x) `(stack ,x))
 	  x]
 	 [else
 	  (error "doesn't have a name: " ast)]))
@@ -116,7 +116,7 @@
     (define/public (interp-x86-exp env)
       (lambda (ast)
 	(match ast
-	   [(or `(var ,x) `(reg ,x) `(stack-loc ,x))
+	   [(or `(var ,x) `(reg ,x) `(stack ,x))
 	    (lookup x env)]
 	   [`(int ,n) n]
 	   [else
@@ -258,7 +258,7 @@
 		  [d ((send this interp-x86-exp env) d)]
 		  [x (send this get-name d)])
 	      ((send this interp-x86 (cons (cons x v) env)) ss))]
-	   ;; if's are present before insert-spill-code
+	   ;; if's are present before patch-instructions
 	   [(or `((if ,cnd ,thn ,els) . ,ss)
 		`((if ,cnd ,thn ,_ ,els ,_) . ,ss))
 	    (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))

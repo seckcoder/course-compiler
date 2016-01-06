@@ -19,7 +19,7 @@
       (match a
 	 [`(var ,x) (set x)]
 	 [`(reg ,r) (set r)] ;; experimental -Jeremy
-	 [`(stack-loc ,i) (set)]
+	 [`(stack ,i) (set)]
 	 [`(int ,n) (set)]
 	 [else (error "free-vars, unhandled" a)]))
 
@@ -121,7 +121,7 @@
       (cond [(< c n)
 	     `(reg ,(vector-ref registers-for-alloc c))]
 	    [else 
-	     `(stack-loc ,(+ first-offset (* (- c n) variable-size)))]))
+	     `(stack ,(+ first-offset (* (- c n) variable-size)))]))
 
     (define/public (allocate-homes G xs ss)
       (debug "allocate-homes" xs)
@@ -200,7 +200,7 @@
 	    ,(send interp interp-x86 '()))
 	  `("allocate registers" ,(send compiler allocate-registers)
 	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler patch-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

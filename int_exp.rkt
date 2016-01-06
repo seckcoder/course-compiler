@@ -151,8 +151,8 @@
 	   [`(program ,xs ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack-loc ,(+ (send this first-offset)
-			      (* (send this variable-size) n))))
+	      `(stack ,(+ (send this first-offset)
+			  (* (send this variable-size) n))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
@@ -170,15 +170,15 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; insert-spill-code : psuedo-x86 -> x86
+    ;; patch-instructions : psuedo-x86 -> x86
     ;; Uses register rax to patch things up
 
     (define/public (on-stack? a)
       (match a
-         [`(stack-loc ,n) #t]
+         [`(stack ,n) #t]
 	 [else #f]))
 
-    (define/public (insert-spill-code)
+    (define/public (patch-instructions)
       (lambda (e)
 	(match e
            [`(movq ,s ,d)
@@ -190,7 +190,7 @@
 	   [`(call ,f) `((call ,f))]
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
-		      ,@(append* (map (send this insert-spill-code) ss)))]
+		      ,@(append* (map (send this patch-instructions) ss)))]
 	   ;; for imulq, destination must be a register -Jeremy
 	   [`(imulq ,s (reg ,d))
 	    `((imulq ,s (reg ,d)))]
@@ -201,7 +201,7 @@
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (send this instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
-		   (debug 'spill-code "spilling")
+		   (debug 'patch-instructions "spilling")
 		   `((movq ,s (reg rax)) (,instr-name (reg rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
 	   [`(,instr-name ,d)
@@ -214,7 +214,7 @@
     (define/public (print-x86)
       (lambda (e)
 	(match e
-           [`(stack-loc ,n) 
+           [`(stack ,n) 
 	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(reg ,r) (format "%~a" r)]
@@ -261,7 +261,7 @@
 	    ,(send interp interp-x86 '()))
 	  `("assign homes" ,(send compiler assign-homes (void))
 	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler insert-spill-code)
+	  `("insert spill code" ,(send compiler patch-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))
