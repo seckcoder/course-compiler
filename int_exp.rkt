@@ -96,7 +96,7 @@
 	    ((send this select-instructions) `(assign (reg rax) ,e))]
 	   [`(assign ,lhs (read))
 	    (define new-lhs ((send this select-instructions) lhs))
-	    `((call _read_int) (movq (reg rax) ,new-lhs))]
+	    `((callq _read_int) (movq (reg rax) ,new-lhs))]
 	   [`(assign ,lhs ,x) #:when (symbol? x)
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (cond [(equal? `(var ,x) new-lhs) '()]
@@ -147,7 +147,7 @@
 	   [`(var ,x) (hash-ref homes x)]
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
-	   [`(call ,f) `(call ,f)]
+	   [`(callq ,f) `(callq ,f)]
 	   [`(program ,xs ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
@@ -187,7 +187,7 @@
 		   `((movq ,s (reg rax))
 		     (movq (reg rax) ,d))]
 		  [else `((movq ,s ,d))])]
-	   [`(call ,f) `((call ,f))]
+	   [`(callq ,f) `((callq ,f))]
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
 		      ,@(append* (map (send this patch-instructions) ss)))]
@@ -218,7 +218,7 @@
 	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(reg ,r) (format "%~a" r)]
-	   [`(call ,f) (format "\tcallq\t~a\n" f)]
+	   [`(callq ,f) (format "\tcallq\t~a\n" f)]
 	   [`(program ,stack-space ,ss ...)
 	    (string-append
 	     (format "\t.globl _main\n")

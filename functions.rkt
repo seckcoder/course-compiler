@@ -195,7 +195,7 @@
 	         `(movq ,arg (stack-arg ,(* i 8)))))
 	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
-	     `((indirect-call ,new-f) (movq (reg rax) ,new-lhs)))]
+	     `((indirect-callq ,new-f) (movq (reg rax) ,new-lhs)))]
 	   [`(program ,locals ,ds ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
@@ -217,12 +217,12 @@
     (define/override (read-vars instr)
       (match instr
          [`(leaq ,s ,d) (send this free-vars s)]
-	 [`(indirect-call ,f) (send this free-vars f)]
+	 [`(indirect-callq ,f) (send this free-vars f)]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
       (match instr
-	 [`(indirect-call ,f) caller-save]
+	 [`(indirect-callq ,f) caller-save]
 	 [`(leaq ,s ,d)  (send this free-vars d)]
      	 [else (super write-vars instr)]))
 
@@ -275,8 +275,8 @@
 	(match e
 	   [`(stack ,i) `(stack ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
-	   [`(indirect-call ,f)
-	    `(indirect-call ,((send this assign-homes homes) f))]
+	   [`(indirect-callq ,f)
+	    `(indirect-callq ,((send this assign-homes homes) f))]
 	   [`(function-ref ,f) `(function-ref ,f) ]
 	   [else ((super assign-homes homes) e)]
 	   )))
@@ -314,8 +314,8 @@
 	   [`(define (,f) ,n ,stack-space ,ss ...)
 	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
-	   [`(indirect-call ,f)
-	    `((indirect-call ,f))]
+	   [`(indirect-callq ,f)
+	    `((indirect-callq ,f))]
 	   [`(program ,stack-space ,ds ,ss ...)
 	    (define new-ds (for/list ([d ds])
 				     ((send this patch-instructions) d)))
@@ -337,7 +337,7 @@
 	(match e
 	   [`(function-ref ,f)
 	    (format "~a(%rip)" f)]
-	   [`(indirect-call ,f)
+	   [`(indirect-callq ,f)
 	    (format "\tcallq\t*~a\n" ((send this print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]

@@ -63,7 +63,7 @@
 	      (for/list ([e new-es] [i (in-range 0 (length new-es))])
 			`(movq ,e (offset ,new-lhs ,(* i 8)))))
 	    (append `((movq (int ,(* n 8)) (reg rdi))
-		      (call _malloc)
+		      (callq _malloc)
 		      (movq (reg rax) ,new-lhs))
 		    initializers)]
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))

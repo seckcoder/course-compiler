@@ -29,7 +29,7 @@
 	 [(or `(addq ,s ,d) `(subq ,s ,d) `(imulq ,s ,d)) 
 	  (set-union (send this free-vars s) (send this free-vars d))]
 	 [`(negq ,d) (send this free-vars d)]
-	 [`(call ,f) (set)]
+	 [`(callq ,f) (set)]
 	 [else (error "read-vars unmatched" instr)]
 	 ))
   
@@ -39,7 +39,7 @@
 	 [(or `(addq ,s ,d) `(subq ,s ,d) `(imulq ,s ,d)) 
 	  (send this free-vars d)]
 	 [`(negq ,d) (send this free-vars d)]
-	 [`(call ,f) caller-save]
+	 [`(callq ,f) caller-save]
 	 [else (error "write-vars unmatched" instr)]
 	 ))
 
@@ -79,7 +79,7 @@
 		       #:when (not (or (equal? v s) (equal? v d))))
 		      (add-edge G d v)))
 	    ast]
-	   [`(call ,f)
+	   [`(callq ,f)
 	    (for ([v live-after])
 		 (for ([u caller-save]
 		       #:when (not (equal? v u)))

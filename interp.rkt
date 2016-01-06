@@ -95,7 +95,7 @@
     ;; psuedo-x86 and x86
     ;; s,d ::= (var x) | (int n) | (reg r) | (stack n)
     ;; i   ::= (movq s d) | (addq s d) | (subq s d) | (imulq s d) 
-    ;;       | (negq d) | (call f)
+    ;;       | (negq d) | (callq f)
     ;; psuedo-x86 ::= (program (x ...) i ...)
 
     (define/public (get-name ast)
@@ -127,9 +127,9 @@
 	(match ast
 	   ['()
 	    env]
-	   [`((call _read_int) . ,ss) 
+	   [`((callq _read_int) . ,ss) 
 	    ((send this interp-x86 (cons (cons 'rax (read)) env)) ss)]
-	   [`((call _malloc) . ,ss)
+	   [`((callq _malloc) . ,ss)
 	    (define num-bytes ((send this interp-x86-exp env) '(reg rdi)))
 	    (define vec (make-vector (/ num-bytes 8)))
 	    (define new-env (cons (cons 'rax vec) env))
@@ -454,10 +454,10 @@
 	    (define x (send this get-name d))
 	    (define v ((send this interp-x86-exp env) s))
 	    ((send this interp-x86 (cons (cons x v) env)) ss)]
-	   [`((indirect-call ,f) . ,ss)
+	   [`((indirect-callq ,f) . ,ss)
 	    (define f-val ((send this interp-x86-exp env) f))
 	    (call-function f-val ss env)]
-	   [`((call ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
+	   [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
 	   [`(program ,extra ,ds ,ss ...)
 	    (parameterize ([program ss])
