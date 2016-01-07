@@ -221,7 +221,7 @@
 
     (define/override (get-name ast)
       (match ast
-	 [`(byte-register ,r)
+	 [`(byte-reg ,r)
 	  (super get-name `(reg ,(byte2full-reg r)))]
 	 [else (super get-name ast)]))
 
@@ -243,7 +243,7 @@
     (define/override (interp-x86-exp env)
       (lambda (ast)
 	(match ast
-	   [`(byte-register ,r)
+	   [`(byte-reg ,r)
 	    ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
            [#t 1]
            [#f 0]

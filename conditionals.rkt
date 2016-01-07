@@ -161,7 +161,7 @@
 		     `((cmpq ,new-e1 ,new-e2))]))
 	    (append comparison
 	      `((movq (int 0) (reg rax))
-		(sete (byte-register al))
+		(sete (byte-reg al))
 		(movq (reg rax) ,new-lhs)))]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
@@ -179,7 +179,7 @@
 
     (define/override (free-vars a)
       (match a
-	 [`(byte-register al) (set 'rax)]
+	 [`(byte-reg al) (set 'rax)]
 	 [else (super free-vars a)]
 	 ))
     
@@ -241,7 +241,7 @@
     (define/override (assign-homes homes)
       (lambda (e)
 	(match e
-	   [`(byte-register ,r) `(byte-register ,r)]
+	   [`(byte-reg ,r) `(byte-reg ,r)]
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this assign-homes homes) cnd)]
 		  [thn-ss (map (send this assign-homes homes) thn-ss)]
@@ -276,7 +276,7 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
-	   [`(byte-register ,r) (format "%~a" r)]
+	   [`(byte-reg ,r) (format "%~a" r)]
 	   [`(sete ,d) (format "\tsete\t~a\n" ((send this print-x86) d))]
            [`(cmpq ,s1 ,s2) 
 	    (format "\tcmpq\t~a, ~a\n" ((send this print-x86) s1)
