@@ -117,7 +117,7 @@
 
     (define/override (instructions)
       (set-union (super instructions)
-		 (set 'cmpq 'sete 'andq 'orq 'notq)))
+		 (set 'cmpq 'sete 'andq 'orq 'notq 'movzx)))
 
     (define/override (binary-op->inst op)
       (match op
@@ -160,9 +160,9 @@
 		    [else 
 		     `((cmpq ,new-e1 ,new-e2))]))
 	    (append comparison
-	      `((movq (int 0) (reg rax))
-		(sete (byte-register al))
-		(movq (reg rax) ,new-lhs)))]
+              `((sete (byte-reg al))
+		(movzx (byte-reg al) ,new-lhs))
+	      )]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this select-instructions) cnd)]
@@ -179,13 +179,14 @@
 
     (define/override (free-vars a)
       (match a
-	 [`(byte-register al) (set 'rax)]
+	 [`(byte-reg al) (set 'rax)]
 	 [else (super free-vars a)]
 	 ))
     
 
     (define/override (read-vars instr)
       (match instr
+         [`(movzx ,s ,d) (send this free-vars s)]
      	 [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
      	 [(or `(andq ,s ,d) `(orq ,s ,d))
@@ -196,6 +197,7 @@
 
     (define/override (write-vars instr)
       (match instr
+         [`(movzx ,s ,d) (send this free-vars d)]
      	 [`(cmpq ,s1 ,s2) (set '__flag)]
      	 [(or `(andq ,s ,d) `(orq ,s ,d)) (send this free-vars d)]
 	 [`(notq ,d) (send this free-vars d)]
@@ -241,7 +243,7 @@
     (define/override (assign-homes homes)
       (lambda (e)
 	(match e
-	   [`(byte-register ,r) `(byte-register ,r)]
+	   [`(byte-reg ,r) `(byte-reg ,r)]
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this assign-homes homes) cnd)]
 		  [thn-ss (map (send this assign-homes homes) thn-ss)]
@@ -276,7 +278,7 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
-	   [`(byte-register ,r) (format "%~a" r)]
+	   [`(byte-reg ,r) (format "%~a" r)]
 	   [`(sete ,d) (format "\tsete\t~a\n" ((send this print-x86) d))]
            [`(cmpq ,s1 ,s2) 
 	    (format "\tcmpq\t~a, ~a\n" ((send this print-x86) s1)

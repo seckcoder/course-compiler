@@ -221,7 +221,7 @@
 
     (define/override (get-name ast)
       (match ast
-	 [`(byte-register ,r)
+	 [`(byte-reg ,r)
 	  (super get-name `(reg ,(byte2full-reg r)))]
 	 [else (super get-name ast)]))
 
@@ -243,7 +243,7 @@
     (define/override (interp-x86-exp env)
       (lambda (ast)
 	(match ast
-	   [`(byte-register ,r)
+	   [`(byte-reg ,r)
 	    ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
            [#t 1]
            [#f 0]
@@ -255,7 +255,6 @@
 	(match ast
 	   [`((sete ,d) . ,ss)
 	    (let ([v ((send this interp-x86-exp env) '(reg __flag))]
-		  [d ((send this interp-x86-exp env) d)]
 		  [x (send this get-name d)])
 	      ((send this interp-x86 (cons (cons x v) env)) ss))]
 	   ;; if's are present before patch-instructions
@@ -273,6 +272,10 @@
 						 (b2i (eq? v1 v2))) 
 					   env))
 	       ss))]
+	   [`((movzx ,s ,d) . ,ss)
+	    (define x (send this get-name d))
+	    (define v ((send this interp-x86-exp env) s))
+	    ((send this interp-x86 (cons (cons x v) env)) ss)]
 	   [`((jmp ,label) . ,ss)
 	    ((send this interp-x86 env) (goto-label label (program)))]
 	   [`((je ,label) . ,ss)
