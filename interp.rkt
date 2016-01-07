@@ -255,7 +255,6 @@
 	(match ast
 	   [`((sete ,d) . ,ss)
 	    (let ([v ((send this interp-x86-exp env) '(reg __flag))]
-		  [d ((send this interp-x86-exp env) d)]
 		  [x (send this get-name d)])
 	      ((send this interp-x86 (cons (cons x v) env)) ss))]
 	   ;; if's are present before patch-instructions
@@ -273,6 +272,10 @@
 						 (b2i (eq? v1 v2))) 
 					   env))
 	       ss))]
+	   [`((movzx ,s ,d) . ,ss)
+	    (define x (send this get-name d))
+	    (define v ((send this interp-x86-exp env) s))
+	    ((send this interp-x86 (cons (cons x v) env)) ss)]
 	   [`((jmp ,label) . ,ss)
 	    ((send this interp-x86 env) (goto-label label (program)))]
 	   [`((je ,label) . ,ss)
