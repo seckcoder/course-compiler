@@ -50,6 +50,12 @@
 (test-compiler "lambda" lambda-passes "s2" s2_range)
 (test-compiler "lambda" lambda-passes "s3" s3_range)
 (test-compiler "lambda" lambda-passes "s4" s4_range)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(test-compiler "collection" lambda-passes "s0" s0_range)
+(test-compiler "collection" lambda-passes "s1" s1_range)
+(test-compiler "collection" lambda-passes "s2" s2_range)
+(test-compiler "collection" lambda-passes "s3" s3_range)
+(test-compiler "collection" lambda-passes "s4" s4_range)
 
 ) '())
 
