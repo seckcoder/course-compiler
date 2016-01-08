@@ -1,6 +1,6 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 lookup make-dispatcher assert 
+(provide debug map2 lookup read-fixnum make-dispatcher assert 
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
 	 make-graph add-edge adjacent
 	 general-registers registers-for-alloc caller-save callee-save
@@ -52,6 +52,11 @@
 	   (mcdr (car ls))]
 	  [else 
 	   (lookup x (cdr ls))])))
+
+(define (read-fixnum)
+  (define r (read))
+  (cond [(fixnum? r) r]
+	[else (error 'read "expected an integer")]))
 
 (define (make-dispatcher mt)
   (lambda (e . rest)

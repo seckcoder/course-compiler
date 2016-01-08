@@ -1,4 +1,5 @@
 #lang racket
+(require racket/fixnum)
 (require "utilities.rkt")
 (provide interp-scheme interp-C interp-x86 interp-S0 interp-S1 interp-S2 interp-S3 interp-S4 )
 
@@ -20,11 +21,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S0: integer arithmetic and 'let'
 
-(define (read-fixnum)
-  (define r (read))
-  (cond [(fixnum? r) r]
-	[else (error 'read "expected an integer")]))
-
 (define interp-S0
   (class object%
     (super-new)
@@ -36,8 +32,8 @@
 
     (define/public (interp-op op)
       (match op
-         ['+ +]
-	 ['- -]
+         ['+ fx+]
+	 ['- (lambda (n) (fx- 0 n))]
 	 ['read read-fixnum]
 	 [else (error "in interp-op S0, unmatched" op)]))
 
@@ -173,9 +169,13 @@
 
     (define/override (interp-op op)
       (match op
-         ['eq? eq?]
-	 ['not not]
-	 ['and (lambda (a b) (and a b))]
+         ['eq? (lambda (v1 v2)
+                 (cond [(and (fixnum? v1) (fixnum? v2)) (eq? v1 v2)]
+                       [(and (boolean? v1) (boolean? v2)) (eq? v1 v2)]))]
+         ['not (lambda (v) (match v [#t #f] [#f #t]))]
+	 ['and (lambda (v1 v2)
+		 (cond [(and (boolean? v1) (boolean? v2))
+			(and v1 v2)]))]
 	 [else (super interp-op op)]))
 
     (define/override (interp-scheme env)
@@ -310,6 +310,11 @@
 
     (define/override (interp-op op)
       (match op
+         ['eq? (lambda (v1 v2)
+                 (cond [(or (and (fixnum? v1) (fixnum? v2)) 
+			    (and (boolean? v1) (boolean? v2))
+			    (and (vector? v1) (vector? v2)))
+			(eq? v1 v2)]))]
          ['vector vector]
 	 ['vector-ref vector-ref]
 	 ['vector-set! vector-set!]
