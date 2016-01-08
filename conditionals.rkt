@@ -117,7 +117,7 @@
 
     (define/override (instructions)
       (set-union (super instructions)
-		 (set 'cmpq 'sete 'andq 'orq 'notq 'movzx)))
+		 (set 'cmpq 'sete 'andq 'orq 'notq 'movzbq)))
 
     (define/override (binary-op->inst op)
       (match op
@@ -161,7 +161,7 @@
 		     `((cmpq ,new-e1 ,new-e2))]))
 	    (append comparison
               `((sete (byte-reg al))
-		(movzx (byte-reg al) ,new-lhs))
+		(movzbq (byte-reg al) ,new-lhs))
 	      )]
 	   ;; Keep the if statement to simplify register allocation
 	   [`(if ,cnd ,thn-ss ,els-ss)
@@ -185,7 +185,7 @@
     
     (define/override (read-vars instr)
       (match instr
-         [`(movzx ,s ,d) (send this free-vars s)]
+         [`(movzbq ,s ,d) (send this free-vars s)]
      	 [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
      	 [(or `(andq ,s ,d) `(orq ,s ,d))
@@ -196,7 +196,7 @@
 
     (define/override (write-vars instr)
       (match instr
-         [`(movzx ,s ,d) (send this free-vars d)]
+         [`(movzbq ,s ,d) (send this free-vars d)]
      	 [`(cmpq ,s1 ,s2) (set '__flag)]
      	 [(or `(andq ,s ,d) `(orq ,s ,d)) (send this free-vars d)]
 	 [`(notq ,d) (send this free-vars d)]
@@ -228,7 +228,7 @@
       (define/override (build-interference live-after G)
 	(lambda (ast)
 	  (match ast
-             [`(movzx ,s ,d)
+             [`(movzbq ,s ,d)
               (for ([v live-after])
                    (for ([d (write-vars `(movq ,s ,d))]
                          #:when (not (or (equal? v s) (equal? v d))))
