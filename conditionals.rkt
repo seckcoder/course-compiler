@@ -183,7 +183,6 @@
 	 [else (super free-vars a)]
 	 ))
     
-
     (define/override (read-vars instr)
       (match instr
          [`(movzx ,s ,d) (send this free-vars s)]
@@ -229,6 +228,12 @@
       (define/override (build-interference live-after G)
 	(lambda (ast)
 	  (match ast
+             [`(movzx ,s ,d)
+              (for ([v live-after])
+                   (for ([d (write-vars `(movq ,s ,d))]
+                         #:when (not (or (equal? v s) (equal? v d))))
+                        (add-edge G d v)))
+              ast]
 	     [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
 	      (define (build-inter inst live-after)
 		((send this build-interference live-after G) inst))
