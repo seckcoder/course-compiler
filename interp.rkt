@@ -272,7 +272,7 @@
 						 (b2i (eq? v1 v2))) 
 					   env))
 	       ss))]
-	   [`((movzx ,s ,d) . ,ss)
+	   [`((movzbq ,s ,d) . ,ss)
 	    (define x (send this get-name d))
 	    (define v ((send this interp-x86-exp env) s))
 	    ((send this interp-x86 (cons (cons x v) env)) ss)]
