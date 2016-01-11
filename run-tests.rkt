@@ -6,6 +6,7 @@
 (require "vectors.rkt")
 (require "functions.rkt")
 (require "lambda.rkt")
+(require "interp.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])

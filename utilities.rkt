@@ -111,8 +111,11 @@
     (close-input-port program-file)
     (debug "program:" sexp)
 
-    (let loop ([passes passes] [p sexp] [result (with-input-from-file input-file-name
-						  (lambda () (initial-interp sexp)))])
+    (let loop ([passes passes] [p sexp]
+	       [result (if (file-exists? input-file-name)
+			   (with-input-from-file input-file-name
+			     (lambda () (initial-interp sexp)))
+			   (initial-interp sexp))])
       (cond [(null? passes) result]
 	    [else
 	     (match (car passes)
