@@ -1,4 +1,3 @@
-(program ()
 (program
  (define (even [x : Integer]) : Boolean
    (if (eq? x 0) #t
@@ -9,4 +8,3 @@
  (if (even 2)
      42
      0))
-)
