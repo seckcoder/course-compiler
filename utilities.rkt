@@ -106,7 +106,7 @@
 ;; function from AST to result value).
 ;;
 
-(define (check-passes name passes)
+(define (check-passes name passes initial-interp)
   (lambda (test-name)
     (debug "** compiler " name)
     (debug "** checking passes for test " test-name)
@@ -115,7 +115,11 @@
     (define sexp (read-program program-name))
     (debug "program:" sexp)
 
-    (let loop ([passes passes] [p sexp] [result #f])
+    (let loop ([passes passes] [p sexp]
+	       [result (if (file-exists? input-file-name)
+			   (with-input-from-file input-file-name
+			     (lambda () (initial-interp sexp)))
+			   (initial-interp sexp))])
       (cond [(null? passes) result]
 	    [else
 	     (match (car passes)
@@ -189,8 +193,8 @@
 ;; same number except that it ends with ".in" that provides the
 ;; input for the Scheme program.
 
-(define (interp-tests name passes test-family test-nums)
-  (define checker (check-passes name passes))
+(define (interp-tests name passes initial-interp test-family test-nums)
+  (define checker (check-passes name passes initial-interp))
   (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
 			test-nums)])
        (checker test-name)
@@ -208,7 +212,7 @@
   (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
 			test-nums)])
        (compiler (format "tests/~a.rkt" test-name))
-       (if (system (format "gcc -g runtime.o tests/~a.s" test-name))
+       (if (system (format "gcc -g -std=c99 runtime.o tests/~a.s" test-name))
 	   (void) (exit))
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
 			 (format " < tests/~a.in" test-name)

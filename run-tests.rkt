@@ -6,6 +6,7 @@
 (require "vectors.rkt")
 (require "functions.rkt")
 (require "lambda.rkt")
+(require "interp.rkt")
 
 (define (range start end)
   (let loop ([i start] [res '()])
@@ -16,7 +17,7 @@
 
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
-  (interp-tests name passes test-family test-nums)
+  (interp-tests name passes interp-scheme test-family test-nums)
   (compiler-tests name passes test-family test-nums)
   (newline)(display "tests passed")(newline)
   )
