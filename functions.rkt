@@ -16,13 +16,13 @@
       (match d
 	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	  f]
-	 [else (error "ill-formed function definition")]))
+	 [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
       
     (define (fun-def-type d)
       (match d
 	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	  `(,@ps -> ,rt)]
-	 [else (error "ill-formed function definition")]))
+	 [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
       
 
 
@@ -199,8 +199,11 @@
 	   [`(program ,locals ,ds ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
-	    (define sss (map (send this select-instructions) ss))
-	    `(program (,locals ,max-stack) ,new-ds ,@(append* sss))]
+            `(program
+              (,locals ,max-stack)
+              ,new-ds
+              (callq initialize)
+              ,@(append* (map (send this select-instructions) ss)))]
 	   [else ((super select-instructions) e)]
 	   )))
 
@@ -380,32 +383,24 @@
 (define functions-passes
   (let ([compiler (new compile-S3)]
 	[interp (new interp-S3)])
-    (list `("programify"
-	    ,(lambda (ast) 
-	       (match ast
-		  [`(program ,ds ... ,body)
-		   `(program ,@ds ,body)]
-		  [else ;; for backwards compatibility with S0 thru S2
-		   `(program ,ast)]))
-	    ,(send interp interp-scheme '()))
-	  `("type-check" ,(send compiler type-check '())
-	    ,(send interp interp-scheme '()))
-	  `("uniquify" ,(send compiler uniquify '())
-	    ,(send interp interp-scheme '()))
-	  `("reveal-functions" ,(send compiler reveal-functions '())
-	    ,(send interp interp-scheme '()))
-	  `("flatten" ,(send compiler flatten #f)
-	    ,(send interp interp-C '()))
-	  `("instruction selection" ,(send compiler select-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("liveness analysis" ,(send compiler uncover-live (void))
-	    ,(send interp interp-x86 '()))
-	  `("build interference" ,(send compiler build-interference
-					(void) (void))
-	    ,(send interp interp-x86 '()))
-	  `("allocate registers" ,(send compiler allocate-registers)
-	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler patch-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("print x86" ,(send compiler print-x86) #f)
-	  )))
+    `(("type-check" ,(send compiler type-check '())
+       ,(send interp interp-scheme '()))
+      ("uniquify" ,(send compiler uniquify '())
+       ,(send interp interp-scheme '()))
+      ("reveal-functions" ,(send compiler reveal-functions '())
+       ,(send interp interp-scheme '()))
+      ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("instruction selection" ,(send compiler select-instructions)
+       ,(send interp interp-x86 '()))
+      ("liveness analysis" ,(send compiler uncover-live (void))
+       ,(send interp interp-x86 '()))
+      ("build interference" ,(send compiler build-interference
+                                   (void) (void))
+       ,(send interp interp-x86 '()))
+      ("allocate registers" ,(send compiler allocate-registers)
+       ,(send interp interp-x86 '()))
+      ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("print x86" ,(send compiler print-x86) #f)
+      )))

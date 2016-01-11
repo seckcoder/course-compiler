@@ -1,6 +1,7 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 label-name lookup read-fixnum make-dispatcher assert 
+(provide debug map2 label-name lookup  make-dispatcher assert
+         read-fixnum read-program
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
 	 make-graph add-edge adjacent
 	 general-registers registers-for-alloc caller-save callee-save
@@ -65,6 +66,15 @@
   (define r (read))
   (cond [(fixnum? r) r]
 	[else (error 'read "expected an integer")]))
+
+(define (read-program path)
+  (unless (or (string? path) (path? path))
+    (error 'read-program "expected a string in ~s" path))
+  (unless (file-exists? path)
+    (error 'read-program "file doesn't exist in ~s" path))
+  (call-with-input-file path
+    (lambda (f)
+      `(program . ,(for/list ([e (in-port read f)]) e)))))
 
 (define (make-dispatcher mt)
   (lambda (e . rest)

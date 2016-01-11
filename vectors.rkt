@@ -12,7 +12,7 @@
 		 (set 'vector 'vector-ref 'vector-set!)))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; type-check : env -> S2 -> S2
+    ;; type-check : env -> S2 -> S2    
     (define/override (type-check env)
       (lambda (e)
 	(match e
@@ -62,10 +62,10 @@
 	    (define initializers
 	      (for/list ([e new-es] [i (in-range 0 (length new-es))])
 			`(movq ,e (offset ,new-lhs ,(* i 8)))))
-	    (append `((movq (int ,(* n 8)) (reg rdi))
-		      (callq _malloc)
-		      (movq (reg rax) ,new-lhs))
-		    initializers)]
+	    `((movq (int ,(* n 8)) (reg rdi))
+              (callq alloc)
+              (movq (reg rax) ,new-lhs)
+              ,@initializers)]
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
@@ -75,6 +75,10 @@
 	    (define new-e-vec ((send this select-instructions) e-vec))
 	    (define new-e-arg ((send this select-instructions) e-arg))
 	    `((movq ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
+           [`(program ,xs ,ss ...)
+            `(program ,xs
+                      (callq initialize)
+                      ,@(append* (map (send this select-instructions) ss)))]
 	   [else ((super select-instructions) e)]
 	   )))
     
@@ -124,24 +128,22 @@
 (define vectors-passes
   (let ([compiler (new compile-S2)]
 	[interp (new interp-S2)])
-    (list `("programify" ,(lambda (ast) `(program () ,ast))
-	    ,(send interp interp-scheme '()))
-	  `("type-check" ,(send compiler type-check '())
-	    ,(send interp interp-scheme '()))
-	  `("uniquify" ,(send compiler uniquify '())
-	    ,(send interp interp-scheme '()))
-	  `("flatten" ,(send compiler flatten #f)
-	    ,(send interp interp-C '()))
-	  `("instruction selection" ,(send compiler select-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("liveness analysis" ,(send compiler uncover-live (void))
-	    ,(send interp interp-x86 '()))
-	  `("build interference" ,(send compiler build-interference
-	   				(void) (void))
-	    ,(send interp interp-x86 '()))
-	  `("allocate registers" ,(send compiler allocate-registers)
-	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler patch-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("print x86" ,(send compiler print-x86) #f)
-	  )))
+    `(("type-check" ,(send compiler type-check '())
+       ,(send interp interp-scheme '()))
+      ("uniquify" ,(send compiler uniquify '())
+       ,(send interp interp-scheme '()))
+      ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("instruction selection" ,(send compiler select-instructions)
+       ,(send interp interp-x86 '()))
+      ("liveness analysis" ,(send compiler uncover-live (void))
+       ,(send interp interp-x86 '()))
+      ("build interference" ,(send compiler build-interference
+                                   (void) (void))
+       ,(send interp interp-x86 '()))
+      ("allocate registers" ,(send compiler allocate-registers)
+       ,(send interp interp-x86 '()))
+      ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("print x86" ,(send compiler print-x86) #f)
+      )))

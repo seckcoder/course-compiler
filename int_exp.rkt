@@ -218,7 +218,7 @@
 	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(reg ,r) (format "%~a" r)]
-	   [`(callq ,f) (format "\tcallq\t~a\n" (label-name f))]
+	   [`(callq ,f) (format "\tcallq\t~a\n" (label-name (symbol->string f)))]
 	   [`(program ,stack-space ,ss ...)
 	    (string-append
 	     (format "\t.globl ~a\n" (label-name "main"))
