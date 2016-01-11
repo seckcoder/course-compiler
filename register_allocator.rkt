@@ -185,23 +185,25 @@
 (define reg-int-exp-passes
   (let ([compiler (new compile-reg-S0)]
 	[interp (new interp-S0)])
-    (list `("programify" ,(lambda (ast) `(program () ,ast))
-	    ,(send interp interp-scheme '()))
-	  `("uniquify" ,(send compiler uniquify '())
-	    ,(send interp interp-scheme '()))
-	  `("flatten" ,(send compiler flatten #f)
-	    ,(send interp interp-C '()))
-	  `("instruction selection" ,(send compiler select-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("liveness analysis" ,(send compiler uncover-live (void))
-	    ,(send interp interp-x86 '()))
-	  `("build interference" ,(send compiler
-					build-interference (void) (void))
-	    ,(send interp interp-x86 '()))
-	  `("allocate registers" ,(send compiler allocate-registers)
-	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler patch-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("print x86" ,(send compiler print-x86) #f)
-	  )))
+    `(#|
+      ("programify" ,(lambda (ast) `(program () ,ast))
+      ,(send interp interp-scheme '()))
+      |#
+      ("uniquify" ,(send compiler uniquify '()) ,(send interp
+                                                       interp-scheme '()))
+      ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("instruction selection" ,(send compiler select-instructions)
+       ,(send interp interp-x86 '()))
+      ("liveness analysis" ,(send compiler uncover-live (void))
+       ,(send interp interp-x86 '()))
+      ("build interference" ,(send compiler
+                                   build-interference (void) (void))
+       ,(send interp interp-x86 '()))
+      ("allocate registers" ,(send compiler allocate-registers)
+       ,(send interp interp-x86 '()))
+      ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("print x86" ,(send compiler print-x86) #f)
+      )))
 
