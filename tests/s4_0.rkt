@@ -1,2 +1,1 @@
-(program
- ((lambda: ([x : Integer]) : Integer x) 42))
+ ((lambda: ([x : Integer]) : Integer x) 42)

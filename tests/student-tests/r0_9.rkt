@@ -1,1 +1,1 @@
-(program () (read))
+(read)
