@@ -84,11 +84,16 @@ static void process_vector(ptr* scan_ptr, ptr* free_ptr);
 static ptr tospace_begin;
 static ptr tospace_end;
 
+ptr free_ptr;
+
 ptr fromspace_begin;
 ptr fromspace_end;
 
 ptr rootstack_begin;
 ptr rootstack_end;
+
+
+int initialized = 0;
 
 void initialize()
 {
@@ -100,13 +105,43 @@ void initialize()
   tospace_begin = malloc(8 * initial_len);
   tospace_end = tospace_begin + initial_len;
 
+  free_ptr = fromspace_begin;
+
   rootstack_begin = malloc(8 * initial_len);
   rootstack_end = rootstack_begin + initial_len;
+
+  initialized = 1;
 }
+
+ptr alloc(long int bytes_requested)
+{
+  if (!initialized) {
+    //allocations must be in full words
+    printf("Initialization didn't run");
+    exit(-1);
+  }
+  
+  if (bytes_requested % 8 != 0){
+    //allocations must be in full words
+    printf("Can't allocate fractions of a ptr");
+    exit(-1);
+  }
+
+  if (bytes_requested > (fromspace_end - free_ptr) * 8){
+    //collect(bytes_requested, rootstack_ptr);
+    printf("Collection not yet implemented\n");
+    exit(-1);
+  }
+
+  ptr new_ptr = free_ptr;
+  free_ptr = free_ptr + (bytes_requested / sizeof(char));
+  return new_ptr;
+}
+
 
 ptr collect(long int bytes_requested, ptr rootstack_ptr)
 {
-  ptr free_ptr;
+  //ptr free_ptr;
   ptr scan_ptr;
 
   free_ptr = tospace_begin;
@@ -133,7 +168,7 @@ ptr collect(long int bytes_requested, ptr rootstack_ptr)
   /* if there is not enough room left for the bytes_requested,
      allocate larger tospace and fromspace */
   
-  if (8 * (fromspace_end - free_ptr) < bytes_requested) {
+  if (sizeof(char) * (fromspace_end - free_ptr) < bytes_requested) {
     long int old_len = fromspace_end - fromspace_begin;
     long int old_bytes = 8 * old_len;
 
