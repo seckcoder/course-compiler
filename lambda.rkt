@@ -146,37 +146,29 @@
 (define lambda-passes
   (let ([compiler (new compile-S4)]
         [interp (new interp-S4)])
-    (list `("programify"
-	    ,(lambda (ast) 
-	       (match ast
-		  [`(program ,ds ... ,body)
-		   `(program ,@ds ,body)]
-		  [else ;; for backwards compatibility with S0 thru S2
-		   `(program ,ast)]))
-	    ,(send interp interp-scheme '()))
-	  `("type-check" ,(send compiler type-check '())
-	    ,(send interp interp-scheme '()))
-	  `("uniquify" ,(send compiler uniquify '())
-	    ,(send interp interp-scheme '()))
-	  `("reveal-functions" ,(send compiler reveal-functions '())
-	    ,(send interp interp-scheme '()))
-	  `("convert-to-closures" ,(send compiler convert-to-closures)
-	    ,(send interp interp-scheme '()))
-	  `("flatten" ,(send compiler flatten #f)
-	    ,(send interp interp-C '()))
-	  `("instruction selection" ,(send compiler select-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("liveness analysis" ,(send compiler uncover-live (void))
-	    ,(send interp interp-x86 '()))
-	  `("build interference" ,(send compiler build-interference
-					(void) (void))
-	    ,(send interp interp-x86 '()))
-	  `("allocate registers" ,(send compiler allocate-registers)
-	    ,(send interp interp-x86 '()))
-	  `("insert spill code" ,(send compiler patch-instructions)
-	    ,(send interp interp-x86 '()))
-	  `("print x86" ,(send compiler print-x86) #f)
-	  )))
+    `(("type-check" ,(send compiler type-check '())
+       ,(send interp interp-scheme '()))
+      ("uniquify" ,(send compiler uniquify '())
+       ,(send interp interp-scheme '()))
+      ("reveal-functions" ,(send compiler reveal-functions '())
+       ,(send interp interp-scheme '()))
+      ("convert-to-closures" ,(send compiler convert-to-closures)
+       ,(send interp interp-scheme '()))
+      ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("instruction selection" ,(send compiler select-instructions)
+       ,(send interp interp-x86 '()))
+      ("liveness analysis" ,(send compiler uncover-live (void))
+       ,(send interp interp-x86 '()))
+      ("build interference" ,(send compiler build-interference
+                                   (void) (void))
+       ,(send interp interp-x86 '()))
+      ("allocate registers" ,(send compiler allocate-registers)
+       ,(send interp interp-x86 '()))
+      ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("print x86" ,(send compiler print-x86) #f)
+      )))
     
     
     

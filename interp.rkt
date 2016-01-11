@@ -126,19 +126,19 @@
 	(match ast
 	   ['()
 	    env]
-	   [`((callq _read_int) . ,ss) 
+	   [`((callq read_int) . ,ss) 
 	    ((send this interp-x86 (cons (cons 'rax (read)) env)) ss)]
-	   [`((callq _malloc) . ,ss)
+	   [`((callq malloc) . ,ss)
 	    (define num-bytes ((send this interp-x86-exp env) '(reg rdi)))
 	    (define vec (make-vector (/ num-bytes 8)))
 	    (define new-env (cons (cons 'rax vec) env))
 	    ((send this interp-x86 new-env) ss)]
-           [`((callq _alloc) . ,ss)
+           [`((callq alloc) . ,ss)
 	    (define num-bytes ((send this interp-x86-exp env) '(reg rdi)))
 	    (define vec (make-vector (/ num-bytes 8)))
 	    (define new-env (cons (cons 'rax vec) env))
 	    ((send this interp-x86 new-env) ss)]
-           [`((callq _initialize) . ,ss)
+           [`((callq initialize) . ,ss)
             ;; Could do some work here if we decide to lower the
             ;; representation of vectors for this interpreter. 
             ((send this interp-x86 env) ss)]
@@ -422,7 +422,7 @@
       (string->symbol (string-append "rsp_" (number->string n))))
 
     (define/public (builtin-funs) 
-      (set '_alloc '_malloc '_initialize '_read_int))
+      (set 'alloc 'malloc 'initialize 'read_int))
 
     (define/override (get-name ast)
       (match ast

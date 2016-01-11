@@ -2,7 +2,7 @@
 (require racket/set)
 (require "utilities.rkt")
 (require "functions.rkt")
-(require "lambdas.rkt")
+(require "lambda.rkt")
 (require "interp.rkt")
 
 (provide compile-S5 collection-passes)
@@ -10,41 +10,35 @@
 (define compile-S5
   (class compile-S4
     (super-new)
-    
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; type-check : env -> S4 -> S4
-    (define/override (type-check env)
-      (define env (box (hash)))
-      (lambda (e)
-        (match e
-          [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-           (define bodyT
-	     ((send this type-check (append (map cons xs Ts) env)) body))
-	   (cond [(equal? rT bodyT)
-		  `(,@Ts -> ,rT)]
-		 [else (error "function body's type does not match return type"
-			      bodyT rT)])]
-          [else ((super type-check env) e)]
-          )))
-
-    #|
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S0 -> S0
-    (define/override (uniquify env)
+    ;; Nothing changes here but uniquify must either run before type-check
+    ;; or be merged with type-check in order to create a map of all identifiers
+    ;; and their types. Either can be done but it is trivial to just run it
+    ;; before type-check. This must occur for all future based off of this
+    ;; compiler.
+    
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; type-check : env -> S4 -> S4
+    ;; id.type-map : (listof (cons symbol type))
+    (define id-type-map '())
+    (define/override (type-check env)
       (lambda (e)
-	(match e
-          [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-	   (define new-xs (map gensym xs))
-	   (define new-env (append (map cons xs new-xs) env))
-	   `(lambda: ,(map (lambda (x T) `[,x : ,T]) new-xs Ts) : ,rT 
-		     ,((send this uniquify new-env) body))]
-	  [else ((super uniquify env) e)]
-	  )))
-
+        (match e
+          [(? symbol? id)
+           (let ([T ((super type-check env) id)])
+             (set! id-type-map (cons (cons id T) id-type-map))
+             T)]
+          [`(program ,ds ... ,body)
+           (set! id-type-map '())
+           ((super type-check env) e)]
+          [else ((super type-check env) e)])))
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; reveal-functions
-    (define/override (reveal-functions funs)
+    
+    #|(define/override (reveal-functions funs)
       (lambda (e)
 	(define recur (send this reveal-functions funs))
 	(match e
