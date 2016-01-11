@@ -116,7 +116,6 @@
       (lambda (ast)
 	(match ast
 	   [(or `(var ,x) `(reg ,x) `(stack ,x))
-            (display 'x)
             (lookup x env)]
 	   [`(int ,n) n]
 	   [else
