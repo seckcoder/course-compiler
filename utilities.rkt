@@ -67,14 +67,20 @@
   (cond [(fixnum? r) r]
 	[else (error 'read "expected an integer")]))
 
+;; Read an entire .rkt file wrapping the s-expressions in
+;; a list whose head is 'program.
 (define (read-program path)
   (unless (or (string? path) (path? path))
     (error 'read-program "expected a string in ~s" path))
   (unless (file-exists? path)
     (error 'read-program "file doesn't exist in ~s" path))
-  (call-with-input-file path
-    (lambda (f)
-      `(program . ,(for/list ([e (in-port read f)]) e)))))
+  (define input-prog
+    (call-with-input-file path
+      (lambda (f)
+        `(program . ,(for/list ([e (in-port read f)]) e)))))
+  (when debug-state
+    (printf "read program:\n~s\n\n" input-prog))
+  input-prog)
 
 (define (make-dispatcher mt)
   (lambda (e . rest)
@@ -106,9 +112,7 @@
     (debug "** checking passes for test " test-name)
     (define input-file-name (format "tests/~a.in" test-name))
     (define program-name (format "tests/~a.rkt" test-name))
-    (define program-file (open-input-file program-name))
-    (define sexp (read program-file))
-    (close-input-port program-file)
+    (define sexp (read-program program-name))
     (debug "program:" sexp)
 
     (let loop ([passes passes] [p sexp] [result #f])
@@ -120,11 +124,9 @@
 		 (define new-p (pass p))
 		 (debug pass-name new-p)
 		 (cond [interp
-			(let ([new-result 
+			(let ([new-result  
 			       (if (file-exists? input-file-name)
-				   (begin
-				     (with-input-from-file input-file-name
-				       (lambda () (interp new-p))))
+                                   (read-program input-file-name)
 				   (interp new-p))])
 			  (cond [result
 				 (cond [(equal? result new-result)
@@ -153,27 +155,26 @@
 (define (compile-file passes)
   (lambda (prog-file-name)
     (define file-base (string-trim prog-file-name ".rkt"))
-    (define prog-file (open-input-file prog-file-name))
     (define out-file-name (string-append file-base ".s"))
-    (define out-file (open-output-file #:exists 'replace out-file-name))
-    (define sexp (read prog-file))
-    (close-input-port prog-file)
-    (let ([x86 (let loop ([passes passes] [p sexp])
-		 (cond [(null? passes) p]
-		       [else
-			(match (car passes)
-			   [`(,name ,pass ,interp)
-			    (let* ([new-p (pass p)])
-			      (loop (cdr passes) new-p)
-			      )])]))])
-      (cond [(string? x86)
-	     (write-string x86 out-file)
-	     (newline out-file)]
-	    [else
-	     (error "compiler did not produce x86 output")])
-      )
-    (close-output-port out-file)
-    ))
+    (call-with-output-file
+      out-file-name
+      #:exists 'replace
+      (lambda (out-file)
+        (define sexp (read-program prog-file-name))
+        (let ([x86 (let loop ([passes passes] [p sexp])
+                     (cond [(null? passes) p]
+                           [else
+                            (match (car passes)
+                              [`(,name ,pass ,interp)
+                               (let* ([new-p (pass p)])
+                                 (loop (cdr passes) new-p)
+                                 )])]))])
+          (cond [(string? x86)
+                 (write-string x86 out-file)
+                 (newline out-file)]
+                [else
+                 (error "compiler did not produce x86 output")])
+          )))))
 
 ;; The interp-tests function takes a compiler name (a string)
 ;; a description of the passes (see the comment for check-passes)

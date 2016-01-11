@@ -46,7 +46,7 @@
 	   [`(let ([,x ,e]) ,body)
 	    (let ([v ((send this interp-scheme env) e)])
 	      ((send this interp-scheme (cons (cons x v) env)) body))]
-	   [`(program ,extra ,e) ((send this interp-scheme '()) e)]
+	   [`(program ,e) ((send this interp-scheme '()) e)]
 	   [`(,op ,args ...) #:when (set-member? (send this primitives) op)
 	    (apply (interp-op op) (map (send this interp-scheme env) args))]
 	   [else
@@ -201,7 +201,7 @@
 	    (if ((send this interp-scheme env) cnd)
 		((send this interp-scheme env) thn)
 		((send this interp-scheme env) els))]
-	   [else ((super interp-scheme env) ast)]
+           [else ((super interp-scheme env) ast)]
 	   )))
 
     (define/override (interp-C env)

@@ -25,8 +25,8 @@
 	    (define new-e (recur e))
 	    `(let ([,new-x ,new-e])
 	       ,((send this uniquify (cons (cons x new-x) env)) body))]
-	   [`(program ,extra ,body)
-	    `(program ,extra ,(recur body))]
+	   [`(program ,body)
+	    `(program ,(recur body))]
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    `(,op ,@(map recur es))]
 	   [else (error "uniquify couldn't match" e)])))
@@ -44,6 +44,7 @@
 
     (define/public (flatten need-atomic)
       (lambda (e)
+        (display e) (newline)
         (match e
            [(? symbol?) (values e '())]
 	   [(? integer?) (values e '())]
@@ -60,7 +61,7 @@
 		   (define tmp (gensym 'tmp))
 		   (values tmp (append ss `((assign ,tmp ,prim-apply))))]
 		  [else (values prim-apply ss)])]
-	   [`(program ,extra ,e)
+	   [`(program ,e)
 	    (define-values (new-e ss) ((send this flatten #t) e))
 	    (define xs (append* (map (send this collect-locals) ss)))
 	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
@@ -125,8 +126,8 @@
 	    (cond [(equal? new-e1 new-lhs)
 		   `((,inst ,new-lhs))]
 		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
-	   [`(program ,xs ,ss ...)
-	    `(program ,xs ,@(append* (map (send this select-instructions) ss)))]
+	   [`(program ,locals ,ss ...)
+	    `(program ,locals ,@(append* (map (send this select-instructions) ss)))]
 	   [else (error "instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -148,7 +149,7 @@
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
 	   [`(callq ,f) `(callq ,f)]
-	   [`(program ,xs ,ss ...)
+	   [`(program (,xs ...) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
 	      `(stack ,(+ (send this first-offset)
