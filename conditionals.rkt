@@ -97,6 +97,14 @@
 	(match e
 	   [#t (values #t '())]
 	   [#f (values #f '())]
+	   [`(and ,e1 ,e2)
+	    (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
+	    (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
+	    (define tmp (gensym 'and))
+	    (values tmp (append e1-ss
+				`((if ,new-e1
+				      ,(append e2-ss `((assign ,tmp ,new-e2)))
+				      ((assign ,tmp #f))))))]
 	   [`(if ,cnd ,thn ,els)
 	    (let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)]
 			 [(new-thn thn-ss) ((send this flatten #t) thn)]

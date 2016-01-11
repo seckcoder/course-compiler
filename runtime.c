@@ -8,6 +8,11 @@ long int read_int() {
   return i;
 }
 
+
+void print_int(long x) {
+  printf("%ld", x);
+}
+
 static void copy_vector(ptr* vec, ptr* free_ptr);
 static void process_vector(ptr* scan_ptr, ptr* free_ptr);
 

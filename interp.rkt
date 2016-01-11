@@ -1,4 +1,5 @@
 #lang racket
+(require racket/fixnum)
 (require "utilities.rkt")
 (provide interp-scheme interp-C interp-x86 interp-S0 interp-S1 interp-S2 interp-S3 interp-S4 )
 
@@ -27,14 +28,13 @@
     (field (result (gensym 'result)))
 
     (define/public (primitives)
-      (set '+ '- '* 'read))
+      (set '+ '- 'read))
 
     (define/public (interp-op op)
       (match op
-         ['+ +]
-	 ['- -]
-	 ['* *]
-	 ['read read]
+         ['+ fx+]
+	 ['- (lambda (n) (fx- 0 n))]
+	 ['read read-fixnum]
 	 [else (error "in interp-op S0, unmatched" op)]))
 
     (define/public (interp-scheme env)
@@ -110,7 +110,6 @@
 	 ['addq +]
 	 ['subq -]
 	 ['negq -]
-	 ['imulq *]
 	 [else (error "interp-x86-op, unmatched" op)]))
 
     (define/public (interp-x86-exp env)
@@ -179,10 +178,13 @@
 
     (define/override (interp-op op)
       (match op
-         ['eq? eq?]
-	 ['and (lambda (a b) (and a b))]
-	 ['or (lambda (a b) (or a b))]
-	 ['not not]
+         ['eq? (lambda (v1 v2)
+                 (cond [(and (fixnum? v1) (fixnum? v2)) (eq? v1 v2)]
+                       [(and (boolean? v1) (boolean? v2)) (eq? v1 v2)]))]
+         ['not (lambda (v) (match v [#t #f] [#f #t]))]
+	 ['and (lambda (v1 v2)
+		 (cond [(and (boolean? v1) (boolean? v2))
+			(and v1 v2)]))]
 	 [else (super interp-op op)]))
 
     (define/override (interp-scheme env)
@@ -190,6 +192,11 @@
 	(match ast
            [#t #t]
            [#f #f]
+	   [`(and ,e1 ,e2)
+	    (match ((send this interp-scheme env) e1)
+	      [#t (match ((send this interp-scheme env) e2)
+		    [#t #t] [#f #f])]
+              [#f #f])]
 	   [`(if ,cnd ,thn ,els)
 	    (if ((send this interp-scheme env) cnd)
 		((send this interp-scheme env) thn)
@@ -246,7 +253,6 @@
       (match op
 	 ['notq not]
 	 ['andq (lambda (a b) (b2i (and (i2b a) (i2b b))))]
-	 ['orq (lambda (a b) (b2i (or (i2b a) (i2b b))))]
 	 [else (super interp-x86-op op)]))
 
     (define/override (interp-x86-exp env)
@@ -313,6 +319,11 @@
 
     (define/override (interp-op op)
       (match op
+         ['eq? (lambda (v1 v2)
+                 (cond [(or (and (fixnum? v1) (fixnum? v2)) 
+			    (and (boolean? v1) (boolean? v2))
+			    (and (vector? v1) (vector? v2)))
+			(eq? v1 v2)]))]
          ['vector vector]
 	 ['vector-ref vector-ref]
 	 ['vector-set! vector-set!]
@@ -517,4 +528,5 @@
 	   )))
 
     )) ;; interp-S4
+
 

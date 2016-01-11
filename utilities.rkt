@@ -1,6 +1,6 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 lookup make-dispatcher assert 
+(provide debug map2 label-name lookup read-fixnum make-dispatcher assert 
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
 	 make-graph add-edge adjacent
 	 general-registers registers-for-alloc caller-save callee-save
@@ -35,6 +35,14 @@
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
 
+;; This function prepends an underscore to a label if
+;; the current system is Mac OS and leaves it alone otherwise
+(define label-name
+  (lambda (n)
+    (if (eqv? (system-type 'os) 'macosx)
+        (string-append "_" n)
+        n)))
+
 ;; The lookup function takes a key and an association list
 ;; and returns the corresponding value. It triggers an
 ;; error if the key is not present in the association list.
@@ -52,6 +60,11 @@
 	   (mcdr (car ls))]
 	  [else 
 	   (lookup x (cdr ls))])))
+
+(define (read-fixnum)
+  (define r (read))
+  (cond [(fixnum? r) r]
+	[else (error 'read "expected an integer")]))
 
 (define (make-dispatcher mt)
   (lambda (e . rest)
@@ -82,7 +95,7 @@
     (debug "** compiler " name)
     (debug "** checking passes for test " test-name)
     (define input-file-name (format "tests/~a.in" test-name))
-    (define program-name (format "tests/~a.scm" test-name))
+    (define program-name (format "tests/~a.rkt" test-name))
     (define program-file (open-input-file program-name))
     (define sexp (read program-file))
     (close-input-port program-file)
@@ -129,7 +142,7 @@
 ;; with ".s".
 (define (compile-file passes)
   (lambda (prog-file-name)
-    (define file-base (string-trim prog-file-name ".scm"))
+    (define file-base (string-trim prog-file-name ".rkt"))
     (define prog-file (open-input-file prog-file-name))
     (define out-file-name (string-append file-base ".s"))
     (define out-file (open-output-file #:exists 'replace out-file-name))
@@ -183,7 +196,7 @@
   (define compiler (compile-file passes))
   (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
 			test-nums)])
-       (compiler (format "tests/~a.scm" test-name))
+       (compiler (format "tests/~a.rkt" test-name))
        (if (system (format "gcc -g runtime.o tests/~a.s" test-name))
 	   (void) (exit))
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
