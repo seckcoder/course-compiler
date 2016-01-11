@@ -16,7 +16,7 @@
 
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
-  (interp-tests name passes test-family test-nums)
+  (interp-tests name passes interp-scheme test-family test-nums)
   (compiler-tests name passes test-family test-nums)
   (newline)(display "tests passed")(newline)
   )
