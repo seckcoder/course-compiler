@@ -1,4 +1,3 @@
-(program
  (define (even [x : Integer]) : Boolean
    (if (eq? x 0) #t
        (odd (+ x (- 1)))))
@@ -7,4 +6,4 @@
        (even (+ x (- 1)))))
  (if (even 2)
      42
-     0))
+     0)
