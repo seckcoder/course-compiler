@@ -22,9 +22,9 @@
 	   [`(let ([,x ,e]) ,body)
 	    (let ([T ((send this type-check env) e)])
 	      ((send this type-check (cons (cons x T) env)) body))]
-	   [`(program ,extra ,body)
+	   [`(program ,body)
 	    ((send this type-check '()) body)
-	    `(program ,extra ,body)]
+	    `(program ,body)]
 	   [#t 'Boolean]
 	   [#f 'Boolean]
 	   [`(if ,cnd ,thn ,els)
