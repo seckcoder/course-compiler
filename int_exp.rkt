@@ -264,5 +264,3 @@
 	    ,(send interp interp-x86 '()))
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))
-
-(compiler-tests "a1" int-exp-passes "student-tests/r0" '(1 2 3 4 5 6 7 8 9 10 11 13 14 15 16 17 18))
