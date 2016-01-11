@@ -7,7 +7,7 @@
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align)
 
-(define debug-state #t)
+(define debug-state #f)
 
 (define (debug label val)
   (if debug-state
@@ -128,9 +128,14 @@
 		 (define new-p (pass p))
 		 (debug pass-name new-p)
 		 (cond [interp
-			(let ([new-result  
-			       (if (file-exists? input-file-name)
-                                   (read-program input-file-name)
+			(let ([new-result
+                               ;; if there is an input file with the same name
+                               ;; as this test bing current-input-port to that
+                               ;; file's input port so that the interpreters
+                               ;; can use it as test input.
+			       (if (file-exists? input-file-name) 
+                                   (with-input-from-file input-file-name
+                                     (lambda () (interp new-p)))
 				   (interp new-p))])
 			  (cond [result
 				 (cond [(equal? result new-result)

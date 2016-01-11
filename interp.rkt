@@ -116,7 +116,8 @@
       (lambda (ast)
 	(match ast
 	   [(or `(var ,x) `(reg ,x) `(stack ,x))
-	    (lookup x env)]
+            (display 'x)
+            (lookup x env)]
 	   [`(int ,n) n]
 	   [else
 	    (error "interp-x86-exp, unhandled" ast)])))
