@@ -96,7 +96,7 @@
 	    ((send this select-instructions) `(assign (reg rax) ,e))]
 	   [`(assign ,lhs (read))
 	    (define new-lhs ((send this select-instructions) lhs))
-	    `((callq _read_int) (movq (reg rax) ,new-lhs))]
+	    `((callq read_int) (movq (reg rax) ,new-lhs))]
 	   [`(assign ,lhs ,x) #:when (symbol? x)
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (cond [(equal? `(var ,x) new-lhs) '()]
@@ -218,11 +218,11 @@
 	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(reg ,r) (format "%~a" r)]
-	   [`(callq ,f) (format "\tcallq\t~a\n" f)]
+	   [`(callq ,f) (format "\tcallq\t~a\n" (label-name f))]
 	   [`(program ,stack-space ,ss ...)
 	    (string-append
-	     (format "\t.globl _main\n")
-	     (format "_main:\n")
+	     (format "\t.globl ~a\n" (label-name "main"))
+	     (format "~a:\n" (label-name "main"))
 	     (format "\tpushq\t%rbp\n")
 	     (format "\tmovq\t%rsp, %rbp\n")
 	     (format "\tsubq\t$~a, %rsp\n" stack-space)
@@ -251,8 +251,7 @@
 (define int-exp-passes
   (let ([compiler (new compile-S0)]
 	[interp (new interp-S0)])
-    (list `("programify" ,(lambda (ast) `(program () ,ast))
-	    ,(send interp interp-scheme '()))
+    (list 
 	  `("uniquify" ,(send compiler uniquify '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
@@ -266,3 +265,4 @@
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))
 
+(compiler-tests "a1" int-exp-passes "student-tests/r0" '(1 2 3 4 5 6 7 8 9 10 11 13 14 15 16 17 18))

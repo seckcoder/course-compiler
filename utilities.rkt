@@ -1,6 +1,6 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 lookup read-fixnum make-dispatcher assert 
+(provide debug map2 label-name lookup read-fixnum make-dispatcher assert 
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
 	 make-graph add-edge adjacent
 	 general-registers registers-for-alloc caller-save callee-save
@@ -34,6 +34,14 @@
          (let-values ([(x1 x2) (f (car ls))]
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
+
+;; This function prepends an underscore to a label if
+;; the current system is Mac OS and leaves it alone otherwise
+(define label-name
+  (lambda (n)
+    (if (eqv? (system-type 'os) 'macosx)
+        (string-append "_" n)
+        n)))
 
 ;; The lookup function takes a key and an association list
 ;; and returns the corresponding value. It triggers an
