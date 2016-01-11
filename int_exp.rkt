@@ -44,7 +44,6 @@
 
     (define/public (flatten need-atomic)
       (lambda (e)
-        (display e) (newline)
         (match e
            [(? symbol?) (values e '())]
 	   [(? integer?) (values e '())]
