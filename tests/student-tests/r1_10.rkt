@@ -1,4 +1,4 @@
-(program () (let ([x (read)])
-              (let ([y (read)])
-                (+ x (- y)))))
+(let ([x (read)])
+  (let ([y (read)])
+    (+ x (- y))))
 
