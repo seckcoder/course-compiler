@@ -222,7 +222,8 @@
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
 			 (format " < tests/~a.in" test-name)
 			 "")]
-	      [result (system/exit-code (format "./a.out~a" input))])
+              [progout (process (format "./a.out~a" input))] ; List, first element is stdout
+	      [result (string->number (read-line (car progout)))])
 	 (if (eq? result 42)
 	     (begin (display test-name)(display " ")(flush-output))
 	     (error (format "test ~a failed, output: ~a" 

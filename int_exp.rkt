@@ -214,36 +214,37 @@
     (define/public (print-x86)
       (lambda (e)
 	(match e
-          [`(stack ,n) (format "~a(%rbp)" (- n))]
-          [`(int ,n)   (format "$~a" n)]
-          [`(reg ,r)   (format "%~a" r)]
-          [`(callq ,(? symbol? f))
-           (format "\tcallq\t~a\n" (label-name (symbol->string f)))]
-          [`(program ,stack-space ,ss ...)
-           (string-append
-            (format "\t.globl ~a\n" (label-name "main"))
-            (format "~a:\n" (label-name "main"))
-            (format "\tpushq\t%rbp\n")
-            (format "\tmovq\t%rsp, %rbp\n")
-            (format "\tsubq\t$~a, %rsp\n" stack-space)
-            "\n"
-            (string-append* (map (send this print-x86) ss))
-            "\n"
-            (format "\taddq\t$~a, %rsp\n" stack-space)
-            (format "\tpopq\t%rbp\n")
-            (format "\tretq\n")
-            )]
-          [`(,instr-name ,s ,d)
-           #:when (set-member? (send this instructions) instr-name)
-           (format "\t~a\t~a, ~a\n" instr-name
-                   ((send this print-x86) s) 
-                   ((send this print-x86) d))]
-          [`(,instr-name ,d)
-           #:when (set-member? (send this instructions) instr-name)
-           (format "\t~a\t~a\n" instr-name
-                   ((send this print-x86) d))]
-          [else (error "print-x86, unmatched" e)]
-          )))
+           [`(stack ,n) 
+	    (format "~a(%rbp)" (- n))]
+	   [`(int ,n) (format "$~a" n)]
+	   [`(reg ,r) (format "%~a" r)]
+	   [`(callq ,f) (format "\tcallq\t~a\n" (label-name (symbol->string f)))]
+	   [`(program ,stack-space ,ss ...)
+	    (string-append
+	     (format "\t.globl ~a\n" (label-name "main"))
+	     (format "~a:\n" (label-name "main"))
+	     (format "\tpushq\t%rbp\n")
+	     (format "\tmovq\t%rsp, %rbp\n")
+	     (format "\tsubq\t$~a, %rsp\n" stack-space)
+	     "\n"
+	     (string-append* (map (send this print-x86) ss))
+	     "\n"
+             (format "\tmovq\t%rax, %rdi\n")
+             (format "\tcallq\t~a\n" (label-name "print_int"))
+	     (format "\taddq\t$~a, %rsp\n" stack-space)
+	     (format "\tpopq\t%rbp\n")
+	     (format "\tretq\n")
+	     )]
+	   [`(,instr-name ,s ,d)
+	    #:when (set-member? (send this instructions) instr-name)
+	    (format "\t~a\t~a, ~a\n" instr-name
+		    ((send this print-x86) s) 
+		    ((send this print-x86) d))]
+	   [`(,instr-name ,d)
+	    #:when (set-member? (send this instructions) instr-name)
+	    (format "\t~a\t~a\n" instr-name ((send this print-x86) d))]
+	   [else (error "print-x86, unmatched" e)]
+	   )))
     )) ;; class compile-S0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
