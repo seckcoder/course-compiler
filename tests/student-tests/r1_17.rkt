@@ -1,1 +1,1 @@
-         (let ([x 42]) (let ([y x]) y))
+(program () (let ([x 42]) (let ([y x]) y)))

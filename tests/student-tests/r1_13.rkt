@@ -1,1 +1,1 @@
-                 (let ([x 21]) (+ x x))
+(program () (let ([x 21]) (+ x x)))

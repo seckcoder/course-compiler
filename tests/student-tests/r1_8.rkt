@@ -1,2 +1,2 @@
-(let ([x 20])
-              (+ (let ([x 22]) x) x))
+(progam () (let ([x 20])
+              (+ (let ([x 22]) x) x)))
