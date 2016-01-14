@@ -1,0 +1,85 @@
+
+
+Lecture 1
+================================================================================
+
+Administration stuff
+
+Compiler and course organization
+
+Abstract syntax trees, R_0
+
+
+
+Lecture 2
+================================================================================
+
+S-Expressions
+
+  quote
+
+  comma
+
+Pattern Matching
+
+  match
+
+Recursion
+
+  The HTDP recipe, grammar => recursive function
+  arith?
+
+Interpreter for R_0
+
+The R_1 Language
+
+  let expressions, overshadowing variables
+  evaluation order is left to right
+
+The x86-64 Language
+
+   program is a sequence of instructions, they are stored in memory
+   arguments: 
+     integer immediate values
+     registers
+     memory (map addresses to 64-bit value)
+       stack and frame layout (Fig. 2.6)
+
+   x86-64 version of
+     (+ 10 32)      Fig 2.4
+   and
+     (+ 52 (- 10))  Fig 2.5
+
+Compiler Correctness Diagram (p. 17)
+
+Compiler Plan
+  Differences:
+  * instruction format, 2-arguments
+  * nesting expressions versus simple instruction arguments
+  * variables vs. registers
+  * multiple variables with the same name vs. unique names
+    of registers and memory locations
+
+  Gordian Knot between instruction selection and register allocation.
+  Cut by doing optimistic instruction selection.
+
+  Plan:
+
+  R_1
+  |  uniquify
+  V
+  R_1
+  |  flatten (emphasize this one, e.g. (+ (- 5) (- 10)) )
+  V
+  C_0
+  |  select-instructions
+  V
+  x86*
+  |  assign-homes
+  V
+  x86*
+  |  patch-instructions
+  V
+  x86
+
+
