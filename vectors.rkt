@@ -48,7 +48,7 @@
 
     ;; nothing to do for uniquify
     ;; nothing to do for flatten
-
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : C2 -> psuedo-x86
 
@@ -58,14 +58,29 @@
 	   [`(assign ,lhs (vector ,es ...))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-es (map (send this select-instructions) es))
-	    (define n (length es))
+	    (define ptrs  (length es))
+            (define bytes (* ptrs 8))
 	    (define initializers
-	      (for/list ([e new-es] [i (in-range 0 (length new-es))])
-			`(movq ,e (offset ,new-lhs ,(* i 8)))))
-	    `((movq (int ,(* n 8)) (reg rdi))
+	      (for/list ([e new-es] [i (in-naturals)])
+                `(movq ,e (offset ,new-lhs ,(* i 8)))))
+	    #|`((movq label (reg rax))
+              (addq (int bytes) (reg rax))
+              
+              (addq (int ,bytes) (reg ))
+              (movq (int ,(+)))
+               ;;(callq alloc)
+              (if (reg rdx)
+                  
+                  (nop))
+              (movq (reg rax) ,new-lhs)
+              (alloc)
+
+              
+              ,@initializers)|#
+            `((movq (int ,bytes) (reg rdi))
               (callq alloc)
               (movq (reg rax) ,new-lhs)
-              ,@initializers)]
+              . ,initializers)]
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
@@ -110,8 +125,11 @@
 	 [`(offset ,e ,i) #t]
 	 [else (super on-stack? a)]))
 
+
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
+    
     (define/override (print-x86)
       (lambda (e)
 	(match e

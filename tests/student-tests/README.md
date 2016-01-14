@@ -1,6 +1,6 @@
 # Student Test Suite
 
-### R0 (or is it R1?)
+### R1
 * (1-4) Tests for basic arithmetic and flattening
 * (5-6) Tests for Uniquify
 * (7-8) Flattening tests for `let`
@@ -12,3 +12,5 @@
 * (16) Lets under binop
 * (17) Stack-stack move variable
 * (18) Uniquifying, use of correct variable
+
+### R2 (Coming soon)

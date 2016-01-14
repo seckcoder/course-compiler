@@ -229,6 +229,8 @@
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
+             (format "\tmovq\t%rax, %rdi\n")
+             (format "\tcallq\t~a\n" (label-name "print_int"))
 	     (format "\taddq\t$~a, %rsp\n" stack-space)
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
@@ -243,7 +245,6 @@
 	    (format "\t~a\t~a\n" instr-name ((send this print-x86) d))]
 	   [else (error "print-x86, unmatched" e)]
 	   )))
-
     )) ;; class compile-S0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
