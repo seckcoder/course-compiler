@@ -72,6 +72,7 @@
 	
     (define/public (interp-C env)
       (lambda (ast)
+        (debug "interp-C0" ast)
 	(match ast
            [(? symbol?)
 	    (lookup ast env)]
@@ -206,6 +207,7 @@
 
     (define/override (interp-C env)
       (lambda (ast)
+	(debug "interp-C1" ast)
 	(match ast
            [#t #t]
            [#f #f]
@@ -397,6 +399,7 @@
 
     (define/override (interp-C env)
       (lambda (ast)
+	(debug "interp-C2" ast)
 	(match ast
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
 	    (cons f `(lambda ,xs ,@ss))]
@@ -411,7 +414,7 @@
 		(define result-env ((send this seq-C new-env) ss))
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
-	   [`(program ,locals ,ds ,ss ...)
+	   [`(program ,locals (defines ,ds) ,ss ...)
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
 	    (lookup result result-env)]

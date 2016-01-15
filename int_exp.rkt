@@ -256,7 +256,7 @@
 	  `("uniquify" ,(send compiler uniquify '())
 	    ,(send interp interp-scheme '()))
 	  `("flatten" ,(send compiler flatten #f)
-	    ,(send interp interp-C '()))
+	    ,interp-C)
 	  `("instruction selection" ,(send compiler select-instructions)
 	    ,(send interp interp-x86 '()))
 	  `("assign homes" ,(send compiler assign-homes (void))

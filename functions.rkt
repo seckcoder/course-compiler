@@ -128,7 +128,7 @@
 	   [`(program ,ds ... ,body)
 	    (define-values (locals new-body) (flatten-body body))
 	    (define new-ds (map (send this flatten #f) ds))
-	    `(program ,locals ,new-ds ,@new-body)]
+	    `(program ,locals (defines ,new-ds) ,@new-body)]
 	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
 	    (define-values (locals new-body) (flatten-body body))
 	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
@@ -196,7 +196,7 @@
 	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
 	     `((indirect-callq ,new-f) (movq (reg rax) ,new-lhs)))]
-	   [`(program ,locals ,ds ,ss ...)
+	   [`(program ,locals (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
             `(program
