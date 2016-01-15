@@ -201,7 +201,7 @@
 	    (set! max-stack 0)
             `(program
               (,locals ,max-stack)
-              ,new-ds
+              (defines ,new-ds)
               (callq initialize)
               ,@(append* (map (send this select-instructions) ss)))]
 	   [else ((super select-instructions) e)]
@@ -235,10 +235,10 @@
 	   [`(define (,f) ,n (,locals ,max-stack) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    `(define (,f) ,n (,locals ,max-stack ,lives) ,@new-ss)]
-           [`(program (,locals ,max-stack) ,ds ,ss ...)
+           [`(program (,locals ,max-stack) (defines ,ds) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    (define new-ds (map (send this uncover-live (set)) ds))
-	    `(program (,locals ,max-stack ,lives) ,new-ds ,@new-ss)]
+	    `(program (,locals ,max-stack ,lives) (defines ,new-ds) ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
     
@@ -255,14 +255,14 @@
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
-           [`(program (,locals ,max-stack ,lives) ,ds ,ss ...)
+           [`(program (,locals ,max-stack ,lives) (defines ,ds) ,ss ...)
 	    (define new-G (make-graph locals))
 	    (define new-ds (for/list ([d ds])
 			      ((send this build-interference (void) (void)) d)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
-	    `(program (,locals ,max-stack ,new-G) ,new-ds ,@new-ss)]
+	    `(program (,locals ,max-stack ,new-G) (defines ,new-ds) ,@new-ss)]
 	   [else ((super build-interference live-after G) ast)]
 	   )))
 
@@ -294,13 +294,13 @@
 	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-           [`(program (,locals ,max-stack ,G) ,ds ,ss ...)
+           [`(program (,locals ,max-stack ,G) (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes G locals ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(program ,(align (+ stk-size (* 8 max-stack)) 16)
-		      ,new-ds ,@new-ss)]
+		      (defines ,new-ds) ,@new-ss)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -319,11 +319,11 @@
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
 	   [`(indirect-callq ,f)
 	    `((indirect-callq ,f))]
-	   [`(program ,stack-space ,ds ,ss ...)
+	   [`(program ,stack-space (defines ,ds) ,ss ...)
 	    (define new-ds (for/list ([d ds])
 				     ((send this patch-instructions) d)))
 	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
-	    `(program ,stack-space ,new-ds ,@(append* sss))]
+	    `(program ,stack-space (defines ,new-ds) ,@(append* sss))]
 	   [`(leaq ,s ,d)
 	    (cond [(on-stack? d)
 		   `((leaq ,s (reg rax))
@@ -367,7 +367,7 @@
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
-	   [`(program ,stack-space ,ds ,ss ...)
+	   [`(program ,stack-space (defines ,ds) ,ss ...)
 	    (string-append
 	     (string-append* (for/list ([d ds]) ((send this print-x86) d)))
 	     "\n"

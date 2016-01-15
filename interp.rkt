@@ -485,7 +485,7 @@
 	    (call-function f-val ss env)]
 	   [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
-	   [`(program ,extra ,ds ,ss ...)
+	   [`(program ,extra (defines ,ds) ,ss ...)
 	    (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
@@ -533,3 +533,4 @@
     )) ;; interp-S4
 
 
+ 
