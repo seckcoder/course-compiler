@@ -224,6 +224,11 @@
 			 "")]
               [progout (process (format "./a.out~a" input))] ; List, first element is stdout
 	      [result (string->number (read-line (car progout)))])
+	 (match progout
+	   [`(,in1 ,out ,_ ,in2 ,_)
+	    (close-input-port in1)
+	    (close-input-port in2)
+	    (close-output-port out)])
 	 (if (eq? result 42)
 	     (begin (display test-name)(display " ")(flush-output))
 	     (error (format "test ~a failed, output: ~a" 
