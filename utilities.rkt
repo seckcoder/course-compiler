@@ -96,7 +96,7 @@
 ;; runs the passes and the appropriate interpreters to test the
 ;; correctness of all the passes. This function assumes there is a "tests"
 ;; subdirectory and a file in that directory whose name is the test name
-;; followed by ".scm". Also, there should be a matching file with the
+;; followed by ".rkt". Also, there should be a matching file with the
 ;; ending ".in" that provides the input for the Scheme program.
 ;;
 ;; The description of the passes is a list with one entry per pass.
@@ -157,9 +157,9 @@
 
 ;; The compile-file function takes a description of the compiler
 ;; passes (see the comment for check-passes) and returns a function
-;; that, given a program file name (a string ending in ".scm"),
+;; that, given a program file name (a string ending in ".rkt"),
 ;; applies all of the passes and writes the output to a file whose
-;; name is the same as the proram file name but with ".scm" replaced
+;; name is the same as the proram file name but with ".rkt" replaced
 ;; with ".s".
 (define (compile-file passes)
   (lambda (prog-file-name)
@@ -194,7 +194,7 @@
 ;; This function assumes that the subdirectory "tests" has a bunch of
 ;; Scheme programs whose names all start with the family name,
 ;; followed by an underscore and then the test number, ending in
-;; ".scm". Also, for each Scheme program there is a file with the
+;; ".rkt". Also, for each Scheme program there is a file with the
 ;; same number except that it ends with ".in" that provides the
 ;; input for the Scheme program.
 
@@ -222,9 +222,13 @@
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
 			 (format " < tests/~a.in" test-name)
 			 "")]
+              [output (if (file-exists? (format "tests/~a.out" test-name))
+                          (car (call-with-input-file (format "tests/~a.out" test-name)
+                                 (lambda (f) (string->number (read-line f)))))
+                          42)]
               [progout (process (format "./a.out~a" input))] ; List, first element is stdout
 	      [result (string->number (read-line (car progout)))])
-	 (if (eq? result 42)
+	 (if (eq? result output)
 	     (begin (display test-name)(display " ")(flush-output))
 	     (error (format "test ~a failed, output: ~a" 
 			    test-name result))))
