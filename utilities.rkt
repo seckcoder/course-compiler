@@ -210,7 +210,9 @@
 ;; family name (a string), and a list of test numbers (see the comment
 ;; for interp-tests), and runs the compiler to generate x86 (a ".s"
 ;; file) and then runs gcc to generate machine code.  It runs the
-;; machine code and checks that the output is 42.
+;; machine code and stores the result. If the test file has a
+;; corresponding .res file, the result is compared against its contents;
+;; otherwise, the result is compared against 42.
 
 (define (compiler-tests name passes test-family test-nums)
   (define compiler (compile-file passes))
