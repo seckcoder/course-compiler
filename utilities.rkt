@@ -222,12 +222,17 @@
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
 			 (format " < tests/~a.in" test-name)
 			 "")]
-              [output (if (file-exists? (format "tests/~a.out" test-name))
-                          (car (call-with-input-file (format "tests/~a.out" test-name)
-                                 (lambda (f) (string->number (read-line f)))))
+              [output (if (file-exists? (format "tests/~a.res" test-name))
+                          (call-with-input-file (format "tests/~a.res" test-name)
+                            (lambda (f) (string->number (read-line f))))
                           42)]
               [progout (process (format "./a.out~a" input))] ; List, first element is stdout
 	      [result (string->number (read-line (car progout)))])
+	 (match progout
+	   [`(,in1 ,out ,_ ,in2 ,_)
+	    (close-input-port in1)
+	    (close-input-port in2)
+	    (close-output-port out)])
 	 (if (eq? result output)
 	     (begin (display test-name)(display " ")(flush-output))
 	     (error (format "test ~a failed, output: ~a" 
