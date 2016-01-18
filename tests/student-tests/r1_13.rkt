@@ -1,1 +1,1 @@
-(let ([x 21]) (+ x x))
+(let ([x (read)]) (+ x x))
