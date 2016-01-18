@@ -1,1 +1,1 @@
-(let ([x (+ 20 22)]) x)
+(let ([x (+ (read) (read))]) x)
