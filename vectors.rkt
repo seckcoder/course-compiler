@@ -1,10 +1,10 @@
 #lang racket
 (require "conditionals.rkt")
 (require "interp.rkt")
-(provide compile-S2 vectors-passes)
+(provide compile-R2 vectors-passes)
 
-(define compile-S2
-  (class compile-S1
+(define compile-R2
+  (class compile-R1
     (super-new)
 
     (define/override (primitives)
@@ -139,13 +139,13 @@
 	    (format "~a(~a)" i ((send this print-x86) e))]
 	   [else ((super print-x86) e)]
 	   )))
-    ));; compile-S2
+    ));; compile-R2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define vectors-passes
-  (let ([compiler (new compile-S2)]
-	[interp (new interp-S2)])
+  (let ([compiler (new compile-R2)]
+	[interp (new interp-R2)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())

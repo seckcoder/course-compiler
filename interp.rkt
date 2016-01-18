@@ -1,19 +1,19 @@
 #lang racket
 (require racket/fixnum)
 (require "utilities.rkt")
-(provide interp-scheme interp-C interp-x86 interp-S0 interp-S1 interp-S2 interp-S3 interp-S4 )
+(provide interp-scheme interp-C interp-x86 interp-R0 interp-R1 interp-R2 interp-R3 interp-R4 )
 
 (define interp-scheme
   (lambda (p)
-    ((send (new interp-S4) interp-scheme '()) p)))
+    ((send (new interp-R4) interp-scheme '()) p)))
 
 (define interp-C
   (lambda (p)
-    ((send (new interp-S4) interp-C '()) p)))
+    ((send (new interp-R4) interp-C '()) p)))
 
 (define interp-x86
   (lambda (p)
-    ((send (new interp-S4) interp-x86 '()) p)))
+    ((send (new interp-R4) interp-x86 '()) p)))
 
 ;; This (dynamically scoped) parameter is used for goto
 (define program (make-parameter '()))
@@ -21,7 +21,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S0: integer arithmetic and 'let'
 
-(define interp-S0
+(define interp-R0
   (class object%
     (super-new)
 
@@ -164,13 +164,13 @@
 	   [else (error "no match in interp-x86 S0 for " ast)]
 	   )))
 
-    )) ;; class interp-S0
+    )) ;; class interp-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S1: Booleans and conditionals
 
-(define interp-S1
-  (class interp-S0
+(define interp-R1
+  (class interp-R0
     (super-new)
 
     (define/override (primitives)
@@ -306,13 +306,13 @@
 	   [else ((super interp-x86 env) ast)]
 	   )))
 	    
-    ));; class interp-S1
+    ));; class interp-R1
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S2: Vectors
 
-(define interp-S2
-  (class interp-S1
+(define interp-R2
+  (class interp-R1
     (super-new)
 
     (define/override (primitives)
@@ -351,14 +351,14 @@
 	   [else ((super interp-x86 env) ast)]
 	   )))
 
-    ));; interp-S2
+    ));; interp-R2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S3: functions
 
 
-(define interp-S3
-  (class interp-S2
+(define interp-R3
+  (class interp-R2
     (super-new)
     (inherit-field result)
 
@@ -494,13 +494,13 @@
 	   )))
 
 
-    ));; interp-S3
+    ));; interp-R3
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S4: lambda
 
-(define interp-S4
-  (class interp-S3
+(define interp-R4
+  (class interp-R3
     (super-new)
     (inherit-field result)
 
@@ -530,7 +530,7 @@
 	   [else ((super interp-scheme env) ast)]
 	   )))
 
-    )) ;; interp-S4
+    )) ;; interp-R4
 
 
  

@@ -5,10 +5,10 @@
 (require "interp.rkt")
 (require "priority_queue.rkt")
 
-(provide reg-int-exp-passes compile-reg-S0)
+(provide reg-int-exp-passes compile-reg-R0)
 
-(define compile-reg-S0
-  (class compile-S0
+(define compile-reg-R0
+  (class compile-R0
     (super-new)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -178,13 +178,13 @@
 		      ,@(map (send this assign-homes homes) ss))]
 	   )))
 
-    )) ;; compile-reg-S0
+    )) ;; compile-reg-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define reg-int-exp-passes
-  (let ([compiler (new compile-reg-S0)]
-	[interp (new interp-S0)])
+  (let ([compiler (new compile-reg-R0)]
+	[interp (new interp-R0)])
     `(#|
       ("programify" ,(lambda (ast) `(program () ,ast))
       ,(send interp interp-scheme '()))

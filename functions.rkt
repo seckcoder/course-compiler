@@ -2,10 +2,10 @@
 (require "vectors.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-S3 functions-passes)
+(provide compile-R3 functions-passes)
 
-(define compile-S3
-  (class compile-S2
+(define compile-R3
+  (class compile-R2
     (super-new)
 
     (define/public (non-apply-ast)
@@ -375,14 +375,14 @@
 	   [else ((super print-x86) e)]
 	   )))
 
-    ));; compile-S3
+    ));; compile-R3
     
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define functions-passes
-  (let ([compiler (new compile-S3)]
-	[interp (new interp-S3)])
+  (let ([compiler (new compile-R3)]
+	[interp (new interp-R3)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())

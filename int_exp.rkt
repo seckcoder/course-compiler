@@ -3,9 +3,9 @@
 (require "utilities.rkt")
 (require "interp.rkt")
 
-(provide int-exp-passes compile-S0)
+(provide int-exp-passes compile-R0)
 
-(define compile-S0
+(define compile-R0
   (class object%
     (super-new)
 
@@ -245,13 +245,13 @@
 	    (format "\t~a\t~a\n" instr-name ((send this print-x86) d))]
 	   [else (error "print-x86, unmatched" e)]
 	   )))
-    )) ;; class compile-S0
+    )) ;; class compile-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define int-exp-passes
-  (let ([compiler (new compile-S0)]
-	[interp (new interp-S0)])
+  (let ([compiler (new compile-R0)]
+	[interp (new interp-R0)])
     (list 
 	  `("uniquify" ,(send compiler uniquify '())
 	    ,interp-scheme)

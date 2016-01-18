@@ -2,10 +2,10 @@
 (require "register_allocator.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-S1 conditionals-passes)
+(provide compile-R1 conditionals-passes)
 
-(define compile-S1
-  (class compile-reg-S0
+(define compile-R1
+  (class compile-reg-R0
     (super-new)
 
     (define/override (primitives)
@@ -302,13 +302,13 @@
 	   [else ((super print-x86) e)]
 	   )))
 
-    )) ;; compile-S1
+    )) ;; compile-R1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define conditionals-passes
-  (let ([compiler (new compile-S1)]
-	[interp (new interp-S1)])
+  (let ([compiler (new compile-R1)]
+	[interp (new interp-R1)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())

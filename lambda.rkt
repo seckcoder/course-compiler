@@ -3,10 +3,10 @@
 (require "utilities.rkt")
 (require "functions.rkt")
 (require "interp.rkt")
-(provide compile-S4 lambda-passes)
+(provide compile-R4 lambda-passes)
 
-(define compile-S4
-  (class compile-S3
+(define compile-R4
+  (class compile-R3
     (super-new)
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -144,8 +144,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define lambda-passes
-  (let ([compiler (new compile-S4)]
-        [interp (new interp-S4)])
+  (let ([compiler (new compile-R4)]
+        [interp (new interp-R4)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
