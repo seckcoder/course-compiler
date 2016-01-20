@@ -28,7 +28,10 @@
 (define s3_range (range 1 11))
 (define s4_range (range 0 5))
 
-(if #t (begin
+(test-compiler "conditionals" conditionals-passes "s0" s0_range)
+(test-compiler "conditionals" conditionals-passes "s1" s1_range)
+
+(if #f (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "int_exp" int-exp-passes "s0" s0_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

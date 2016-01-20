@@ -4,6 +4,8 @@
 (require "utilities.rkt")
 (provide compile-R1 conditionals-passes)
 
+(define challenge #t)
+
 (define compile-R1
   (class compile-reg-R0
     (super-new)
@@ -179,7 +181,6 @@
 		  [els-ss (append* (map (send this select-instructions)
 					els-ss))])
 	      `((if ,cnd ,thn-ss ,els-ss)))]
-	   [else ((super select-instructions) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -270,7 +271,7 @@
     (define/override (patch-instructions)
       (lambda (e)
 	(match e
-           [`(if ,cnd ,thn-ss ,els-ss)
+           [`(if ,cnd ,thn-ss ,els-ss) #:when #f ;<--JGS
 	    (let ([thn-ss (append* (map (send this patch-instructions) thn-ss))]
 		  [els-ss (append* (map (send this patch-instructions) els-ss))]
 		  [else-label (gensym 'else)]

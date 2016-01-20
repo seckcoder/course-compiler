@@ -137,7 +137,7 @@
 	   ;; mark neighboring register colors as unavailable
 	   (define adj-reg
 	      (filter (lambda (u) (set-member? registers u))
-		      (set->list (hash-ref G x))))
+		      (set->list (adjacent G x))))
 	   (define adj-colors
 	     (list->set (map (lambda (r) (register->color r)) adj-reg)))
 	   (hash-set! unavail-colors x adj-colors)

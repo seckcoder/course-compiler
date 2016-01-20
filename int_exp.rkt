@@ -126,7 +126,8 @@
 		   `((,inst ,new-lhs))]
 		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
 	   [`(program ,locals ,ss ...)
-	    `(program ,locals ,@(append* (map (send this select-instructions) ss)))]
+	    (let ([new-ss (map (send this select-instructions) ss)])
+	      `(program ,locals ,@(append* new-ss)))]
 	   [else (error "instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
