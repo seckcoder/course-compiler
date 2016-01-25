@@ -1,9 +1,9 @@
 #lang racket
 (require racket/pretty)
 (provide debug map2 label-name lookup  make-dispatcher assert
-         read-fixnum read-program
+         read-fixnum read-program 
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
-	 make-graph add-edge adjacent
+	 make-graph add-edge adjacent vertices print-dot
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align)
 
@@ -301,4 +301,23 @@
 (define (adjacent graph u)
   (hash-ref graph u))
 
+(define (vertices graph)
+  (hash-keys graph))
 
+(define (print-dot graph file-name)
+  (if debug-state
+      (call-with-output-file file-name #:exists 'replace
+	(lambda (out-file)
+	  (write-string "strict graph {" out-file) (newline out-file)
+	  
+	  (for ([v (vertices graph)])
+	       (write-string (format "~a;\n" v) out-file))
+	  
+	  (for ([v (vertices graph)])
+	       (for ([u (adjacent graph v)])
+		    (write-string (format "~a -- ~a;\n" u v) out-file)))
+	  
+	  (write-string "}" out-file)
+	  (newline out-file)))
+      '()))
+      

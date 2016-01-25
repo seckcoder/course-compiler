@@ -10,8 +10,7 @@ Compiler and course organization
 Abstract syntax trees, R_0
 
 
-
-Lecture 2
+Lecture 2: Compiling Integers, Arithmetic, and Let
 ================================================================================
 
 S-Expressions
@@ -83,3 +82,110 @@ Compiler Plan
   x86
 
 
+Lecture 3: Register Allocation
+================================================================================
+
+Liveness Analysis
+
+Build Interference Graph
+
+Graph Coloring
+
+
+Lecture 4: Register Allocation cont'd, Booleans & Control Flow
+================================================================================
+
+Review Reg. Allocation
+
+    (let ([a 1])
+      (let ([b 2])
+	(let ([f b])
+	  (let ([e (+ a b)])
+	   (let ([d f])
+	      d)))))
+        
+
+After instruction selection:
+
+    (program (a b f e d)
+      (movq (int 1) (var a))
+      (movq (int 2) (var b))
+      (movq (var b) (var f))
+      (movq (var a) (var e))
+      (addq (var b) (var e))
+      (movq (var f) (var d))
+      (movq (var d) (reg rax)))
+
+Liveness analysis
+
+    (program (a b f e d)
+      (movq (int 1) (var a))	(set 'a)
+      (movq (int 2) (var b))	(set 'a 'b)
+      (movq (var b) (var f))	(set 'a 'b 'f)
+      (movq (var a) (var e))	(set 'b 'f 'e)
+      (addq (var b) (var e))	(set 'f)
+      (movq (var f) (var d))	(set 'd)
+      (movq (var d) (reg rax)))	(set)
+
+Interference graph
+
+    a---b   d
+    |  /|
+    | / |
+    f---e
+
+    Graph coloring
+    0 rbx
+    1 rcx
+    2 rdx
+
+    a  0
+    b  1
+    f  2
+    e  0
+    d  0
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 2) (reg rcx))
+      (movq (reg rcx) (reg rdx))
+      (movq (reg rbx) (reg rbx))       <--- delete a -> e
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rdx) (reg rbx))
+      (movq (reg rbx) (reg rax)))
+
+Patch Instructions
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 2) (reg rcx))
+      (movq (reg rcx) (reg rdx))
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rdx) (reg rbx))
+      (movq (reg rbx) (reg rax)))
+
+Move Biasing
+
+    Move Graph:
+
+     a---e
+
+     d---f
+
+    should have colored d to be 2 (rdx) to match f.
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 2) (reg rcx))
+      (movq (reg rcx) (reg rdx))
+      (movq (reg rbx) (reg rbx))       <--- delete a -> e
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rdx) (reg rdx))       <--- delete f -> d
+      (movq (reg rdx) (reg rax)))
+
+
+Booleans & Control Flow
+
+  exp ::= ... | (not exp) | (and exp exp) | (eq? exp exp) 
+        | #f | #f | (if exp exp exp)
+  R_2 ::= (program exp)

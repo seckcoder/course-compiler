@@ -22,16 +22,13 @@
   (newline)(display "tests passed")(newline)
   )
 
-(define s0_range (range 1 25))
+(define s0_range (range 1 26))
 (define s1_range (range 1 22))
 (define s2_range (range 1 7))
 (define s3_range (range 1 11))
 (define s4_range (range 0 5))
 
-(test-compiler "conditionals" conditionals-passes "s0" s0_range)
-(test-compiler "conditionals" conditionals-passes "s1" s1_range)
-
-(if #f (begin
+(if #t (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "int_exp" int-exp-passes "s0" s0_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

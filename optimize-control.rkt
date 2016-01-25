@@ -42,10 +42,30 @@
 	   )))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; expose-basic-blocks : psuedo-x86 -> x86
+    ;; basic-blocks : psuedo-x86 -> x86
     
+    (define/public (basic-blocks-stms es)
+      )
+
+    (define/public (basic-blocks)
+      (lambda (e)
+	(match e
+	   [`(if ,cnd ,thn-ss ,els-ss)
+	  
+	    ]
+	   )))
+
+    (define/public (basic-blocks-cnd true-label false-label)
+      (lambda (e)
+	(match e
+	   []
+	   )))
+    
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; optimize-jumps
+
     ;; UNDER CONSTRUCTION
-    
+
     
     ));; compile-opt-R1
 

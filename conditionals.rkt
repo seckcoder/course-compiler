@@ -181,6 +181,7 @@
 		  [els-ss (append* (map (send this select-instructions)
 					els-ss))])
 	      `((if ,cnd ,thn-ss ,els-ss)))]
+	   [else ((super select-instructions) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -267,13 +268,28 @@
 	   )))
       
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; patch-instructions : psuedo-x86 -> x86
     (define/override (patch-instructions)
       (lambda (e)
 	(match e
-           [`(if ,cnd ,thn-ss ,els-ss) #:when #f ;<--JGS
+           [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([thn-ss (append* (map (send this patch-instructions) thn-ss))]
-		  [els-ss (append* (map (send this patch-instructions) els-ss))]
+		  [els-ss (append* (map (send this patch-instructions) els-ss))])
+	      `((if ,cnd ,thn-ss ,els-ss)))]
+	   [else ((super patch-instructions) e)])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; lower-conditionals : psuedo-x86 -> x86
+    (define/public (lower-conditionals)
+      (lambda (e)
+	(match e
+	   [`(byte-reg ,r) `(byte-reg ,r) ]
+	   [`(stack ,n) `(stack ,n)] 
+	   [`(int ,n) `(int ,n)]
+	   [`(reg ,r) `(reg ,r)]
+
+           [`(if ,cnd ,thn-ss ,els-ss)
+	    (let ([thn-ss (append* (map (send this lower-conditionals) thn-ss))]
+		  [els-ss (append* (map (send this lower-conditionals) els-ss))]
 		  [else-label (gensym 'else)]
 		  [end-label (gensym 'if_end)]
 		  [cnd-inst ;; cmp's second operand can't be immediate
@@ -285,7 +301,13 @@
 	      (append cnd-inst `((je ,else-label)) thn-ss `((jmp ,end-label))
 	       `((label ,else-label)) els-ss `((label ,end-label))
 	       ))]
-	   [else ((super patch-instructions) e)])))
+	   [`(callq ,f) `((callq ,f))]
+	   [`(program ,stack-space ,ss ...)
+	    (let ([new-ss (append* (map (send this lower-conditionals) ss))])
+	      `(program ,stack-space ,@new-ss))]
+	   [`(,instr ,args ...)
+	    `((,instr ,@args))]
+	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
@@ -325,7 +347,9 @@
        ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
-      ("insert spill code" ,(send compiler patch-instructions)
+      ("patch instructions" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))

@@ -90,6 +90,7 @@
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 	         ((send this build-interference live-after G) inst)))
+	    (print-dot G "./interfere.dot")
 	    `(program (,xs ,G) ,@new-ss)]
 	   [else
 	    (for ([v live-after])

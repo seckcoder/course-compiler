@@ -167,6 +167,8 @@
        ,(send interp interp-x86 '()))
       ("insert spill code" ,(send compiler patch-instructions)
        ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
+       ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))
     

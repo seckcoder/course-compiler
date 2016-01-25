@@ -334,6 +334,25 @@
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; lower-conditionals : psuedo-x86 -> x86
+
+    (define/override (lower-conditionals)
+      (lambda (e)
+	(match e
+	   [`(define (,f) ,n ,stack-space ,ss ...)
+	    `(define (,f) ,n ,stack-space
+	       ,@(append* (map (send this lower-conditionals) ss)))]
+
+	   [`(program ,stack-space (defines ,ds) ,ss ...)
+	    (define new-ds (for/list ([d ds])
+				     ((send this lower-conditionals) d)))
+	    (define new-ss (for/list ([s ss])
+				     ((send this lower-conditionals) s)))
+	    `(program ,stack-space (defines ,new-ds) ,@(append* new-ss))]
+	   [else ((super lower-conditionals) e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
     (define/override (print-x86)
       (lambda (e)
@@ -401,6 +420,8 @@
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
       ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))
