@@ -266,6 +266,31 @@
 	   [else ((super build-interference live-after G) ast)]
 	   )))
 
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; build-move-graph : pseudo-x86* -> pseudo-x86*
+    ;; *annotate program with move graph
+    
+    (define/override (build-move-graph G)
+      (lambda (ast)
+	(match ast
+           [`(program (,locals ,max-stack ,IG) (defines ,ds) ,ss ...)
+	    (define new-ds (for/list ([d ds])
+                             ((send this build-move-graph (void)) d)))
+            (define MG (make-graph locals))
+            (define new-ss
+              (for/list ([inst ss])
+                ((send this build-move-graph MG) inst)))
+            (print-dot MG "./move.dot")
+            `(program (,locals ,max-stack ,IG ,MG) (defines ,new-ds) ,@new-ss)]
+	   [`(define (,f) ,n (,locals ,max-stack ,IG) ,ss ...)
+            (define MG (make-graph locals))
+            (define new-ss
+              (for/list ([inst ss])
+                ((send this build-move-graph MG) inst)))
+	    `(define (,f) ,n (,locals ,max-stack ,IG ,MG) ,@new-ss)]
+	   [else ((super build-move-graph G) ast)])))
+           
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
 
@@ -290,14 +315,14 @@
     (define/override (allocate-registers)
       (lambda (ast)
 	(match ast
-	   [`(define (,f) ,n (,xs ,max-stack ,G) ,ss ...)
-	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
+	   [`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
+	    (define-values (homes stk-size) (send this allocate-homes IG MG xs ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-           [`(program (,locals ,max-stack ,G) (defines ,ds) ,ss ...)
+           [`(program (,locals ,max-stack ,IG ,MG) (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
-	      (send this allocate-homes G locals ss))
+	      (send this allocate-homes IG MG locals ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(program ,(align (+ stk-size (* 8 max-stack)) 16)
 		      (defines ,new-ds) ,@new-ss)]
@@ -416,6 +441,9 @@
        ,(send interp interp-x86 '()))
       ("build interference" ,(send compiler build-interference
                                    (void) (void))
+       ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
        ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))

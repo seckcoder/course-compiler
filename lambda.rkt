@@ -163,6 +163,9 @@
       ("build interference" ,(send compiler build-interference
                                    (void) (void))
        ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
+       ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
       ("insert spill code" ,(send compiler patch-instructions)
