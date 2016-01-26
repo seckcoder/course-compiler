@@ -62,7 +62,8 @@
 	    (assert "lives ss size" (= (length lives) (length new-ss)))
 	    `(program (,xs ,lives) ,@new-ss)]
 	   [else
-	    (values ast (set-union (set-subtract live-after (write-vars ast))
+	    (values ast (set-union (set-subtract live-after 
+						 (send this write-vars ast))
 				   (read-vars ast)))]
 	   )))
 
@@ -75,8 +76,8 @@
 	(match ast
 	   [`(movq ,s ,d)
 	    (for ([v live-after])
-		 (for ([d (write-vars `(movq ,s ,d))]
-		       #:when (not (or (equal? v s) (equal? v d))))
+		 (for ([d (send this free-vars d)]
+		       #:when (not (or (equal? `(var ,v) s) (equal? v d))))
 		      (add-edge G d v)))
 	    ast]
 	   [`(callq ,f)
@@ -94,7 +95,7 @@
 	    `(program (,xs ,G) ,@new-ss)]
 	   [else
 	    (for ([v live-after])
-		 (for ([d (write-vars ast)] #:when (not (equal? v d)))
+		 (for ([d (send this write-vars ast)] #:when (not (equal? v d)))
 		      (add-edge G d v)))
 	    ast])))
 
