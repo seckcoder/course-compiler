@@ -36,13 +36,16 @@
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
 
-;; This function prepends an underscore to a label if
-;; the current system is Mac OS and leaves it alone otherwise
-(define label-name
-  (lambda (n)
-    (if (eqv? (system-type 'os) 'macosx)
-        (string-append "_" n)
-        n)))
+;; label-name prepends an underscore to a label (symbol or string)
+;; if the current system is Mac OS and leaves it alone otherwise.
+;; label-name : (U String Symbol) -> String
+(define (label-name name)
+  (unless (or (symbol? name) (string? name))
+    (error 'label-name "expected string or symbol got ~s" name))
+  (cond
+    [(symbol? name) (label-name (symbol->string name))]
+    [(eqv? (system-type 'os) 'macosx) (string-append "_" name)]
+    [else name]))
 
 ;; The lookup function takes a key and an association list
 ;; and returns the corresponding value. It triggers an

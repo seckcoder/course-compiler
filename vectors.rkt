@@ -1,6 +1,7 @@
 #lang racket
 (require "conditionals.rkt")
 (require "interp.rkt")
+(require "utilities.rkt")
 (provide compile-S2 vectors-passes)
 
 (define compile-S2
@@ -9,8 +10,17 @@
 
     (define/override (primitives)
       (set-union (super primitives) 
-		 (set 'vector 'vector-ref 'vector-set!)))
+		 (set 'vector 'vector-ref 'vector-set! '<)))
 
+    (define/public (relops-table)
+      (make-immutable-hash
+       '((=  . je)
+         (<  . jl) (<= . jle)
+         (>  . jg) (>= . jge))))
+
+    (define/public (relop? x)
+      (if (hash-ref x (send this relops-table) #f) #t #f))
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S2 -> S2    
     (define/override (type-check env)
@@ -47,8 +57,11 @@
 	   )))
 
     ;; nothing to do for uniquify
-    ;; nothing to do for flatten
-    
+
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; flatten : S1 -> C1-expr x (C1-stmt list)
+        
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : C2 -> psuedo-x86
 
@@ -63,24 +76,22 @@
 	    (define initializers
 	      (for/list ([e new-es] [i (in-naturals)])
                 `(movq ,e (offset ,new-lhs ,(* i 8)))))
-	    #|`((movq label (reg rax))
-              (addq (int bytes) (reg rax))
-              
-              (addq (int ,bytes) (reg ))
-              (movq (int ,(+)))
-               ;;(callq alloc)
-              (if (reg rdx)
-                  
-                  (nop))
-              (movq (reg rax) ,new-lhs)
-              (alloc)
-
-              
-              ,@initializers)|#
+            #|
             `((movq (int ,bytes) (reg rdi))
               (callq alloc)
               (movq (reg rax) ,new-lhs)
-              . ,initializers)]
+              . ,initializers)
+            |#
+	    `((movq (global-value alloc_ptr) (reg rax))
+              (movq (reg rax) (reg rdx))
+              (movq (reg rdi) (int ,bytes))
+              (addq (reg rdi) (reg rdx))
+              (movq (global-value fromspace_end) (reg rcx))
+              (if (< (reg rdi) (reg rsi))
+                  (movq (reg rdi) (global-value alloc_ptr))
+                  (callq debug_collect))
+              (movq (reg rax) ,new-lhs)
+              ,@initializers)]
 	   [`(assign ,lhs (vector-ref ,e-vec ,i))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e-vec ((send this select-instructions) e-vec))
@@ -90,6 +101,14 @@
 	    (define new-e-vec ((send this select-instructions) e-vec))
 	    (define new-e-arg ((send this select-instructions) e-arg))
 	    `((movq ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
+           #|
+           [`(if (,(? relop? relop) ,a1 ,a2)
+                 (,(app (send this select-instructions) then-sss) ...)
+                 (,(app (send this select-instructions) else-sss) ...))
+            `(if (,relop? ,a1 ,a2)
+                 ,(append* then-sss)
+                 ,(append* else-sss))]
+           |#
            [`(program ,xs ,ss ...)
             `(program ,xs
                       (callq initialize)
@@ -99,7 +118,6 @@
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live
-
     (define/override (free-vars a)
       (match a
 	 [`(offset ,e ,i) (send this free-vars e)]
@@ -122,8 +140,28 @@
 
     (define/override (on-stack? a)
       (match a
-	 [`(offset ,e ,i) #t]
-	 [else (super on-stack? a)]))
+        [`(offset ,e ,i) #t]
+        [else (super on-stack? a)]))
+
+    (define/override (patch-instructions)
+      (lambda (e)
+        (match e
+          [`(if (,(? relop? relop) ,a1 ,a2)
+                (,(app (send this patch-instructions) then-sss) ...)
+                (,(app (send this patch-instructions) else-sss) ...))
+           (define else-label (gensym 'else))
+           (define join-label (gensym 'if_end))
+           (define jump
+             (hash-ref relop (send this relops-table)
+               (error 'INTERNAL/vector "undefined relop ~a" relop)))
+           `((cmpq ,a1 ,a2)
+             (,jump ,else-label)
+             ,@(append* then-sss)
+             (jmp ,join-label)
+             (label ,else-label)
+             ,@(append* else-sss)
+             (label ,join-label))]
+          [other ((super patch-instructions) other)])))
 
 
     
@@ -133,11 +171,12 @@
     (define/override (print-x86)
       (lambda (e)
 	(match e
-	   [`(offset (stack ,n) ,i)
+          [`(offset (stack ,n) ,i)
 	    (format "~a(%rbp)" (- i n))]
-	   [`(offset ,e ,i)
+          [`(offset ,e ,i)
 	    (format "~a(~a)" i ((send this print-x86) e))]
-	   [else ((super print-x86) e)]
+          [`(global-value ,label) (label-name (symbol->string label))]
+          [else ((super print-x86) e)]
 	   )))
     ));; compile-S2
 
