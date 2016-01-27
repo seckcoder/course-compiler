@@ -2,7 +2,7 @@
 (require "conditionals.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-S2 vectors-passes)
+(provide compile-R2 vectors-passes)
 
 
 (define compile-R2
