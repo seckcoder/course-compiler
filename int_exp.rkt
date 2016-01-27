@@ -3,9 +3,9 @@
 (require "utilities.rkt")
 (require "interp.rkt")
 
-(provide int-exp-passes compile-S0)
+(provide int-exp-passes compile-R0)
 
-(define compile-S0
+(define compile-R0
   (class object%
     (super-new)
 
@@ -126,7 +126,8 @@
 		   `((,inst ,new-lhs))]
 		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
 	   [`(program ,locals ,ss ...)
-	    `(program ,locals ,@(append* (map (send this select-instructions) ss)))]
+	    (let ([new-ss (map (send this select-instructions) ss)])
+	      `(program ,locals ,@(append* new-ss)))]
 	   [else (error "instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -245,23 +246,23 @@
 	    (format "\t~a\t~a\n" instr-name ((send this print-x86) d))]
 	   [else (error "print-x86, unmatched" e)]
 	   )))
-    )) ;; class compile-S0
+    )) ;; class compile-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define int-exp-passes
-  (let ([compiler (new compile-S0)]
-	[interp (new interp-S0)])
+  (let ([compiler (new compile-R0)]
+	[interp (new interp-R0)])
     (list 
 	  `("uniquify" ,(send compiler uniquify '())
-	    ,(send interp interp-scheme '()))
+	    ,interp-scheme)
 	  `("flatten" ,(send compiler flatten #f)
-	    ,(send interp interp-C '()))
+	    ,interp-C)
 	  `("instruction selection" ,(send compiler select-instructions)
-	    ,(send interp interp-x86 '()))
+	    ,interp-x86)
 	  `("assign homes" ,(send compiler assign-homes (void))
-	    ,(send interp interp-x86 '()))
+	    ,interp-x86)
 	  `("insert spill code" ,(send compiler patch-instructions)
-	    ,(send interp interp-x86 '()))
+	    ,interp-x86)
 	  `("print x86" ,(send compiler print-x86) #f)
 	  )))

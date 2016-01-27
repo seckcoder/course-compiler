@@ -1,0 +1,274 @@
+
+
+Lecture 1
+================================================================================
+
+Administration stuff
+
+Compiler and course organization
+
+Abstract syntax trees, R_0
+
+
+Lecture 2: Compiling Integers, Arithmetic, and Let
+================================================================================
+
+S-Expressions
+
+  quote
+
+  comma
+
+Pattern Matching
+
+  match
+
+Recursion
+
+  The HTDP recipe, grammar => recursive function
+  arith?
+
+Interpreter for R_0
+
+The R_1 Language
+
+  let expressions, overshadowing variables
+  evaluation order is left to right
+
+The x86-64 Language
+
+   program is a sequence of instructions, they are stored in memory
+   arguments: 
+     integer immediate values
+     registers
+     memory (map addresses to 64-bit value)
+       stack and frame layout (Fig. 2.6)
+
+   x86-64 version of
+     (+ 10 32)      Fig 2.4
+   and
+     (+ 52 (- 10))  Fig 2.5
+
+Compiler Correctness Diagram (p. 17)
+
+Compiler Plan
+  Differences:
+  * instruction format, 2-arguments
+  * nesting expressions versus simple instruction arguments
+  * variables vs. registers
+  * multiple variables with the same name vs. unique names
+    of registers and memory locations
+
+  Gordian Knot between instruction selection and register allocation.
+  Cut by doing optimistic instruction selection.
+
+  Plan:
+
+  R_1
+  |  uniquify
+  V
+  R_1
+  |  flatten (emphasize this one, e.g. (+ (- 5) (- 10)) )
+  V
+  C_0
+  |  select-instructions
+  V
+  x86*
+  |  assign-homes
+  V
+  x86*
+  |  patch-instructions
+  V
+  x86
+
+
+Lecture 3: Register Allocation
+================================================================================
+
+Liveness Analysis
+
+Build Interference Graph
+
+Graph Coloring
+
+
+Lecture 4: Register Allocation cont'd, Booleans & Control Flow
+================================================================================
+
+Review Reg. Allocation
+
+    (let ([a 1])
+      (let ([b 2])
+	(let ([f b])
+	  (let ([e (+ a b)])
+	   (let ([d f])
+	      d)))))
+        
+
+After instruction selection:
+
+    (program (a b f e d)
+      (movq (int 1) (var a))
+      (movq (int 2) (var b))
+      (movq (var b) (var f))
+      (movq (var a) (var e))
+      (addq (var b) (var e))
+      (movq (var f) (var d))
+      (movq (var d) (reg rax)))
+
+Liveness analysis
+
+    (program (a b f e d)
+      (movq (int 1) (var a))	(set 'a)
+      (movq (int 2) (var b))	(set 'a 'b)
+      (movq (var b) (var f))	(set 'a 'b 'f)
+      (movq (var a) (var e))	(set 'b 'f 'e)
+      (addq (var b) (var e))	(set 'f)
+      (movq (var f) (var d))	(set 'd)
+      (movq (var d) (reg rax)))	(set)
+
+Interference graph
+
+    a---b   d
+    |   |
+    |   |
+    f---e
+
+    Graph coloring
+    0 rbx
+    1 rcx
+    2 rdx
+
+    a  0
+    b  1
+    f  1
+    e  0
+    d  0
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 42) (reg rcx))
+      (movq (reg rcx) (reg rcx))   <-- delete b -> f
+      (movq (reg rbx) (reg rbx))   <-- delete a --> e
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rcx) (reg rbx))
+      (movq (reg rbx) (reg rax)))
+
+
+Patch Instructions
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 42) (reg rcx))
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rcx) (reg rbx))
+      (movq (reg rbx) (reg rax)))
+
+Move Biasing
+
+    Move Graph:
+
+     a---e
+
+     b---f---d
+
+    With move biasing, we color d with 1 (rcx) to match f.
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 42) (reg rcx))
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rcx) (reg rcx))    <--- delete f -> d
+      (movq (reg rcx) (reg rax)))
+
+    (program 16
+      (movq (int 1) (reg rbx))
+      (movq (int 42) (reg rcx))
+      (addq (reg rcx) (reg rbx))
+      (movq (reg rcx) (reg rax)))
+
+Booleans & Control Flow
+
+  exp ::= ... | (not exp) | (and exp exp) | (eq? exp exp) 
+        | #f | #f | (if exp exp exp)
+  R_2 ::= (program exp)
+
+  interpreter R_2
+    'if' expects a boolean
+    'and' does short circuiting
+    'eq?' works on integers and on booleans (but not mixed)
+
+  type checking
+    types classify values: Integer, Boolean
+    goal: predict the type of value that an expression will produce
+    goal: reject programs that will error due to type mismatches
+    notice similarity between the interpreter and the type checker
+    Type checking is an "abstract interpretation"
+
+Lecture 5: Booleans & Control Flow cont'd
+================================================================================
+
+  Questions about register allocation?
+
+  flattening from R_2 to C_1:
+    arg ::= ... | #t | #f 
+    exp ::= ... | (not arg) | (eq? arg arg)
+    stmt ::= ... | (if exp stmt* stmt*)
+    C_1 ::= (program (var*) stmt+)
+
+    * (if exp exp exp)
+
+    * (and exp exp)
+
+
+  select-instructions
+
+    * (assign lhs (eq? arg1 arg2))
+
+      cmpq s1, s2
+        puts the result in a special EFLAGS register
+      sete d
+        puts 0 or 1 into the destination based on the EFLAGS
+        caveat: destination must be a byte-sized register such as 'al'
+          that is part of larger register 'rax'
+      movzbq s, d
+        move from byte-sized register to 64-bit register
+  	filling the rest with 0's
+    
+    * keep 'if' statements
+
+  liveness analysis
+
+    * What about (if cnd thn-ss els-ss)?
+
+      * talk about conservative approximation
+      * store the life-after sets for the thn and els branches
+        (if cnd thn-ss thn-lives els-ss els-lives)
+
+    * how to deal with byte-sized registers like 'al'?
+
+  patch-instructions
+
+    * recurse through 'if'
+    * new instructions (may not require changes)
+
+  lower-conditionals
+
+    * more x86 instructions
+      * je label
+         jump to the label if the EFLAGS register is 'equal'
+         otherwise fall through to the next instruction
+      * jmp label
+         jump to label unconditionally
+
+    * (if cnd thn-ss els-ss)
+      ==>
+      (cmpq (int 0) cnd)
+      (je elselabel)
+      thn-ss
+      (jmp endlabel)
+      (label elselabel)
+      els-ss
+      (label endlabel)
+      
+  Walk through example translation

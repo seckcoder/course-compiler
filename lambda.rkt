@@ -3,10 +3,10 @@
 (require "utilities.rkt")
 (require "functions.rkt")
 (require "interp.rkt")
-(provide compile-S4 lambda-passes)
+(provide compile-R4 lambda-passes)
 
-(define compile-S4
-  (class compile-S3
+(define compile-R4
+  (class compile-R3
     (super-new)
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -144,8 +144,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define lambda-passes
-  (let ([compiler (new compile-S4)]
-        [interp (new interp-S4)])
+  (let ([compiler (new compile-R4)]
+        [interp (new interp-R4)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
@@ -163,9 +163,14 @@
       ("build interference" ,(send compiler build-interference
                                    (void) (void))
        ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
+       ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
       ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))

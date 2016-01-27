@@ -5,10 +5,12 @@
 (require "interp.rkt")
 (require "priority_queue.rkt")
 
-(provide reg-int-exp-passes compile-reg-S0)
+(provide reg-int-exp-passes compile-reg-R0)
 
-(define compile-reg-S0
-  (class compile-S0
+(define use-move-biasing #f)
+
+(define compile-reg-R0
+  (class compile-R0
     (super-new)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -62,7 +64,8 @@
 	    (assert "lives ss size" (= (length lives) (length new-ss)))
 	    `(program (,xs ,lives) ,@new-ss)]
 	   [else
-	    (values ast (set-union (set-subtract live-after (write-vars ast))
+	    (values ast (set-union (set-subtract live-after 
+						 (send this write-vars ast))
 				   (read-vars ast)))]
 	   )))
 
@@ -75,8 +78,8 @@
 	(match ast
 	   [`(movq ,s ,d)
 	    (for ([v live-after])
-		 (for ([d (write-vars `(movq ,s ,d))]
-		       #:when (not (or (equal? v s) (equal? v d))))
+		 (for ([d (send this free-vars d)]
+		       #:when (not (or (equal? `(var ,v) s) (equal? v d))))
 		      (add-edge G d v)))
 	    ast]
 	   [`(callq ,f)
@@ -90,12 +93,39 @@
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 	         ((send this build-interference live-after G) inst)))
+	    (print-dot G "./interfere.dot")
 	    `(program (,xs ,G) ,@new-ss)]
 	   [else
 	    (for ([v live-after])
-		 (for ([d (write-vars ast)] #:when (not (equal? v d)))
+		 (for ([d (send this write-vars ast)] #:when (not (equal? v d)))
 		      (add-edge G d v)))
 	    ast])))
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; build-move-graph : pseudo-x86* -> pseudo-x86*
+    ;; *annotate program with move graph
+
+    (define/public (build-move-graph G)
+      (lambda (ast)
+	(match ast
+	   [`(movq (var ,s) (var ,d))
+            (if use-move-biasing
+                (add-edge G s d)
+                '())
+	    ast]
+           [`(program (,xs ,IG) ,ss ...)
+            (define MG (make-graph xs))
+            (define new-ss
+              (if use-move-biasing
+                  (let ([nss 
+                         (for/list ([inst ss])
+                           ((send this build-move-graph MG) inst))])
+                    (print-dot MG "./move.dot")
+                    nss)
+                  ss))
+            `(program (,xs ,IG ,MG) ,@new-ss)]
+	   [else ast])))
+	    
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; allocate-registers : pseudo-x86 -> pseudo-x86
@@ -107,11 +137,21 @@
 
     ;; Choose the first available color
     ;; To do: move biasing -Jeremy
-    (define (choose-color v unavail-colors)
-      (let loop ([c 0])
-	(cond [(set-member? unavail-colors c) 
-	       (loop (add1 c))]
-	      [else c])))
+    (define (choose-color v unavail-colors move-related)
+      (define n (vector-length registers-for-alloc))
+      (define biased-selection
+        (for/first ([c move-related]
+                    #:when (not (set-member? unavail-colors c)))
+          c))
+      (if (or (eq? biased-selection #f) (>= biased-selection n))
+          (let ([unbiased-selection     
+                 (let loop ([c 0])
+                   (cond [(set-member? unavail-colors c) 
+                          (loop (add1 c))]
+                         [else c]))])
+            (if (or (eq? biased-selection #f) (< unbiased-selection n)) unbiased-selection
+                biased-selection))
+          biased-selection))
 
     (define variable-size 8)
     (define first-offset 8)
@@ -123,7 +163,7 @@
 	    [else 
 	     `(stack ,(+ first-offset (* (- c n) variable-size)))]))
 
-    (define/public (allocate-homes G xs ss)
+    (define/public (allocate-homes IG MG xs ss)
       (debug "allocate-homes" xs)
       (set! largest-color 0)
       (define unavail-colors (make-hash)) ;; pencil marks
@@ -137,7 +177,7 @@
 	   ;; mark neighboring register colors as unavailable
 	   (define adj-reg
 	      (filter (lambda (u) (set-member? registers u))
-		      (set->list (hash-ref G x))))
+		      (set->list (adjacent IG x))))
 	   (define adj-colors
 	     (list->set (map (lambda (r) (register->color r)) adj-reg)))
 	   (hash-set! unavail-colors x adj-colors)
@@ -146,11 +186,15 @@
       ;; Graph coloring
       (while (> (pqueue-count Q) 0)
 	     (define v (pqueue-pop! Q))
-	     (define c (choose-color v (hash-ref unavail-colors v)))
+             (define move-related 
+               (list->set (filter (lambda (x) (>= x 0)) 
+                                  (map (lambda (k) (hash-ref color k -1)) 
+                                       (set->list (adjacent MG v))))))
+	     (define c (choose-color v (hash-ref unavail-colors v) move-related))
 	     (cond [(> c largest-color) (set! largest-color c)])
 	     (hash-set! color v c)
 	     (debug "coloring" (cons v c))
-	     (for ([u (adjacent G v)])
+	     (for ([u (adjacent IG v)])
 		  (when (not (set-member? registers u))
 			(hash-set! unavail-colors u
 				   (set-add (hash-ref unavail-colors u) c))
@@ -171,20 +215,20 @@
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
-           [`(program (,locals ,G) ,ss ...)
+           [`(program (,locals ,IG ,MG) ,ss ...)
 	    (define-values (homes stk-size) 
-	      (send this allocate-homes G locals ss))
+	      (send this allocate-homes IG MG locals ss))
 	    `(program ,stk-size 
 		      ,@(map (send this assign-homes homes) ss))]
 	   )))
 
-    )) ;; compile-reg-S0
+    )) ;; compile-reg-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define reg-int-exp-passes
-  (let ([compiler (new compile-reg-S0)]
-	[interp (new interp-S0)])
+  (let ([compiler (new compile-reg-R0)]
+	[interp (new interp-R0)])
     `(#|
       ("programify" ,(lambda (ast) `(program () ,ast))
       ,(send interp interp-scheme '()))
@@ -199,6 +243,9 @@
        ,(send interp interp-x86 '()))
       ("build interference" ,(send compiler
                                    build-interference (void) (void))
+       ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
        ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))

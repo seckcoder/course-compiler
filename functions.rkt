@@ -2,10 +2,10 @@
 (require "vectors.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-S3 functions-passes)
+(provide compile-R3 functions-passes)
 
-(define compile-S3
-  (class compile-S2
+(define compile-R3
+  (class compile-R2
     (super-new)
 
     (define/public (non-apply-ast)
@@ -128,7 +128,7 @@
 	   [`(program ,ds ... ,body)
 	    (define-values (locals new-body) (flatten-body body))
 	    (define new-ds (map (send this flatten #f) ds))
-	    `(program ,locals ,new-ds ,@new-body)]
+	    `(program ,locals (defines ,new-ds) ,@new-body)]
 	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
 	    (define-values (locals new-body) (flatten-body body))
 	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
@@ -196,12 +196,12 @@
 	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
 	     `((indirect-callq ,new-f) (movq (reg rax) ,new-lhs)))]
-	   [`(program ,locals ,ds ,ss ...)
+	   [`(program ,locals (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
             `(program
               (,locals ,max-stack)
-              ,new-ds
+              (defines ,new-ds)
               (callq initialize)
               ,@(append* (map (send this select-instructions) ss)))]
 	   [else ((super select-instructions) e)]
@@ -235,10 +235,10 @@
 	   [`(define (,f) ,n (,locals ,max-stack) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    `(define (,f) ,n (,locals ,max-stack ,lives) ,@new-ss)]
-           [`(program (,locals ,max-stack) ,ds ,ss ...)
+           [`(program (,locals ,max-stack) (defines ,ds) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    (define new-ds (map (send this uncover-live (set)) ds))
-	    `(program (,locals ,max-stack ,lives) ,new-ds ,@new-ss)]
+	    `(program (,locals ,max-stack ,lives) (defines ,new-ds) ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
     
@@ -255,17 +255,42 @@
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
-           [`(program (,locals ,max-stack ,lives) ,ds ,ss ...)
+           [`(program (,locals ,max-stack ,lives) (defines ,ds) ,ss ...)
 	    (define new-G (make-graph locals))
 	    (define new-ds (for/list ([d ds])
 			      ((send this build-interference (void) (void)) d)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
-	    `(program (,locals ,max-stack ,new-G) ,new-ds ,@new-ss)]
+	    `(program (,locals ,max-stack ,new-G) (defines ,new-ds) ,@new-ss)]
 	   [else ((super build-interference live-after G) ast)]
 	   )))
 
+   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; build-move-graph : pseudo-x86* -> pseudo-x86*
+    ;; *annotate program with move graph
+    
+    (define/override (build-move-graph G)
+      (lambda (ast)
+	(match ast
+           [`(program (,locals ,max-stack ,IG) (defines ,ds) ,ss ...)
+	    (define new-ds (for/list ([d ds])
+                             ((send this build-move-graph (void)) d)))
+            (define MG (make-graph locals))
+            (define new-ss
+              (for/list ([inst ss])
+                ((send this build-move-graph MG) inst)))
+            (print-dot MG "./move.dot")
+            `(program (,locals ,max-stack ,IG ,MG) (defines ,new-ds) ,@new-ss)]
+	   [`(define (,f) ,n (,locals ,max-stack ,IG) ,ss ...)
+            (define MG (make-graph locals))
+            (define new-ss
+              (for/list ([inst ss])
+                ((send this build-move-graph MG) inst)))
+	    `(define (,f) ,n (,locals ,max-stack ,IG ,MG) ,@new-ss)]
+	   [else ((super build-move-graph G) ast)])))
+           
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
 
@@ -290,17 +315,17 @@
     (define/override (allocate-registers)
       (lambda (ast)
 	(match ast
-	   [`(define (,f) ,n (,xs ,max-stack ,G) ,ss ...)
-	    (define-values (homes stk-size) (send this allocate-homes G xs ss))
+	   [`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
+	    (define-values (homes stk-size) (send this allocate-homes IG MG xs ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-           [`(program (,locals ,max-stack ,G) ,ds ,ss ...)
+           [`(program (,locals ,max-stack ,IG ,MG) (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
-	      (send this allocate-homes G locals ss))
+	      (send this allocate-homes IG MG locals ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(program ,(align (+ stk-size (* 8 max-stack)) 16)
-		      ,new-ds ,@new-ss)]
+		      (defines ,new-ds) ,@new-ss)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -319,11 +344,11 @@
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
 	   [`(indirect-callq ,f)
 	    `((indirect-callq ,f))]
-	   [`(program ,stack-space ,ds ,ss ...)
+	   [`(program ,stack-space (defines ,ds) ,ss ...)
 	    (define new-ds (for/list ([d ds])
 				     ((send this patch-instructions) d)))
 	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
-	    `(program ,stack-space ,new-ds ,@(append* sss))]
+	    `(program ,stack-space (defines ,new-ds) ,@(append* sss))]
 	   [`(leaq ,s ,d)
 	    (cond [(on-stack? d)
 		   `((leaq ,s (reg rax))
@@ -331,6 +356,25 @@
 		  [else
 		   `((leaq ,s ,d))])]
 	   [else ((super patch-instructions) e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; lower-conditionals : psuedo-x86 -> x86
+
+    (define/override (lower-conditionals)
+      (lambda (e)
+	(match e
+	   [`(define (,f) ,n ,stack-space ,ss ...)
+	    `(define (,f) ,n ,stack-space
+	       ,@(append* (map (send this lower-conditionals) ss)))]
+
+	   [`(program ,stack-space (defines ,ds) ,ss ...)
+	    (define new-ds (for/list ([d ds])
+				     ((send this lower-conditionals) d)))
+	    (define new-ss (for/list ([s ss])
+				     ((send this lower-conditionals) s)))
+	    `(program ,stack-space (defines ,new-ds) ,@(append* new-ss))]
+	   [else ((super lower-conditionals) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -367,7 +411,7 @@
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
-	   [`(program ,stack-space ,ds ,ss ...)
+	   [`(program ,stack-space (defines ,ds) ,ss ...)
 	    (string-append
 	     (string-append* (for/list ([d ds]) ((send this print-x86) d)))
 	     "\n"
@@ -375,14 +419,14 @@
 	   [else ((super print-x86) e)]
 	   )))
 
-    ));; compile-S3
+    ));; compile-R3
     
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define functions-passes
-  (let ([compiler (new compile-S3)]
-	[interp (new interp-S3)])
+  (let ([compiler (new compile-R3)]
+	[interp (new interp-R3)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
@@ -398,9 +442,14 @@
       ("build interference" ,(send compiler build-interference
                                    (void) (void))
        ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
+       ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
       ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))

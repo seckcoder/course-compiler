@@ -1,19 +1,19 @@
 #lang racket
 (require racket/fixnum)
 (require "utilities.rkt")
-(provide interp-scheme interp-C interp-x86 interp-S0 interp-S1 interp-S2 interp-S3 interp-S4 )
+(provide interp-scheme interp-C interp-x86 interp-R0 interp-R1 interp-R2 interp-R3 interp-R4 )
 
 (define interp-scheme
   (lambda (p)
-    ((send (new interp-S4) interp-scheme '()) p)))
+    ((send (new interp-R4) interp-scheme '()) p)))
 
 (define interp-C
   (lambda (p)
-    ((send (new interp-S4) interp-C '()) p)))
+    ((send (new interp-R4) interp-C '()) p)))
 
 (define interp-x86
   (lambda (p)
-    ((send (new interp-S4) interp-x86 '()) p)))
+    ((send (new interp-R4) interp-x86 '()) p)))
 
 ;; This (dynamically scoped) parameter is used for goto
 (define program (make-parameter '()))
@@ -21,7 +21,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S0: integer arithmetic and 'let'
 
-(define interp-S0
+(define interp-R0
   (class object%
     (super-new)
 
@@ -72,6 +72,7 @@
 	
     (define/public (interp-C env)
       (lambda (ast)
+        (debug "interp-C0" ast)
 	(match ast
            [(? symbol?)
 	    (lookup ast env)]
@@ -163,13 +164,13 @@
 	   [else (error "no match in interp-x86 S0 for " ast)]
 	   )))
 
-    )) ;; class interp-S0
+    )) ;; class interp-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S1: Booleans and conditionals
 
-(define interp-S1
-  (class interp-S0
+(define interp-R1
+  (class interp-R0
     (super-new)
 
     (define/override (primitives)
@@ -206,6 +207,7 @@
 
     (define/override (interp-C env)
       (lambda (ast)
+	(debug "interp-C1" ast)
 	(match ast
            [#t #t]
            [#f #f]
@@ -304,13 +306,13 @@
 	   [else ((super interp-x86 env) ast)]
 	   )))
 	    
-    ));; class interp-S1
+    ));; class interp-R1
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S2: Vectors
 
-(define interp-S2
-  (class interp-S1
+(define interp-R2
+  (class interp-R1
     (super-new)
 
     (define/override (primitives)
@@ -349,14 +351,14 @@
 	   [else ((super interp-x86 env) ast)]
 	   )))
 
-    ));; interp-S2
+    ));; interp-R2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S3: functions
 
 
-(define interp-S3
-  (class interp-S2
+(define interp-R3
+  (class interp-R2
     (super-new)
     (inherit-field result)
 
@@ -397,6 +399,7 @@
 
     (define/override (interp-C env)
       (lambda (ast)
+	(debug "interp-C2" ast)
 	(match ast
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
 	    (cons f `(lambda ,xs ,@ss))]
@@ -411,7 +414,7 @@
 		(define result-env ((send this seq-C new-env) ss))
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
-	   [`(program ,locals ,ds ,ss ...)
+	   [`(program ,locals (defines ,ds) ,ss ...)
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
 	    (lookup result result-env)]
@@ -482,7 +485,7 @@
 	    (call-function f-val ss env)]
 	   [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
-	   [`(program ,extra ,ds ,ss ...)
+	   [`(program ,extra (defines ,ds) ,ss ...)
 	    (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
@@ -491,13 +494,13 @@
 	   )))
 
 
-    ));; interp-S3
+    ));; interp-R3
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S4: lambda
 
-(define interp-S4
-  (class interp-S3
+(define interp-R4
+  (class interp-R3
     (super-new)
     (inherit-field result)
 
@@ -527,6 +530,7 @@
 	   [else ((super interp-scheme env) ast)]
 	   )))
 
-    )) ;; interp-S4
+    )) ;; interp-R4
 
 
+ 

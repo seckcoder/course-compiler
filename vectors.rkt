@@ -4,8 +4,9 @@
 (require "utilities.rkt")
 (provide compile-S2 vectors-passes)
 
-(define compile-S2
-  (class compile-S1
+
+(define compile-R2
+  (class compile-R1
     (super-new)
 
     (define/override (primitives)
@@ -178,13 +179,13 @@
           [`(global-value ,label) (label-name (symbol->string label))]
           [else ((super print-x86) e)]
 	   )))
-    ));; compile-S2
+    ));; compile-R2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
 (define vectors-passes
-  (let ([compiler (new compile-S2)]
-	[interp (new interp-S2)])
+  (let ([compiler (new compile-R2)]
+	[interp (new interp-R2)])
     `(("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
@@ -198,9 +199,14 @@
       ("build interference" ,(send compiler build-interference
                                    (void) (void))
        ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
+       ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
       ("insert spill code" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))

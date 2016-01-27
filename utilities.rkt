@@ -1,9 +1,9 @@
 #lang racket
 (require racket/pretty)
 (provide debug map2 label-name lookup  make-dispatcher assert
-         read-fixnum read-program
+         read-fixnum read-program 
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
-	 make-graph add-edge adjacent
+	 make-graph add-edge adjacent vertices print-dot
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align)
 
@@ -99,7 +99,7 @@
 ;; runs the passes and the appropriate interpreters to test the
 ;; correctness of all the passes. This function assumes there is a "tests"
 ;; subdirectory and a file in that directory whose name is the test name
-;; followed by ".scm". Also, there should be a matching file with the
+;; followed by ".rkt". Also, there should be a matching file with the
 ;; ending ".in" that provides the input for the Scheme program.
 ;;
 ;; The description of the passes is a list with one entry per pass.
@@ -160,9 +160,9 @@
 
 ;; The compile-file function takes a description of the compiler
 ;; passes (see the comment for check-passes) and returns a function
-;; that, given a program file name (a string ending in ".scm"),
+;; that, given a program file name (a string ending in ".rkt"),
 ;; applies all of the passes and writes the output to a file whose
-;; name is the same as the proram file name but with ".scm" replaced
+;; name is the same as the proram file name but with ".rkt" replaced
 ;; with ".s".
 (define (compile-file passes)
   (lambda (prog-file-name)
@@ -197,7 +197,7 @@
 ;; This function assumes that the subdirectory "tests" has a bunch of
 ;; Scheme programs whose names all start with the family name,
 ;; followed by an underscore and then the test number, ending in
-;; ".scm". Also, for each Scheme program there is a file with the
+;; ".rkt". Also, for each Scheme program there is a file with the
 ;; same number except that it ends with ".in" that provides the
 ;; input for the Scheme program.
 
@@ -213,7 +213,9 @@
 ;; family name (a string), and a list of test numbers (see the comment
 ;; for interp-tests), and runs the compiler to generate x86 (a ".s"
 ;; file) and then runs gcc to generate machine code.  It runs the
-;; machine code and checks that the output is 42.
+;; machine code and stores the result. If the test file has a
+;; corresponding .res file, the result is compared against its contents;
+;; otherwise, the result is compared against 42.
 
 (define (compiler-tests name passes test-family test-nums)
   (define compiler (compile-file passes))
@@ -225,9 +227,18 @@
        (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
 			 (format " < tests/~a.in" test-name)
 			 "")]
+              [output (if (file-exists? (format "tests/~a.res" test-name))
+                          (call-with-input-file (format "tests/~a.res" test-name)
+                            (lambda (f) (string->number (read-line f))))
+                          42)]
               [progout (process (format "./a.out~a" input))] ; List, first element is stdout
 	      [result (string->number (read-line (car progout)))])
-	 (if (eq? result 42)
+	 (match progout
+	   [`(,in1 ,out ,_ ,in2 ,_)
+	    (close-input-port in1)
+	    (close-input-port in2)
+	    (close-output-port out)])
+	 (if (eq? result output)
 	     (begin (display test-name)(display " ")(flush-output))
 	     (error (format "test ~a failed, output: ~a" 
 			    test-name result))))
@@ -293,4 +304,23 @@
 (define (adjacent graph u)
   (hash-ref graph u))
 
+(define (vertices graph)
+  (hash-keys graph))
 
+(define (print-dot graph file-name)
+  (if debug-state
+      (call-with-output-file file-name #:exists 'replace
+	(lambda (out-file)
+	  (write-string "strict graph {" out-file) (newline out-file)
+	  
+	  (for ([v (vertices graph)])
+	       (write-string (format "~a;\n" v) out-file))
+	  
+	  (for ([v (vertices graph)])
+	       (for ([u (adjacent graph v)])
+		    (write-string (format "~a -- ~a;\n" u v) out-file)))
+	  
+	  (write-string "}" out-file)
+	  (newline out-file)))
+      '()))
+      
