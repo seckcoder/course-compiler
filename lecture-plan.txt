@@ -205,14 +205,19 @@ Booleans & Control Flow
     notice similarity between the interpreter and the type checker
     Type checking is an "abstract interpretation"
 
-  flattening
+Lecture 5: Booleans & Control Flow cont'd
+================================================================================
+
+  Questions about register allocation?
+
+  flattening from R_2 to C_1:
     arg ::= ... | #t | #f 
     exp ::= ... | (not arg) | (eq? arg arg)
     stmt ::= ... | (if exp stmt* stmt*)
     C_1 ::= (program (var*) stmt+)
 
+    * (if exp exp exp)
 
-    * (if cnd thn els)
     * (and exp exp)
 
 
