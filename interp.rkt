@@ -264,6 +264,11 @@
 	    ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
            [#t 1]
            [#f 0]
+	   [`(eq? ,e1 ,e2)
+	    (if (eq? ((send this interp-x86-exp env) e1)
+		     ((send this interp-x86-exp env) e2))
+		1
+		0)]
 	   [else ((super interp-x86-exp env) ast)]
 	   )))
 

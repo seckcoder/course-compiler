@@ -213,13 +213,12 @@ Lecture 5: Booleans & Control Flow cont'd
   flattening from R_2 to C_1:
     arg ::= ... | #t | #f 
     exp ::= ... | (not arg) | (eq? arg arg)
-    stmt ::= ... | (if exp stmt* stmt*)
+    stmt ::= ... | (if arg stmt* stmt*)
     C_1 ::= (program (var*) stmt+)
 
     * (if exp exp exp)
 
     * (and exp exp)
-
 
   select-instructions
 
@@ -271,4 +270,4 @@ Lecture 5: Booleans & Control Flow cont'd
       els-ss
       (label endlabel)
       
-  Walk through example translation
+  Walk through example translation from book
