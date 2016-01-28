@@ -7,7 +7,7 @@
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align)
 
-(define debug-state #t)
+(define debug-state #f)
 
 (define (debug label val)
   (if debug-state
