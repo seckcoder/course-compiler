@@ -216,8 +216,10 @@
 
 (define (compiler-tests name passes test-family test-nums)
   (define compiler (compile-file passes))
+  (debug "compiler-tests starting" '())
   (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
 			test-nums)])
+       (debug "compiler-tests, testing:" test-name)
        (compiler (format "tests/~a.rkt" test-name))
        (if (system (format "gcc -g -std=c99 runtime.o tests/~a.s" test-name))
 	   (void) (exit))
@@ -225,21 +227,30 @@
 			 (format " < tests/~a.in" test-name)
 			 "")]
               [output (if (file-exists? (format "tests/~a.res" test-name))
-                          (call-with-input-file (format "tests/~a.res" test-name)
+                          (call-with-input-file
+			      (format "tests/~a.res" test-name)
                             (lambda (f) (string->number (read-line f))))
                           42)]
-              [progout (process (format "./a.out~a" input))] ; List, first element is stdout
-	      [result (string->number (read-line (car progout)))])
+              [progout (process (format "./a.out~a" input))]
+	      )
+	 ;; process returns a list, it's first element is stdout
 	 (match progout
-	   [`(,in1 ,out ,_ ,in2 ,_)
-	    (close-input-port in1)
-	    (close-input-port in2)
-	    (close-output-port out)])
-	 (if (eq? result output)
-	     (begin (display test-name)(display " ")(flush-output))
-	     (error (format "test ~a failed, output: ~a" 
-			    test-name result))))
-       ))
+	    [`(,in1 ,out ,_ ,in2 ,control-fun)
+	     (control-fun 'wait)
+	     (cond [(eq? (control-fun 'status) 'done-ok)
+		    (let ([result (string->number (read-line (car progout)))])
+		      (if (eq? result output)
+			  (begin (display test-name)(display " ")(flush-output))
+			  (error (format "test ~a failed, output: ~a" 
+					 test-name result))))]
+		   [else
+		    (error
+		     (format "test ~a error in x86 execution, exit code: ~a" 
+			     test-name (control-fun 'exit-code)))])
+	     (close-input-port in1)
+	     (close-input-port in2)
+	     (close-output-port out)])
+       )))
 
 (define assert
   (lambda (msg b)

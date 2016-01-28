@@ -164,7 +164,6 @@
 	     `(stack ,(+ first-offset (* (- c n) variable-size)))]))
 
     (define/public (allocate-homes IG MG xs ss)
-      (debug "allocate-homes" xs)
       (set! largest-color 0)
       (define unavail-colors (make-hash)) ;; pencil marks
       (define (compare u v) 
@@ -205,13 +204,9 @@
 			     (cons x (identify-home (hash-ref color x))))))
       (define num-spills 
 	(max 0 (- (add1 largest-color) (vector-length registers-for-alloc))))
-      (define stack-size
-	(+ (send this first-offset)
-	   (align (* num-spills (send this variable-size)) 16)))
-      ;;(printf "stack size: ~a" stack-size)(newline)
-      ;;(printf "aligned stack size: ~a" (align stack-size 16))(newline)
-      (values homes (align stack-size 16)))
-
+      (define spill-space (* num-spills (send this variable-size)))
+      (values homes spill-space)
+      )
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
@@ -220,6 +215,44 @@
 	      (send this allocate-homes IG MG locals ss))
 	    `(program ,stk-size 
 		      ,@(map (send this assign-homes homes) ss))]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; print-x86 : x86 -> string
+    (define/override (print-x86)
+      (lambda (e)
+	(match e
+	   [`(program ,spill-space ,ss ...)
+	    (define callee-reg (set->list callee-save))
+	    (define save-callee-reg
+	      (for/list ([r callee-reg])
+			(format "\tpushq\t%~a\n" r)))
+	    (define restore-callee-reg
+	      (for/list ([r (reverse callee-reg)])
+			(format "\tpopq\t%~a\n" r)))
+	    (define callee-space (* (length (set->list callee-save))
+				    (send this variable-size)))
+	    (define stack-adj (- (align (+ callee-space spill-space) 16)
+				  callee-space))
+	    (string-append
+	     (format "\t.globl ~a\n" (label-name "main"))
+	     (format "~a:\n" (label-name "main"))
+	     (format "\tpushq\t%rbp\n")
+	     (format "\tmovq\t%rsp, %rbp\n")
+	     (string-append* save-callee-reg)
+	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
+	     "\n"
+	     (string-append* (map (send this print-x86) ss))
+	     "\n"
+             (format "\tmovq\t%rax, %rdi\n")
+             (format "\tcallq\t~a\n" (label-name "print_int"))
+	     (format "\tmovq\t$0, %rax\n")
+	     (format "\taddq\t$~a, %rsp\n" stack-adj)
+	     (string-append* restore-callee-reg)
+	     (format "\tpopq\t%rbp\n")
+	     (format "\tretq\n"))]
+	   [else
+	    ((super print-x86) e)]
 	   )))
 
     )) ;; compile-reg-R0

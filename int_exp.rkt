@@ -232,6 +232,7 @@
 	     "\n"
              (format "\tmovq\t%rax, %rdi\n")
              (format "\tcallq\t~a\n" (label-name "print_int"))
+	     (format "\tmovq\t$0, %rax\n")
 	     (format "\taddq\t$~a, %rsp\n" stack-space)
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
