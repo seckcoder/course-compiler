@@ -255,6 +255,7 @@
       (match op
 	 ['notq bitwise-not]
 	 ['andq bitwise-and]
+         ['xorq bitwise-xor]
 	 [else (super interp-x86-op op)]))
 
     (define/override (interp-x86-exp env)

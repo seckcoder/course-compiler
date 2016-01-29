@@ -172,19 +172,13 @@
 
     (define/override (instructions)
       (set-union (super instructions)
-		 (set 'cmpq 'sete 'andq 'orq 'notq 'movzbq)))
+		 (set 'cmpq 'sete 'andq 'orq 'xorq 'notq 'movzbq)))
 
     (define/override (binary-op->inst op)
       (match op
 	 ['and 'andq]
 	 ['or 'orq]
 	 [else (super binary-op->inst op)]
-	 ))
-
-    (define/override (unary-op->inst op)
-      (match op
-	 ['not 'notq]
-	 [else (super unary-op->inst op)]
 	 ))
 
     (define/public (immediate? e)
@@ -205,11 +199,9 @@
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e ((send this select-instructions) e))
 	    (cond [(equal? new-e new-lhs)
-		   `((notq ,new-lhs)
-                     (andq (int 1) ,new-lhs))]
+		   `((xorq (int 1) ,new-lhs))]
 		  [else `((movq ,new-e ,new-lhs) 
-                          (notq ,new-lhs)
-                          (andq (int 1) ,new-lhs))])]
+                          (xorq (int 1) ,new-lhs))])]
 	   [`(assign ,lhs (eq? ,e1 ,e2))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e1 ((send this select-instructions) e1))
