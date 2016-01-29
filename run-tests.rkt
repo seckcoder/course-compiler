@@ -23,7 +23,7 @@
   )
 
 (define s0_range (range 1 26))
-(define s1_range (range 1 22))
+(define s1_range (range 1 24))
 (define s2_range (range 1 7))
 (define s3_range (range 1 11))
 (define s4_range (range 0 5))

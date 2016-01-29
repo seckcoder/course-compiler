@@ -253,8 +253,8 @@
 
     (define/override (interp-x86-op op)
       (match op
-	 ['notq not]
-	 ['andq (lambda (a b) (b2i (and (i2b a) (i2b b))))]
+	 ['notq bitwise-not]
+	 ['andq bitwise-and]
 	 [else (super interp-x86-op op)]))
 
     (define/override (interp-x86-exp env)

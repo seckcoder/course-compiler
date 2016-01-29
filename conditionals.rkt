@@ -156,6 +156,15 @@
 	    (let ([lhs ((send this select-instructions) lhs)]
 		  [b ((send this select-instructions) b)])
 	      `((movq ,b ,lhs)))]
+           [`(assign ,lhs (not ,e))
+	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-e ((send this select-instructions) e))
+	    (cond [(equal? new-e new-lhs)
+		   `((notq ,new-lhs)
+                     (andq (int 1) ,new-lhs))]
+		  [else `((movq ,new-e ,new-lhs) 
+                          (notq ,new-lhs)
+                          (andq (int 1) ,new-lhs))])]
 	   [`(assign ,lhs (eq? ,e1 ,e2))
 	    (define new-lhs ((send this select-instructions) lhs))
 	    (define new-e1 ((send this select-instructions) e1))
