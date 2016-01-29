@@ -316,7 +316,8 @@
       (lambda (ast)
 	(match ast
 	   [`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
-	    (define-values (homes stk-size) (send this allocate-homes IG MG xs ss))
+	    (define-values (homes stk-size)
+	      (send this allocate-homes IG MG xs ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
            [`(program (,locals ,max-stack ,IG ,MG) (defines ,ds) ,ss ...)
@@ -324,7 +325,7 @@
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes IG MG locals ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
-	    `(program ,(align (+ stk-size (* 8 max-stack)) 16)
+	    `(program ,(+ stk-size (* 8 max-stack))
 		      (defines ,new-ds) ,@new-ss)]
 	   )))
 
@@ -388,7 +389,7 @@
 	    (format "\tcallq\t*~a\n" ((send this print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
-	   [`(define (,f) ,n ,stack-space ,ss ...)
+	   [`(define (,f) ,n ,spill-space ,ss ...)
 	    (define callee-reg (set->list callee-save))
 	    (define save-callee-reg
 	      (for/list ([r callee-reg])
@@ -396,17 +397,21 @@
 	    (define restore-callee-reg
 	      (for/list ([r (reverse callee-reg)])
 			(format "\tpopq\t%~a\n" r)))
+	    (define callee-space (* (length (set->list callee-save))
+				    (send this variable-size)))
+	    (define stack-adj (- (align (+ callee-space spill-space) 16)
+				  callee-space))
 	    (string-append
 	     (format "\t.globl ~a\n" f)
 	     (format "~a:\n" f)
 	     (format "\tpushq\t%rbp\n")
 	     (format "\tmovq\t%rsp, %rbp\n")
 	     (string-append* save-callee-reg)
-	     (format "\tsubq\t$~a, %rsp\n" stack-space)
+	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
-	     (format "\taddq\t$~a, %rsp\n" stack-space)
+	     (format "\taddq\t$~a, %rsp\n" stack-adj)
 	     (string-append* restore-callee-reg)
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")

@@ -94,6 +94,47 @@
 	   [else ((super collect-locals) ast)]
 	   )))
 
+    (define/public (flatten-if new-thn thn-ss new-els els-ss)
+      (lambda (cnd)
+	(match cnd
+	   [#t
+	    (values new-thn thn-ss)]
+	   [#f
+	    (values new-els els-ss)]
+	   [`(let ([,x ,e]) ,body)
+	    (define-values (new-e e-ss) ((send this flatten #f) e))
+	    (define-values (new-body body-ss)
+	      ((send this flatten-if new-thn thn-ss new-els els-ss) body))
+	    (values new-body
+		    (append e-ss
+			    `((assign ,x ,new-e))
+			    body-ss))]
+	   [`(not ,cnd)
+	    ((send this flatten-if new-els els-ss new-thn thn-ss) cnd)]
+
+	   [`(eq? ,e1 ,e2)
+	    (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
+	    (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
+	    (define tmp (gensym 'if))
+	    (define thn-ret `(assign ,tmp ,new-thn))
+	    (define els-ret `(assign ,tmp ,new-els))
+	    (values tmp
+		    (append e1-ss e2-ss 
+			    `((if (eq? ,new-e1 ,new-e2)
+				  ,(append thn-ss (list thn-ret))
+				  ,(append els-ss (list els-ret))))))]
+	   [else
+	    (let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)])
+	      (define tmp (gensym 'if))
+	      (define thn-ret `(assign ,tmp ,new-thn))
+	      (define els-ret `(assign ,tmp ,new-els))
+	      (values tmp
+		      (append cnd-ss
+			      `((if (eq? #t ,new-cnd)
+				    ,(append thn-ss (list thn-ret))
+				    ,(append els-ss (list els-ret)))))))]
+	   )))
+
     (define/override (flatten need-atomic)
       (lambda (e)
 	(match e
@@ -101,14 +142,17 @@
 	   [#f (values #f '())]
 	   [`(and ,e1 ,e2)
 	    (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
-	    (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
+	    (define-values (new-e2 e2-ss) ((send this flatten #f) e2))
 	    (define tmp (gensym 'and))
 	    (values tmp (append e1-ss
-				`((if ,new-e1
+				`((if (eq? #t ,new-e1)
 				      ,(append e2-ss `((assign ,tmp ,new-e2)))
 				      ((assign ,tmp #f))))))]
 	   [`(if ,cnd ,thn ,els)
-	    (let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)]
+	    (let-values ([(new-thn thn-ss) ((send this flatten #t) thn)]
+			 [(new-els els-ss) ((send this flatten #t) els)])
+	      ((send this flatten-if new-thn thn-ss new-els els-ss) cnd))
+	    #;(let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)]
 			 [(new-thn thn-ss) ((send this flatten #t) thn)]
 			 [(new-els els-ss) ((send this flatten #t) els)])
 	      (define tmp (gensym 'if))
@@ -118,7 +162,8 @@
 		      (append cnd-ss
 			      `((if ,new-cnd
 				    ,(append thn-ss (list thn-ret))
-				    ,(append els-ss (list els-ret)))))))]
+				    ,(append els-ss (list els-ret)))))))
+	    ]
 	   [else ((super flatten need-atomic) e)]
 	   )))
 
@@ -190,6 +235,9 @@
 		  [els-ss (append* (map (send this select-instructions)
 					els-ss))])
 	      `((if ,cnd ,thn-ss ,els-ss)))]
+	   [`(eq? ,a1 ,a2)
+	    `(eq? ,((send this select-instructions) a1)
+		  ,((send this select-instructions) a2))]
 	   [else ((super select-instructions) e)]
 	   )))
 
@@ -199,6 +247,8 @@
     (define/override (free-vars a)
       (match a
 	 [`(byte-reg al) (set 'rax)]
+	 [`(eq? ,e1 ,e2) (set-union (send this free-vars e1)
+				    (send this free-vars e2))]
 	 [else (super free-vars a)]
 	 ))
     
@@ -268,6 +318,8 @@
       (lambda (e)
 	(match e
 	   [`(byte-reg ,r) `(byte-reg ,r)]
+	   [`(eq? ,e1 ,e2) `(eq? ,((send this assign-homes homes) e1)
+				 ,((send this assign-homes homes) e2))]
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((send this assign-homes homes) cnd)]
 		  [thn-ss (map (send this assign-homes homes) thn-ss)]
@@ -295,20 +347,23 @@
 	   [`(stack ,n) `(stack ,n)] 
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
-
-           [`(if ,cnd ,thn-ss ,els-ss)
+           [`(if (eq? ,a1 ,a2) ,thn-ss ,els-ss)
 	    (let ([thn-ss (append* (map (send this lower-conditionals) thn-ss))]
 		  [els-ss (append* (map (send this lower-conditionals) els-ss))]
-		  [else-label (gensym 'else)]
+		  [thn-label (gensym 'then)]
 		  [end-label (gensym 'if_end)]
 		  [cnd-inst ;; cmp's second operand can't be immediate
-		   (match cnd
-		      [`(int ,n)
-		       `((movq (int ,n) (reg rax))
-			 (cmpq (int 0) (reg rax)))]
-		      [else `((cmpq (int 0) ,cnd))])])
-	      (append cnd-inst `((je ,else-label)) thn-ss `((jmp ,end-label))
-	       `((label ,else-label)) els-ss `((label ,end-label))
+		   (match a2
+		      [`(int ,n2)
+		       (match a1
+			  [`(int ,n1)
+			   `((movq (int ,n2) (reg rax))
+			     (cmpq ,a1 (reg rax)))]
+			  [else
+			   `((cmpq ,a2 ,a1))])]
+		      [else `((cmpq ,a1 ,a2))])])
+	      (append cnd-inst `((je ,thn-label)) els-ss `((jmp ,end-label))
+	       `((label ,thn-label)) thn-ss `((label ,end-label))
 	       ))]
 	   [`(callq ,f) `((callq ,f))]
 	   [`(program ,stack-space ,ss ...)
