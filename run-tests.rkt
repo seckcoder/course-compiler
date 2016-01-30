@@ -28,8 +28,6 @@
 (define s3_range (range 1 11))
 (define s4_range (range 0 5))
 
-;(test-compiler "functions" functions-passes "s0" s0_range)
-
 (if #t (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "int_exp" int-exp-passes "s0" s0_range)

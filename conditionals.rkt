@@ -94,14 +94,16 @@
 	   [else ((super collect-locals) ast)]
 	   )))
 
+    (define optimize-if #f)
+
     (define/public (flatten-if new-thn thn-ss new-els els-ss)
       (lambda (cnd)
 	(match cnd
-	   [#t
+	   [#t #:when optimize-if
 	    (values new-thn thn-ss)]
-	   [#f
+	   [#f #:when optimize-if
 	    (values new-els els-ss)]
-	   [`(let ([,x ,e]) ,body)
+	   [`(let ([,x ,e]) ,body) #:when optimize-if
 	    (define-values (new-e e-ss) ((send this flatten #f) e))
 	    (define-values (new-body body-ss)
 	      ((send this flatten-if new-thn thn-ss new-els els-ss) body))
@@ -109,10 +111,10 @@
 		    (append e-ss
 			    `((assign ,x ,new-e))
 			    body-ss))]
-	   [`(not ,cnd)
+	   [`(not ,cnd) #:when optimize-if
 	    ((send this flatten-if new-els els-ss new-thn thn-ss) cnd)]
 
-	   [`(eq? ,e1 ,e2)
+	   [`(eq? ,e1 ,e2) #:when optimize-if
 	    (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
 	    (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
 	    (define tmp (gensym 'if))
@@ -237,18 +239,17 @@
          [`(movzbq ,s ,d) (send this free-vars s)]
      	 [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
-     	 [(or `(andq ,s ,d) `(orq ,s ,d))
+     	 [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d))
 	  (set-union (send this free-vars s) (send this free-vars d))]
      	 [`(sete ,d) (set)]
-	 [`(notq ,d) (send this free-vars d)]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
       (match instr
          [`(movzbq ,s ,d) (send this free-vars d)]
      	 [`(cmpq ,s1 ,s2) (set '__flag)]
-     	 [(or `(andq ,s ,d) `(orq ,s ,d)) (send this free-vars d)]
-	 [`(notq ,d) (send this free-vars d)]
+     	 [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
+	  (send this free-vars d)]
      	 [`(sete ,d) (send this free-vars d)]
      	 [else (super write-vars instr)]))
 
@@ -309,16 +310,6 @@
 	   )))
       
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    (define/override (patch-instructions)
-      (lambda (e)
-	(match e
-           [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([thn-ss (append* (map (send this patch-instructions) thn-ss))]
-		  [els-ss (append* (map (send this patch-instructions) els-ss))])
-	      `((if ,cnd ,thn-ss ,els-ss)))]
-	   [else ((super patch-instructions) e)])))
-
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; lower-conditionals : psuedo-x86 -> x86
     (define/public (lower-conditionals)
       (lambda (e)
@@ -331,19 +322,10 @@
 	    (let ([thn-ss (append* (map (send this lower-conditionals) thn-ss))]
 		  [els-ss (append* (map (send this lower-conditionals) els-ss))]
 		  [thn-label (gensym 'then)]
-		  [end-label (gensym 'if_end)]
-		  [cnd-inst ;; cmp's second operand can't be immediate
-		   (match a2
-		      [`(int ,n2)
-		       (match a1
-			  [`(int ,n1)
-			   `((movq (int ,n2) (reg rax))
-			     (cmpq ,a1 (reg rax)))]
-			  [else
-			   `((cmpq ,a2 ,a1))])]
-		      [else `((cmpq ,a1 ,a2))])])
-	      (append cnd-inst `((je ,thn-label)) els-ss `((jmp ,end-label))
-	       `((label ,thn-label)) thn-ss `((label ,end-label))
+		  [end-label (gensym 'if_end)])
+	      (append `((cmpq ,a1 ,a2)) 
+		      `((je ,thn-label)) els-ss `((jmp ,end-label))
+		      `((label ,thn-label)) thn-ss `((label ,end-label))
 	       ))]
 	   [`(callq ,f) `((callq ,f))]
 	   [`(program ,stack-space ,ss ...)
@@ -351,6 +333,27 @@
 	      `(program ,stack-space ,@new-ss))]
 	   [`(,instr ,args ...)
 	    `((,instr ,@args))]
+	   [else
+	    (error 'lower-conditionals "unmatched " e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    (define/override (patch-instructions)
+      (lambda (e)
+	(match e
+	   [`(je ,label) `((je ,label))]
+	   [`(jmp ,label) `((jmp ,label))]
+	   [`(label ,label) `((label ,label))]
+	   [`(cmpq ,a1 ,a2)
+	    (match (cons a1 a2)
+	       [`((int ,n1) . (int ,n2))
+		`((movq (int ,n2) (reg rax))
+		  (cmpq (int ,n1) (reg rax)))]
+	       [`(,a1 . (int ,n2))
+		`((cmpq (int ,n2) ,a1))]
+	       [else
+		`((cmpq ,a1 ,a2))])]
+	   [else ((super patch-instructions) e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -394,9 +397,9 @@
        ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
-      ("patch instructions" ,(send compiler patch-instructions)
-       ,(send interp interp-x86 '()))
       ("lower conditionals" ,(send compiler lower-conditionals)
+       ,(send interp interp-x86 '()))
+      ("patch instructions" ,(send compiler patch-instructions)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))
