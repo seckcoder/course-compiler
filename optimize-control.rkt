@@ -11,37 +11,6 @@
     (super-new)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-    (define/override (flatten need-atomic)
-      (lambda (e)
-	(match e
-	   [`(if ,cnd ,thn ,els)
-	    (let-values ([(new-cnd cnd-ss) ((send this flatten #f) cnd)]
-			 [(new-thn thn-ss) ((send this flatten #t) thn)]
-			 [(new-els els-ss) ((send this flatten #t) els)])
-	      (define tmp (gensym 'if))
-	      (define thn-ret `(assign ,tmp ,new-thn))
-	      (define els-ret `(assign ,tmp ,new-els))
-	      (values tmp
-		      (append cnd-ss
-			      `((if ,new-cnd
-				    ,(append thn-ss (list thn-ret))
-				    ,(append els-ss (list els-ret)))))))]
-	   [else ((super flatten need-atomic) e)]
-	   )))
-
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-    (define/override (select-instructions)
-      (lambda (e)
-	(match e
-	   ;; handle boolean expressions in cnd of 'if'
-	   [`(,op ,arg ...)
-	    `(,op ,@(map (send this select-instructions) arg))]
-	   [else ((super select-instructions) e)]
-	   )))
-    
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; basic-blocks : psuedo-x86 -> x86
     
     (define/public (basic-blocks-stms es)

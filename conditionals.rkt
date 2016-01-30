@@ -151,19 +151,7 @@
 	   [`(if ,cnd ,thn ,els)
 	    (let-values ([(new-thn thn-ss) ((send this flatten #t) thn)]
 			 [(new-els els-ss) ((send this flatten #t) els)])
-	      ((send this flatten-if new-thn thn-ss new-els els-ss) cnd))
-	    #;(let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)]
-			 [(new-thn thn-ss) ((send this flatten #t) thn)]
-			 [(new-els els-ss) ((send this flatten #t) els)])
-	      (define tmp (gensym 'if))
-	      (define thn-ret `(assign ,tmp ,new-thn))
-	      (define els-ret `(assign ,tmp ,new-els))
-	      (values tmp
-		      (append cnd-ss
-			      `((if ,new-cnd
-				    ,(append thn-ss (list thn-ret))
-				    ,(append els-ss (list els-ret)))))))
-	    ]
+	      ((send this flatten-if new-thn thn-ss new-els els-ss) cnd))]
 	   [else ((super flatten need-atomic) e)]
 	   )))
 
