@@ -94,7 +94,7 @@
 	   [else ((super collect-locals) ast)]
 	   )))
 
-    (define optimize-if #f)
+    (define optimize-if #t)
 
     (define/public (flatten-if new-thn thn-ss new-els els-ss)
       (lambda (cnd)
