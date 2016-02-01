@@ -332,7 +332,28 @@ What pass should we change or add?
     (let ([x e]) body)
     (not ,cnd2)
     (if cnd2 thn2 els2)
+	==>
+	(if cnd2
+	  (if thn2 thn els)
+	  (if els2 thn els)
+	but that would duplicate code.
+	If we changed to an IR for CFGs
+        L1: thn
+        L2: els
+        (if cnd2
+          (if thn2 (jmp L1) (jmp L2))
+          (if els2 (jmp L1) (jmp L2)))
+
+	instead, let's do the simple approach:
+        flatten cnd => new-cnd cnd-ss
+        tmp, 
+        cnd-ss
+        (if (eq? #t new-cnd)
+           (thn-ss (assign tmp new-thn))
+           (els-ss (assign tmp new-els)))
+
     (and e1 e2)
+      same as for 'if'
 
 
 Aside: implementing 'not' is less straightforward than we thought.
@@ -362,4 +383,25 @@ Interpreter
 
 Talk about heap allocation
 
-Updating the passes:
+Updating the passes: (without GC)
+
+  * type checking: straightforward
+  * uniquify and flatten: nothing to do
+  * select-instructions
+    (assign lhs (vector es ...))
+    ==>
+    allocate a chunk of memory
+    fill it in with es, need new kind of arg: (offset ,addr ,bytes) 
+
+    (assign lhs (vector-ref vec i))
+    ==>
+    (movq (offset new-vec (* i 8)) new-lhs)
+
+    (assign lhs (vector-set! vec i arg)
+    ==>
+    (movq new-arg (offset new-vec (* i 8)))
+
+  * liveness, assign-homes, print-x86
+    update to handle (offset ,addr ,bytes)
+
+
