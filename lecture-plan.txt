@@ -271,3 +271,137 @@ Lecture 5: Booleans & Control Flow cont'd
       (label endlabel)
       
   Walk through example translation from book
+
+Lecture 6: Optimizing Control Flow
+================================================================================
+
+Redundancy in conditions:
+
+(program
+  (if (eq? (read) 1) 42 0))
+⇓ flatten
+(program (t.1 t.2 if.1)
+  (assign t.1 (read))
+  (assign t.2 (eq? t.1 1))   ←
+  (if (eq? #t t.2)           ←
+    ((assign if.1 42))
+    ((assign if.1 0))) 
+  (return if.1))
+
+Would be better as:
+
+(program (t.1 t.2 if.1)
+  (assign t.1 (read))
+  (if (eq? t.1 1)           ←
+    ((assign if.1 42))
+    ((assign if.1 0))) 
+  (return if.1))
+
+Our optimization should be as general as possible.  So we should try
+to get good results in somewhat more complicated situations.
+
+(program
+  (if (let ([x 1])
+        (not (eq? 2 x))) 
+   42
+   777))
+⇓ 
+(program (x.1 t.1 if.1)
+  (assign x.1 1)
+  (assign t.1 (read))
+  (if (eq? x.1 t.1)
+    ((assign if.1 42))
+    ((assign if.1 777))) 
+  (return if.1))
+
+
+How should we recognize such situations and generate the code?
+
+What pass should we change or add?
+
+  Use a helper function inside flatten to help with 'if'.
+  Recurse over the condition.
+
+  (if cnd thn els)
+     flatten thn ⇒ new-thn thn-ss
+     flatten els ⇒ new-els els-ss
+
+  flatten-if cnd new-thn thn-ss new-els els-ss
+  cases:
+    #t, #f
+    (let ([x e]) body)
+    (not ,cnd2)
+    (if cnd2 thn2 els2)
+	==>
+	(if cnd2
+	  (if thn2 thn els)
+	  (if els2 thn els)
+	but that would duplicate code.
+	If we changed to an IR for CFGs
+        L1: thn
+        L2: els
+        (if cnd2
+          (if thn2 (jmp L1) (jmp L2))
+          (if els2 (jmp L1) (jmp L2)))
+
+	instead, let's do the simple approach:
+        flatten cnd => new-cnd cnd-ss
+        tmp, 
+        cnd-ss
+        (if (eq? #t new-cnd)
+           (thn-ss (assign tmp new-thn))
+           (els-ss (assign tmp new-els)))
+
+    (and e1 e2)
+      same as for 'if'
+
+
+Aside: implementing 'not' is less straightforward than we thought.
+Recommend using xorq.
+
+  
+Tuples, Heap Allocation, and Garbage Collection
+-----------------------------------------------
+
+Syntax:
+
+type ::= Integer | Boolean | (Vector type+)
+exp ::= ... | (vector exp+) | (vector-ref exp exp) | (vector-set! exp exp exp)
+R3 ::= (program exp)
+
+Example:
+
+(let ([v (vector 10 #f)])
+  (+ (vector-ref v 0)
+     (if (vector-ref v 1)
+         0
+         (let ([_ (vector-set! v 0 32)])
+           (vector-ref v 0)))))
+
+Interpreter
+   introduce interp-op
+
+Talk about heap allocation
+
+Updating the passes: (without GC)
+
+  * type checking: straightforward
+  * uniquify and flatten: nothing to do
+  * select-instructions
+    (assign lhs (vector es ...))
+    ==>
+    allocate a chunk of memory
+    fill it in with es, need new kind of arg: (offset ,addr ,bytes) 
+
+    (assign lhs (vector-ref vec i))
+    ==>
+    (movq (offset new-vec (* i 8)) new-lhs)
+
+    (assign lhs (vector-set! vec i arg)
+    ==>
+    (movq new-arg (offset new-vec (* i 8)))
+
+  * liveness, assign-homes, print-x86
+    update to handle (offset ,addr ,bytes)
+
+
