@@ -143,12 +143,12 @@ ptr alloc(long int bytes_requested)
   return new_ptr;
 }
 
-ptr debug_collect(long int bytes_requested){
+ptr debug_collect(ptr rootstack_ptr, long int bytes_requested){
   printf("Collection not yet implemented\n");
   exit(-1);
 }
 
-ptr collect(long int bytes_requested, ptr rootstack_ptr)
+ptr collect(ptr rootstack_ptr, long int bytes_requested)
 {
   //ptr free_ptr;
   ptr scan_ptr;

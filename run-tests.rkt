@@ -28,15 +28,23 @@
 (define s3_range (range 1 11))
 (define s4_range (range 0 5))
 
-(if #t (begin
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "int_exp" int-exp-passes "s0" s0_range)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "reg_int_exp" reg-int-exp-passes "s0" s0_range)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "conditionals" conditionals-passes "s0" s0_range)
-(test-compiler "conditionals" conditionals-passes "s1" s1_range)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(command-line
+ #:multi
+ ;; If you pass -d or --debug to the file all the (debug label val ...)
+ ;; statements will print the labels and values. This is done by
+ ;; setting the debug-state parameter in utilities.rkt to be true.
+ ["-d" "increment debugging level" (debug-level (add1 (debug-level)))]
+ #:args ()
+ 
+ (if #t (begin
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;(test-compiler "int_exp" int-exp-passes "s0" s0_range)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;(test-compiler "reg_int_exp" reg-int-exp-passes "s0" s0_range)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;(test-compiler "conditionals" conditionals-passes "s0" s0_range)
+;;(test-compiler "conditionals" conditionals-passes "s1" s1_range)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (test-compiler "vectors" vectors-passes "s0" s0_range)
 (test-compiler "vectors" vectors-passes "s1" s1_range)
 (test-compiler "vectors" vectors-passes "s2" s2_range)
@@ -52,7 +60,8 @@
 (test-compiler "lambda" lambda-passes "s3" s3_range)
 (test-compiler "lambda" lambda-passes "s4" s4_range)
 
-) '())
+) '()))
+
 
 
 

@@ -1,21 +1,68 @@
 #lang racket
 (require racket/pretty)
-(provide debug map2 label-name lookup  make-dispatcher assert
+(require (for-syntax racket))
+(provide debug-level debug vomit
+         map2 label-name lookup  make-dispatcher assert
          read-fixnum read-program 
 	 compile compile-file check-passes interp-tests compiler-tests fix while 
 	 make-graph add-edge adjacent vertices print-dot
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align)
 
-(define debug-state #f)
+;; debug state is a possitive integer range.
+;; The higher the setting the more information is reported.
+(define debug-level
+  (make-parameter
+   0
+   (lambda (d)
+     (unless (exact-nonnegative-integer? d) 
+       (error 'debug-state "expected nonnegative-integer in ~a" d))
+     d)))
 
-(define (debug label val)
-  (if debug-state
-      (begin
-	(printf "~a:\n" label)
-	(pretty-print val)
-	(newline))
-      (void)))
+;; Check to see if debug state is at least some level
+(define (at-debug-level n)
+  (unless (exact-nonnegative-integer? n)
+    (error 'at-debug-state "expected non-negative integer ~a" n))
+  (>= (debug-level) n))
+
+;; print-label-and-values prints out the label followed the values
+;; and the expression that generated those values
+;; The label is formated with the file and line number of the
+;; debubing expression for easier location.
+(define-syntax (print-label-and-values stx)
+  (syntax-case stx ()
+    [(_ label value ...)
+     (let* ([src (syntax-source stx)]
+            [src (if (path? src)
+                     (find-relative-path (current-directory) src)
+                     src)]
+            [lno (syntax-line stx)])
+       #`(begin
+           (printf "~a @ ~a:~a\n" label #,src #,lno)
+        (begin
+          (printf "~a:\n" 'value)
+          (pretty-print value)
+          (newline))
+        ...
+        (newline))
+)]))
+
+;; print label followed by values when debug-state is greater than 1.
+(define-syntax (debug stx)
+  (syntax-case stx ()
+    [(_ label value ...)
+     #`(when (at-debug-level 1)
+         #,(syntax/loc stx
+             (print-label-and-values label value ...)))]))
+
+;; print label followed by values when debug-state is greater than 2.
+(define-syntax (vomit stx)
+  (syntax-case stx ()
+    [(_ label value ...)
+     #`(when (at-debug-level 2)
+         #,(syntax/loc stx
+             (print-label-and-values label value ...)))]))
+
 
 (define-syntax-rule (while condition body ...)
   (let loop ()
@@ -53,17 +100,24 @@
 ;;   
 ;; The association list may be constructed of either
 ;; immutable or mutable pairs.
-;; 
-(define lookup
-  (lambda (x ls)
-    (cond [(null? ls)
-	   (error "lookup failed for " x)]
-	  [(and (pair? (car ls)) (eq? x (car (car ls))))
-	   (cdr (car ls))]
-	  [(and (mpair? (car ls)) (eq? x (mcar (car ls))))
-	   (mcdr (car ls))]
-	  [else 
-	   (lookup x (cdr ls))])))
+;;
+(define no-default (gensym))
+
+(define (lookup x ls [default no-default])
+  (let recur ([xs ls])
+    (cond
+      [(null? xs)
+       (if (eq? default no-default)
+           (error 'lookup "didn't find ~a in ~a" x ls)
+           default)]
+      [(pair? xs)
+       (define fst (car xs))
+       (cond
+         [(and (pair?  fst) (equal? x (car  fst))) (cdr  fst)]
+         [(and (mpair? fst) (equal? x (mcar fst))) (mcdr fst)]
+         [(or (pair? fst) (mpair? fst)) (recur (cdr xs))]
+         [else (error 'lookup "expected pair for ~a in ~a" fst ls)])]
+      [else (error 'lookup "expected an association list in ~a" ls)])))
 
 (define (read-fixnum)
   (define r (read))
@@ -77,12 +131,12 @@
     (error 'read-program "expected a string in ~s" path))
   (unless (file-exists? path)
     (error 'read-program "file doesn't exist in ~s" path))
+  (debug "utilities/read-program" path)
   (define input-prog
     (call-with-input-file path
       (lambda (f)
         `(program . ,(for/list ([e (in-port read f)]) e)))))
-  (when debug-state
-    (printf "read program:\n~s\n\n" input-prog))
+  (debug "utilities/read-program" input-prog)
   input-prog)
 
 (define (make-dispatcher mt)
@@ -203,10 +257,10 @@
 
 (define (interp-tests name passes initial-interp test-family test-nums)
   (define checker (check-passes name passes initial-interp))
-  (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
-			test-nums)])
-       (checker test-name)
-       ))
+  (for ([test-number (in-list test-nums)])
+    (let ([test-name (format "~a_~a" test-family test-number)])
+      (debug "utilities/interp-test" test-name)
+      (checker test-name))))
 
 ;; The compiler-tests function takes a compiler name (a string) a
 ;; description of the passes (see the comment for check-passes) a test
@@ -219,30 +273,30 @@
 
 (define (compiler-tests name passes test-family test-nums)
   (define compiler (compile-file passes))
-  (for ([test-name (map (lambda (n) (format "~a_~a" test-family n)) 
-			test-nums)])
-       (compiler (format "tests/~a.rkt" test-name))
-       (if (system (format "gcc -g -std=c99 runtime.o tests/~a.s" test-name))
-	   (void) (exit))
-       (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
-			 (format " < tests/~a.in" test-name)
-			 "")]
-              [output (if (file-exists? (format "tests/~a.res" test-name))
-                          (call-with-input-file (format "tests/~a.res" test-name)
-                            (lambda (f) (string->number (read-line f))))
-                          42)]
-              [progout (process (format "./a.out~a" input))] ; List, first element is stdout
-	      [result (string->number (read-line (car progout)))])
-	 (match progout
-	   [`(,in1 ,out ,_ ,in2 ,_)
-	    (close-input-port in1)
-	    (close-input-port in2)
-	    (close-output-port out)])
-	 (if (eq? result output)
-	     (begin (display test-name)(display " ")(flush-output))
-	     (error (format "test ~a failed, output: ~a" 
-			    test-name result))))
-       ))
+  (for ([test-number (in-list test-nums)])
+    (let ([test-name (format "~a_~a" test-family test-number)])
+      (compiler (format "tests/~a.rkt" test-name))
+      (unless (system (format "gcc -g -std=c99 runtime.o tests/~a.s" test-name))
+        (exit))
+      (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
+                        (format " < tests/~a.in" test-name)
+                        "")]
+             [output (if (file-exists? (format "tests/~a.res" test-name))
+                         (call-with-input-file (format "tests/~a.res" test-name)
+                           (lambda (f) (string->number (read-line f))))
+                         42)]
+             [progout (process (format "./a.out~a" input))] ; List, first element is stdout
+             [result (string->number (read-line (car progout)))])
+        (match progout
+          [`(,in1 ,out ,_ ,in2 ,_)
+           (close-input-port in1)
+           (close-input-port in2)
+           (close-output-port out)])
+        (if (eq? result output)
+            (begin (display test-name)(display " ")(flush-output))
+            (error (format "test ~a failed, output: ~a" 
+                           test-name result)))))
+    ))
 
 (define assert
   (lambda (msg b)
@@ -308,7 +362,7 @@
   (hash-keys graph))
 
 (define (print-dot graph file-name)
-  (if debug-state
+  (if (at-debug-level 1)
       (call-with-output-file file-name #:exists 'replace
 	(lambda (out-file)
 	  (write-string "strict graph {" out-file) (newline out-file)
