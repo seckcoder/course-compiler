@@ -2,7 +2,8 @@
 (require "conditionals.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-R2 vectors-passes)
+(provide compile-R2 vectors-passes vectors-typechecker)
+
 
 
 (define compile-R2
@@ -65,14 +66,7 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots : C1-Expr (Uid -> Type) -> C1-Expr x (Uid list)
-    (define (env-ref env)
-      (lambda (x)
-        (hash-ref env x (lambda () (error 'vectors/env-ref "unmatched ~a" x)))))
 
-    (define (vector-type? env)
-      (lambda (x)
-        (let ([t ((env-ref env) x)])
-          (and (pair? t) (eq? (car t) 'Vector)))))
 
     ;; Merge two hash tables that do not have contradictory key/value pairs
     (define (hash-merge h1 h2)
@@ -90,6 +84,34 @@
             [(eq? v? v) env]
             [else (error 'vectors/introduce-rootset
                          "h1 is not consistent with h2")]))))
+
+    (define (env-ref env)
+      (lambda (x)
+        (hash-ref env x (lambda () (error 'vectors/env-ref "unmatched ~a" x)))))
+
+    (define/public (root-type? env x)
+      (let ([t ((env-ref env) x)])
+        (and (pair? t) (eq? (car t) 'Vector))))
+    
+    (define/public (uncover-live-exp env)
+      (lambda (e)
+        (match e
+          [else (error 'uncover-live-roots-exp "unmatched ~a" e)])))
+
+    (define/public (uncover-live-stmt env)
+      (lambda (s)
+        (match s
+          [else (error 'uncover-live-roots-stmt "unmatched ~a" s)])))
+
+    (define/public (uncover-type-exp x)
+      (match x
+        [`(,op ...) ]))
+    
+    (define/public (uncover-env-stmt env)
+      (lambda (s)
+        (match s
+          [(assign ,v ,exp)]
+          [else (error 'vectors/uncover-env-stmt s)])))
     
     (define/public (uncover-live-roots env [base (set)])
       ;; This pass could do better if it had most of the type information precomputed
@@ -223,56 +245,37 @@
         
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; introduce-rootset : C1-Expr (Uid x Uid)
-    (define/public (introduce-rootstack rs-var env)
-      (lambda (ss)
-        (define (replace* env s)
-          (match s
-            [(? symbol? s) (hash-ref env s s)]
-            [`(,a . ,d) `(,(replace* env a) . ,(replace* env d))]
-            [else s]))
+
+    ;; do not split live ranges of variable at call sites
+    (define/public (introduce-rootstack rs-var)
+      (lambda (s)
         (define (recur x) ((introduce-rootstack rs-var env) x))
-        (define (freshen x env)
-          (hash-set env x (gensym x)))
-        (match ss
-          [`() (values '() env)]
-          [`(program (initialize) . ,ss)
-           (let ([rs-var (gensym 'rootstack)]
-                 [mt-env (hash)])
-             `(program
-               (initialize)
-               (assign ,var ,(global-value rootstack_begin))
-               . ,((introduce-rootstack rs-var mt-env) ss)))]
-          [((call-live-roots (,clr* ...) (collect ,size)) . ,ss)
-           (define fresh-clr* (map gensym clr*))
-           (define fresh-env  (remap env clr* fresh-clr*))
-           (define-values (ss-rec ss-env)
-             ((introdoce-rootstack rs-var fresh-env) ss))
-           (define new-rs  (gensym 'rootstack))
+        (match s
+          [`(program (initialize) ,ss ...)
+           (define rs-var (gensym 'rootstack))
+           `(program (initialize)
+                     (assign ,rs-var ,(global-value rootstack_begin))
+                     (append* (map (introduce-rootstack rs-var) ss)))]
+          [(call-live-roots (,clr* ...) (collect ,size))
+           ;; We could consider having a frame marker of some sort
+           (define new-rs-var  (gensym 'rootstack))
+           (define frame-size  (* (length clr*) 8))
            (define pushes
              (for/list ([root (in-list clr*)] [i (in-naturals)])
                `(movq ,root (offset ,rs-var ,(* i 8)))))
+           ;; reverse order of pushes
            (define pops
-             (for/fold ([pops '()])
-                       ([root (in-list fresh-clr*)]
-                        [i (in-naturals)])
+             (for/fold ([pops '()]) ([root (in-list clr*)] [i (in-naturals)])
                `((movq ,root (offset ,rs-var ,(* i 8))) . ,pops)))
-           (define rs-collect-call
-             `(,@pushes
-               (assign ,new-rs (+ ,rs-var ,size))
-               (collect ,new-rs ,size)
-               ,@pops  
-               ,@ss-rec))
-           (values rs-collect-call new-rs)]
-          ;; Only works if we have phi nodes already in place or are carefull
-          ;; about conditional initialization.
-          [`((if ,t ,(app recur c c-env) ,(app recur a a-env)) . ,ss)
-           (define merged-env (hash-merge c-env a-env))
-           (values `((if ,t ,c ,a) . ,((introduce-rootset rs-var merged-env) ss))
-                   merged-env)]
-          ;; dirty statement walk
-          [(,s  . ,(app recur ss new-env))
-           (values `(,(replace* env s) . ,ss) new-env)]
-          [else (error 'vectors/introduce-rootset "unmatched ~a" e)])))
+           `(,@pushes
+             (assign ,new-rs (+ ,rs-var ,frame-size))
+             (collect ,new-rs ,size)
+             ,@pops  
+             ,@ss-rec)]
+          ;; This is the only node that has to worry about congruence for now
+          [`(if ,(app recur t) (,(app recur c) ...) (,(app recur a) ...))
+           `(if ,t ,c ,a)]
+          [otherwise s])))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : C2 -> psuedo-x86
@@ -427,6 +430,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
+(define vectors-typechecker
+  (let ([compiler (new compile-R2)])
+    (send compiler type-check '())))
 (define vectors-passes
   (let ([compiler (new compile-R2)]
 	[interp (new interp-R2)])
@@ -448,9 +454,9 @@
        ,(send interp interp-x86 '()))
       ("allocate registers" ,(send compiler allocate-registers)
        ,(send interp interp-x86 '()))
-      ("patch instructions" ,(send compiler patch-instructions)
-       ,(send interp interp-x86 '()))
       ("lower conditionals" ,(send compiler lower-conditionals)
+       ,(send interp interp-x86 '()))
+      ("patch instructions" ,(send compiler patch-instructions)
        ,(send interp interp-x86 '()))
       ("print x86" ,(send compiler print-x86) #f)
       )))

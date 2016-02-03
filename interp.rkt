@@ -265,19 +265,25 @@
     ;; same as overriding the interp-x86-op with new functionallity
     (inherit-field x86-ops)
     (set! x86-ops (hash-set* x86-ops
-                             'notq `(1 ,bitwise-not)
-                             'andq `(2 ,bitwise-and #;(lambda (a b) (b2i (and (i2b a) (i2b b)))))))
-                               
+                   'notq `(1 ,bitwise-not)
+                   'andq `(2 ,bitwise-and)
+                   'xorq `(2 ,bitwise-xor)))
+
     (define/override (interp-x86-exp env)
       (lambda (ast)
 	(match ast
-	   [`(byte-reg ,r)
-	    ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
-           [#t 1]
-           [#f 0]
-	   [else ((super interp-x86-exp env) ast)]
-	   )))
-
+          [`(byte-reg ,r)
+           ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
+          [#t 1]
+          [#f 0]
+          [`(eq? ,e1 ,e2)
+           (if (eq? ((send this interp-x86-exp env) e1)
+                    ((send this interp-x86-exp env) e2))
+               1
+               0)]
+          [else ((super interp-x86-exp env) ast)]
+          )))
+    
     (define/override (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)

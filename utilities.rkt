@@ -148,13 +148,17 @@
 	(error "no match in dispatcher for " e)]
        )))
 
-;; The check-passes function takes a compiler name (a string) and a description of
-;; the passes (see below) and returns a function that takes a test name and
-;; runs the passes and the appropriate interpreters to test the
-;; correctness of all the passes. This function assumes there is a "tests"
-;; subdirectory and a file in that directory whose name is the test name
-;; followed by ".rkt". Also, there should be a matching file with the
-;; ending ".in" that provides the input for the Scheme program.
+;; The check-passes function takes a compiler name (a string), a
+;; typechecker (see below), a description of the passes (see below),
+;; and an initial interpreter to apply to the initial expression, and
+;; returns a function that takes a test name and runs the passes and
+;; the appropriate interpreters to test the correctness of all the
+;; passes. This function assumes there is a "tests" subdirectory and a
+;; file in that directory whose name is the test name followed by
+;; ".rkt". Also, there should be a matching file with the ending ".in"
+;; that provides the input for the Scheme program. If any program
+;; should not pass typechecking, then there is a file with the name
+;; number (whose contents are ignored) that ends in ".tyerr".
 ;;
 ;; The description of the passes is a list with one entry per pass.
 ;; An entry is a list with three things: a string giving the name of
@@ -162,8 +166,11 @@
 ;; AST to AST), and a function that implements the interpreter (a
 ;; function from AST to result value).
 ;;
+;; The typechecker is a function of exactly one argument that EITHER
+;; raises an error using the (error) function when it encounters a
+;; type error, or returns #f when it encounters a type error. 
 
-(define (check-passes name passes initial-interp)
+(define (check-passes name typechecker passes initial-interp)
   (lambda (test-name)
     (debug "** compiler " name)
     (debug "** checking passes for test " test-name)
@@ -171,54 +178,64 @@
     (define program-name (format "tests/~a.rkt" test-name))
     (define sexp (read-program program-name))
     (debug "program:" sexp)
-
-    (let loop ([passes passes] [p sexp]
-	       [result (if (file-exists? input-file-name)
-			   (with-input-from-file input-file-name
-			     (lambda () (initial-interp sexp)))
-			   (initial-interp sexp))])
-      (cond [(null? passes) result]
-	    [else
-	     (match (car passes)
-		[`(,pass-name ,pass ,interp)
-		 (debug "running pass" pass-name)
-		 (define new-p (pass p))
-		 (debug pass-name new-p)
-		 (cond [interp
-			(let ([new-result
-                               ;; if there is an input file with the same name
-                               ;; as this test bing current-input-port to that
-                               ;; file's input port so that the interpreters
-                               ;; can use it as test input.
-			       (if (file-exists? input-file-name) 
-                                   (with-input-from-file input-file-name
-                                     (lambda () (interp new-p)))
-				   (interp new-p))])
-			  (cond [result
-				 (cond [(equal? result new-result)
-					(loop (cdr passes) new-p new-result)]
-				       [else
-					(display "in program")(newline)
-					(pretty-print new-p)(newline)
-					(error (format "differing results in compiler '~a' pass '~a', expected ~a, not" name pass-name result )
-					       new-result)])]
-				[else ;; no result to check yet
-				 (loop (cdr passes) new-p new-result)]))]
-		       [else
-			(loop (cdr passes) new-p result)])])]))
-    ))
+    (define type-error-expected (file-exists? (format "tests/~a.tyerr" test-name)))
+    (define typechecks (test-typecheck typechecker sexp))
+    
+    (cond
+     [(and type-error-expected typechecks)
+      (error (format "expected type error in compiler '~a', but no error raised by typechecker" name))]
+     [type-error-expected 'expected-type-error]
+     [typechecks 
+      (let loop ([passes passes] [p sexp]
+                 [result (if (file-exists? input-file-name)
+                             (with-input-from-file input-file-name
+                               (lambda () (initial-interp sexp)))
+                             (initial-interp sexp))])
+        (cond [(null? passes) result]
+              [else
+               (match (car passes)
+                 [`(,pass-name ,pass ,interp)
+                  (debug "running pass" pass-name)
+                  (define new-p (pass p))
+                  (debug pass-name new-p)
+                  (cond [interp
+                         (let ([new-result
+                                ;; if there is an input file with the same name
+                                ;; as this test bing current-input-port to that
+                                ;; file's input port so that the interpreters
+                                ;; can use it as test input.
+                                (if (file-exists? input-file-name) 
+                                    (with-input-from-file input-file-name
+                                      (lambda () (interp new-p)))
+                                    (interp new-p))])
+                           (cond [result
+                                  (cond [(equal? result new-result)
+                                         (loop (cdr passes) new-p new-result)]
+                                        [else
+                                         (display "in program")(newline)
+                                         (pretty-print new-p)(newline)
+                                         (error (format "differing results in compiler '~a' pass '~a', expected ~a, not" name pass-name result )
+                                                new-result)])]
+                                 [else ;; no result to check yet
+                                  (loop (cdr passes) new-p new-result)]))]
+                        [else
+                         (loop (cdr passes) new-p result)])])]))
+      ]
+     [else (error (format "unexpected type error raised by compiler '~a'" name))])))
 
 (define (compile passes)
   (let ([prog-file-name (vector-ref (current-command-line-arguments) 0)])
     ((compile-file passes) prog-file-name)))
 
-;; The compile-file function takes a description of the compiler
-;; passes (see the comment for check-passes) and returns a function
-;; that, given a program file name (a string ending in ".rkt"),
-;; applies all of the passes and writes the output to a file whose
-;; name is the same as the proram file name but with ".rkt" replaced
-;; with ".s".
-(define (compile-file passes)
+;; The compile-file function takes a typechecker and a description of
+;; the compiler passes (see the comment for check-passes) and returns
+;; a function that, given a program file name (a string ending in
+;; ".rkt") that passes typechecking, applies all of the passes and
+;; writes the output to a file whose name is the same as the proram
+;; file name but with ".rkt" replaced with ".s". The function then
+;; returns #t. If the program does not typecheck, the returned
+;; function will return #f.
+(define (compile-file typechecker passes)
   (lambda (prog-file-name)
     (define file-base (string-trim prog-file-name ".rkt"))
     (define out-file-name (string-append file-base ".s"))
@@ -227,76 +244,123 @@
       #:exists 'replace
       (lambda (out-file)
         (define sexp (read-program prog-file-name))
-        (let ([x86 (let loop ([passes passes] [p sexp])
-                     (cond [(null? passes) p]
-                           [else
-                            (match (car passes)
-                              [`(,name ,pass ,interp)
-                               (let* ([new-p (pass p)])
-                                 (loop (cdr passes) new-p)
-                                 )])]))])
-          (cond [(string? x86)
-                 (write-string x86 out-file)
-                 (newline out-file)]
-                [else
-                 (error "compiler did not produce x86 output")])
-          )))))
+        (if (test-typecheck typechecker sexp)
+            (let ([x86 (let loop ([passes passes] [p sexp])
+                         (cond [(null? passes) p]
+                               [else
+                                (match (car passes)
+                                  [`(,name ,pass ,interp)
+                                   (let* ([new-p (pass p)])
+                                     (loop (cdr passes) new-p)
+                                     )])]))])
+              (cond [(string? x86)
+                     (write-string x86 out-file)
+                     (newline out-file)
+                     #t]
+                    [else
+                     (error "compiler did not produce x86 output")])
+              )
+            #f)))))
 
-;; The interp-tests function takes a compiler name (a string)
-;; a description of the passes (see the comment for check-passes)
-;; a test family name (a string), and a list of test numbers,
-;; and runs the compiler passes and the interpreters to check
-;; whether the passes correct. 
+;; The interp-tests function takes a compiler name (a string), a
+;; typechecker (see the comment for check-passes) a description of the
+;; passes (ditto) a test family name (a string), and a list of test
+;; numbers, and runs the compiler passes and the interpreters to check
+;; whether the passes correct.
 ;; 
 ;; This function assumes that the subdirectory "tests" has a bunch of
 ;; Scheme programs whose names all start with the family name,
 ;; followed by an underscore and then the test number, ending in
-;; ".rkt". Also, for each Scheme program there is a file with the
-;; same number except that it ends with ".in" that provides the
-;; input for the Scheme program.
+;; ".rkt". Also, for each Scheme program there is a file with the same
+;; number except that it ends with ".in" that provides the input for
+;; the Scheme program. If any program should not pass typechecking,
+;; then there is a file with the name number (whose contents are
+;; ignored) that ends in ".tyerr".
 
-(define (interp-tests name passes initial-interp test-family test-nums)
-  (define checker (check-passes name passes initial-interp))
+(define (interp-tests name typechecker passes initial-interp test-family test-nums)
+  (define checker (check-passes name typechecker passes initial-interp))
   (for ([test-number (in-list test-nums)])
     (let ([test-name (format "~a_~a" test-family test-number)])
       (debug "utilities/interp-test" test-name)
       (checker test-name))))
 
-;; The compiler-tests function takes a compiler name (a string) a
-;; description of the passes (see the comment for check-passes) a test
-;; family name (a string), and a list of test numbers (see the comment
-;; for interp-tests), and runs the compiler to generate x86 (a ".s"
-;; file) and then runs gcc to generate machine code.  It runs the
-;; machine code and stores the result. If the test file has a
-;; corresponding .res file, the result is compared against its contents;
-;; otherwise, the result is compared against 42.
+;; The compiler-tests function takes a compiler name (a string), a
+;; typechecker (see the comment for check-passes) a description of the
+;; passes (ditto), a test family name (a string), and a list of test
+;; numbers (see the comment for interp-tests), and runs the compiler
+;; to generate x86 (a ".s" file) and then runs gcc to generate machine
+;; code, unless a type error is detected. It runs the machine code and
+;; stores the result. If the test file has a corresponding .res file,
+;; the result is compared against its contents; otherwise, the result
+;; is compared against 42. If a type error is detected, it will check
+;; if a .tyerr file exists, and report an error if not. It will do the
+;; same if a .tyerr file exists but the typechecker does not report an
+;; error.
 
-(define (compiler-tests name passes test-family test-nums)
-  (define compiler (compile-file passes))
+(define (compiler-tests name typechecker passes test-family test-nums)
+  (define compiler (compile-file typechecker passes))
+  (debug "compiler-tests starting" '())
   (for ([test-number (in-list test-nums)])
-    (let ([test-name (format "~a_~a" test-family test-number)])
-      (compiler (format "tests/~a.rkt" test-name))
-      (unless (system (format "gcc -g -std=c99 runtime.o tests/~a.s" test-name))
-        (exit))
-      (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
-                        (format " < tests/~a.in" test-name)
-                        "")]
-             [output (if (file-exists? (format "tests/~a.res" test-name))
-                         (call-with-input-file (format "tests/~a.res" test-name)
-                           (lambda (f) (string->number (read-line f))))
-                         42)]
-             [progout (process (format "./a.out~a" input))] ; List, first element is stdout
-             [result (string->number (read-line (car progout)))])
-        (match progout
-          [`(,in1 ,out ,_ ,in2 ,_)
-           (close-input-port in1)
-           (close-input-port in2)
-           (close-output-port out)])
-        (if (eq? result output)
-            (begin (display test-name)(display " ")(flush-output))
-            (error (format "test ~a failed, output: ~a" 
-                           test-name result)))))
-    ))
+    (define test-name  (format "~a_~a" test-family test-number))
+    (debug "compiler-tests, testing:" test-name)
+    (define type-error-expected (file-exists? (format "tests/~a.tyerr" test-name)))
+    (define typechecks (compiler (format "tests/~a.rkt" test-name)))
+    (if (and (not typechecks) (not type-error-expected))
+        (error (format "test ~a failed, unexpected type error" test-name)) 
+        '())
+    (if typechecks
+        (if (system (format "gcc -g -std=c99 runtime.o tests/~a.s" test-name))
+            (void) (exit))
+        '())
+    (let* ([input (if (file-exists? (format "tests/~a.in" test-name))
+                      (format " < tests/~a.in" test-name)
+                      "")]
+           [output (if (file-exists? (format "tests/~a.res" test-name))
+                       (call-with-input-file
+                         (format "tests/~a.res" test-name)
+                         (lambda (f) (string->number (read-line f))))
+                       42)]
+           [progout (if typechecks (process (format "./a.out~a" input)) 'type-error)]
+           )
+      ;; process returns a list, it's first element is stdout
+      (match progout
+        ['type-error (display test-name) (display " ") (flush-output)] ;already know we don't have a false positive
+        [`(,in1 ,out ,_ ,in2 ,control-fun)
+         (if type-error-expected
+             (error (format "test ~a passed typechecking but should not have." test-name)) '())
+         (control-fun 'wait)
+         (cond [(eq? (control-fun 'status) 'done-ok)
+                (let ([result (string->number (read-line (car progout)))])
+                  (if (eq? result output)
+                      (begin (display test-name)(display " ")(flush-output))
+                      (error (format "test ~a failed, output: ~a" 
+                                     test-name result))))]
+               [else
+                (error
+                 (format "test ~a error in x86 execution, exit code: ~a" 
+                         test-name (control-fun 'exit-code)))])
+         (close-input-port in1)
+         (close-input-port in2)
+         (close-output-port out)])
+      )))
+
+
+;; Takes a function of 1 argument (or #f) and Racket expression, and
+;; returns whether the expression is well-typed. If the first argument
+;; is #f, that means we aren't providing a typechecker so we simply
+;; return true. If not, we apply the typechecker to the expression. We
+;; require that a typechecker will EITHER raise an error using the
+;; (error) function when it encounters a type error, or that it
+;; returns #f when it encounters a type error. This function then
+;; returns whether a type error was encountered.
+(define test-typecheck 
+  (lambda (tcer exp)
+    (if (eq? tcer #f) #t
+        (let ([res 
+               (with-handlers ([exn:fail?
+                                (lambda (e) #f)])
+                 (tcer exp))])
+          (if (eq? res #f) #f #t)))))
 
 (define assert
   (lambda (msg b)

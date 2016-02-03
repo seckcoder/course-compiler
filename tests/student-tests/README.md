@@ -13,4 +13,13 @@
 * (17) Stack-stack move variable
 * (18) Uniquifying, use of correct variable
 
+Register allocation -r1a
+* 1 - force spillage
+* 2 - movq special case for liveness analysis is correct
+* 3 - varying & overlapping lifetimes
+* 4 - force early spillage because of read
+* 5 - lots of read
+* 6 - lots of read, but unused variables
+* 7 - spill, but then do "regular" work -- ensure that variables aren't given unique locations on the stack after spilling
+
 ### R2 (Coming soon)

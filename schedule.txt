@@ -1,0 +1,40 @@
+
+January
+--------------------------------------------
+11
+18 due: Int and Exp (1 week)
+25
+
+February
+--------------------------------------------
+1 due: Register alloc (2 weeks)
+8 due: Control Flow (1 week)
+15
+22 due: Tuples and GC (2 weeks)
+29 due: Functions (1 week)
+
+March
+--------------------------------------------
+7
+  9  Midterm Exam 
+
+  11 (Friday) due: Lambda (2 weeks)
+14 Spring Break
+21
+28
+
+April
+---------------------------------------------
+4 due: Type Dynamic, Dynamic Typing (2 weeks)
+
+Student Projects
+
+  ideas:
+  * basic blocks and optimize jumps
+  * continuations
+  * procedure inlining, etc.
+  * LLVM
+  * other back ends (ARM)
+
+25 projects due
+25-29: Student Presentations
