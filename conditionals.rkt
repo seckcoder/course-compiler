@@ -406,28 +406,40 @@
 	   [`(je ,label) (format "\tje ~a\n" label)]
 	   [`(jmp ,label) (format "\tjmp ~a\n" label)]
 	   [`(label ,l) (format "~a:\n" l)]
-	   [`(program ,stack-space (type ,ty) ,ss ...)
+	   [`(program ,spill-space (type ,ty) ,ss ...)
             (define print-fun
               (match ty
                 ['Boolean "print_bool"]
                 ['Integer "print_int"]
                 [else (error (format "unknown type ~a" ty))]))
+	    (define callee-reg (set->list callee-save))
+	    (define save-callee-reg
+	      (for/list ([r callee-reg])
+			(format "\tpushq\t%~a\n" r)))
+	    (define restore-callee-reg
+	      (for/list ([r (reverse callee-reg)])
+			(format "\tpopq\t%~a\n" r)))
+	    (define callee-space (* (length (set->list callee-save))
+				    (send this variable-size)))
+	    (define stack-adj (- (align (+ callee-space spill-space) 16)
+				  callee-space))
 	    (string-append
 	     (format "\t.globl ~a\n" (label-name "main"))
 	     (format "~a:\n" (label-name "main"))
 	     (format "\tpushq\t%rbp\n")
 	     (format "\tmovq\t%rsp, %rbp\n")
-	     (format "\tsubq\t$~a, %rsp\n" stack-space)
+	     (string-append* save-callee-reg)
+	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
              (format "\tmovq\t%rax, %rdi\n")
              (format "\tcallq\t~a\n" (label-name print-fun))
 	     (format "\tmovq\t$0, %rax\n")
-	     (format "\taddq\t$~a, %rsp\n" stack-space)
+	     (format "\taddq\t$~a, %rsp\n" stack-adj)
+	     (string-append* restore-callee-reg)
 	     (format "\tpopq\t%rbp\n")
-	     (format "\tretq\n")
-	     )]
+	     (format "\tretq\n"))]
 	   [else ((super print-x86) e)]
 	   )))
 
