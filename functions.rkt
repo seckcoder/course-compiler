@@ -2,7 +2,7 @@
 (require "vectors.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-R3 functions-passes)
+(provide compile-R3 functions-passes functions-typechecker)
 
 (define compile-R3
   (class compile-R2
@@ -429,6 +429,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
+(define functions-typechecker
+  (let ([compiler (new compile-R3)])
+    (send compiler type-check '())))
 (define functions-passes
   (let ([compiler (new compile-R3)]
 	[interp (new interp-R3)])

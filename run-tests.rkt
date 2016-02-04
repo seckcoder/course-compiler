@@ -13,46 +13,49 @@
     (cond [(eq? i end) (reverse res)]
    	  [else (loop (add1 i) (cons i res))])))
 
-(define (test-compiler name passes test-family test-nums)
+(define (test-compiler name typechecker passes test-family test-nums)
 
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
-  (interp-tests name passes interp-scheme test-family test-nums)
-  (compiler-tests name passes test-family test-nums)
+  (interp-tests name typechecker passes interp-scheme test-family test-nums)
+  (compiler-tests name typechecker passes test-family test-nums)
   (newline)(display "tests passed")(newline)
   )
 
 (define s0_range (range 1 26))
-(define s1_range (range 1 26))
+(define s1_range (range 1 30))
 (define s2_range (range 1 7))
 (define s3_range (range 1 11))
 (define s4_range (range 0 5))
 
 (if #t (begin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "int_exp" int-exp-passes "s0" s0_range)
+(test-compiler "int_exp" #f int-exp-passes "s0" s0_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "reg_int_exp" reg-int-exp-passes "s0" s0_range)
+(test-compiler "reg_int_exp" #f reg-int-exp-passes "s0" s0_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "conditionals" conditionals-passes "s0" s0_range)
-(test-compiler "conditionals" conditionals-passes "s1" s1_range)
+(test-compiler "conditionals" conditionals-typechecker conditionals-passes "s0" s0_range)
+(test-compiler "conditionals" conditionals-typechecker conditionals-passes "s1" s1_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "vectors" vectors-passes "s0" s0_range)
-(test-compiler "vectors" vectors-passes "s1" s1_range)
-(test-compiler "vectors" vectors-passes "s2" s2_range)
+(test-compiler "vectors" vectors-typechecker vectors-passes "s0" s0_range)
+(test-compiler "vectors" vectors-typechecker vectors-passes "s1" s1_range)
+(test-compiler "vectors" vectors-typechecker vectors-passes "s2" s2_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "functions" functions-passes "s0" s0_range)
-(test-compiler "functions" functions-passes "s1" s1_range)
-(test-compiler "functions" functions-passes "s2" s2_range)
-(test-compiler "functions" functions-passes "s3" s3_range)
+(test-compiler "functions" functions-typechecker functions-passes "s0" s0_range)
+(test-compiler "functions" functions-typechecker functions-passes "s1" s1_range)
+(test-compiler "functions" functions-typechecker functions-passes "s2" s2_range)
+(test-compiler "functions" functions-typechecker functions-passes "s3" s3_range)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(test-compiler "lambda" lambda-passes "s0" s0_range)
-(test-compiler "lambda" lambda-passes "s1" s1_range)
-(test-compiler "lambda" lambda-passes "s2" s2_range)
-(test-compiler "lambda" lambda-passes "s3" s3_range)
-(test-compiler "lambda" lambda-passes "s4" s4_range)
+(test-compiler "lambda" lambda-typechecker lambda-passes "s0" s0_range)
+(test-compiler "lambda" lambda-typechecker lambda-passes "s1" s1_range)
+(test-compiler "lambda" lambda-typechecker lambda-passes "s2" s2_range)
+(test-compiler "lambda" lambda-typechecker lambda-passes "s3" s3_range)
+(test-compiler "lambda" lambda-typechecker lambda-passes "s4" s4_range)
 
 ) '())
+ 
 
 
+
+ 
 

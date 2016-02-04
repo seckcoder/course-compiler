@@ -1,7 +1,7 @@
 #lang racket
 (require "conditionals.rkt")
 (require "interp.rkt")
-(provide compile-R2 vectors-passes)
+(provide compile-R2 vectors-passes vectors-typechecker)
 
 (define compile-R2
   (class compile-R1
@@ -143,6 +143,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
+(define vectors-typechecker
+  (let ([compiler (new compile-R2)])
+    (send compiler type-check '())))
 (define vectors-passes
   (let ([compiler (new compile-R2)]
 	[interp (new interp-R2)])

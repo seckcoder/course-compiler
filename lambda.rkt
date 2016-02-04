@@ -3,7 +3,7 @@
 (require "utilities.rkt")
 (require "functions.rkt")
 (require "interp.rkt")
-(provide compile-R4 lambda-passes)
+(provide compile-R4 lambda-passes lambda-typechecker)
 
 (define compile-R4
   (class compile-R3
@@ -143,6 +143,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
+(define lambda-typechecker
+  (let ([compiler (new compile-R4)])
+    (send compiler type-check '())))
 (define lambda-passes
   (let ([compiler (new compile-R4)]
         [interp (new interp-R4)])

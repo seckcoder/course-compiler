@@ -2,7 +2,7 @@
 (require "register_allocator.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(provide compile-R1 conditionals-passes)
+(provide compile-R1 conditionals-passes conditionals-typechecker)
 
 (define challenge #t)
 
@@ -376,6 +376,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
+(define conditionals-typechecker
+  (let ([compiler (new compile-R1)])
+    (send compiler type-check '())))
 (define conditionals-passes
   (let ([compiler (new compile-R1)]
 	[interp (new interp-R1)])
