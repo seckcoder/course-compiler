@@ -13,6 +13,13 @@ void print_int(long x) {
   printf("%ld", x);
 }
 
+void print_bool(int x) {
+  if (x) 
+    printf("#t");
+  else printf("#f");
+}
+
+
 static void copy_vector(ptr* vec, ptr* free_ptr);
 static void process_vector(ptr* scan_ptr, ptr* free_ptr);
 

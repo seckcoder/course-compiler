@@ -202,6 +202,7 @@
 	    (if ((send this interp-scheme env) cnd)
 		((send this interp-scheme env) thn)
 		((send this interp-scheme env) els))]
+	   [`(program (type ,ty) ,e) ((send this interp-scheme '()) e)]
            [else ((super interp-scheme env) ast)]
 	   )))
 
@@ -215,6 +216,8 @@
 	    (if ((send this interp-C env) cnd)
 		((send this seq-C env) thn)
 		((send this seq-C env) els))]
+	   [`(program ,xs (type ,ty) ,ss ...)
+            ((super interp-C env) `(program ,xs ,@ss))]
 	   [else ((super interp-C env) ast)]
 	   )))
 
@@ -306,12 +309,19 @@
 	      (cond [(i2b flag)
 		     ((send this interp-x86 env) (goto-label label (program)))]
 		    [else ((send this interp-x86 env) ss)]))]
+	   [`(program ,xs (type ,ty) ,ss ...)
+            (send this display-by-type ty ((send this interp-x86 env) `(program ,xs ,@ss)))]
 	   [`(program ,xs ,ss ...)
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]
 	   [else ((super interp-x86 env) ast)]
 	   )))
-	    
+
+    (define/public (display-by-type ty val)
+      (match ty
+        ['Boolean (if val #t #f)]
+        ['Integer val]
+        [else (error (format "don't know how to display type ~a" ty))]))
     ));; class interp-R1
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -387,6 +397,8 @@
 		  (define new-env (append (map cons xs new-args) env))
 		  ((send this interp-scheme new-env) body)]
 		 [else (error "interp-scheme, expected function, not" f-val)]))]
+	   [`(program (type ,ty) ,ds ... ,body)
+	    ((send this interp-scheme env) `(program ,@ds ,body))]
 	   [`(program ,ds ... ,body)
 	    (let ([top-level (map  (send this interp-scheme '()) ds)])
 	      ((send this interp-scheme top-level) body))]
@@ -420,6 +432,8 @@
 		(define result-env ((send this seq-C new-env) ss))
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
+           [`(program ,locals (type ,ty) (defines ,ds) ,ss ...)
+            ((send this interp-C env) `(program ,locals (defines ,ds) ,@ss))]
 	   [`(program ,locals (defines ,ds) ,ss ...)
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
@@ -491,6 +505,9 @@
 	    (call-function f-val ss env)]
 	   [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
+           [`(program ,extra (type ,ty) (defines ,ds) ,ss ...)
+            (send this display-by-type ty ((send this interp-x86 env)
+                                                 `(program ,extra (defines ,ds) ,@ss)))]
 	   [`(program ,extra (defines ,ds) ,ss ...)
 	    (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
@@ -525,6 +542,8 @@
 		 [else (error "interp-scheme, expected function, not" f-val)]))]
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	    (mcons f `(lambda ,xs ,body))]
+	   [`(program (type ,ty) ,ds ... ,body)
+            ((send this interp-scheme env) `(program ,@ds ,body))]
 	   [`(program ,ds ... ,body)
 	    (let ([top-level (map (send this interp-scheme '()) ds)])
 	      ;; Use set-cdr! on define lambda's for mutual recursion
@@ -535,6 +554,7 @@
 	      ((send this interp-scheme top-level) body))]
 	   [else ((super interp-scheme env) ast)]
 	   )))
+      
 
     )) ;; interp-R4
 

@@ -59,7 +59,11 @@
     (define/public (uncover-live live-after)
       (lambda (ast)
 	(match ast
-           [`(program ,xs ,ss ...)
+          [`(program ,xs (type ,ty) ,ss ...)
+	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    (assert "lives ss size" (= (length lives) (length new-ss)))
+	    `(program (,xs ,lives) (type ,ty) ,@new-ss)]
+          [`(program ,xs ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    (assert "lives ss size" (= (length lives) (length new-ss)))
 	    `(program (,xs ,lives) ,@new-ss)]
@@ -88,6 +92,13 @@
 		       #:when (not (equal? v u)))
 		      (add-edge G u v)))
 	    ast]
+           [`(program (,xs ,lives) (type ,ty) ,ss ...)
+	    (define G (make-graph xs))
+	    (define new-ss 
+	      (for/list ([inst ss] [live-after lives])
+	         ((send this build-interference live-after G) inst)))
+	    (print-dot G "./interfere.dot")
+	    `(program (,xs ,G) (type ,ty) ,@new-ss)]
            [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph xs))
 	    (define new-ss 
@@ -113,6 +124,17 @@
                 (add-edge G s d)
                 '())
 	    ast]
+           [`(program (,xs ,IG) (type ,ty) ,ss ...)
+            (define MG (make-graph xs))
+            (define new-ss
+              (if use-move-biasing
+                  (let ([nss 
+                         (for/list ([inst ss])
+                           ((send this build-move-graph MG) inst))])
+                    (print-dot MG "./move.dot")
+                    nss)
+                  ss))
+            `(program (,xs ,IG ,MG) (type ,ty) ,@new-ss)]
            [`(program (,xs ,IG) ,ss ...)
             (define MG (make-graph xs))
             (define new-ss
@@ -124,13 +146,14 @@
                     nss)
                   ss))
             `(program (,xs ,IG ,MG) ,@new-ss)]
+
 	   [else ast])))
 	    
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; allocate-registers : pseudo-x86 -> pseudo-x86
     ;; Replaces variables with registers and stack locations
-    ;; using graph coloring based on Soduko heuristics.
+    ;; using graph coloring based on Suduko heuristics.
     ;; This pass encompasses assign-homes.
 
     (define largest-color 0)
@@ -210,6 +233,11 @@
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
+           [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
+	    (define-values (homes stk-size) 
+	      (send this allocate-homes IG MG locals ss))
+	    `(program ,stk-size (type ,ty)
+		      ,@(map (send this assign-homes homes) ss))]
            [`(program (,locals ,IG ,MG) ,ss ...)
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes IG MG locals ss))

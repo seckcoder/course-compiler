@@ -149,6 +149,21 @@
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
 	   [`(callq ,f) `(callq ,f)]
+	   [`(program (,xs ...) (type ,ty) ,ss ...)
+	    ;; create mapping of variables to stack locations
+	    (define (make-stack-loc n)
+	      `(stack ,(+ (send this first-offset)
+			  (* (send this variable-size) n))))
+	    (define new-homes
+	      (make-hash (map cons xs
+			      (map make-stack-loc
+				   (stream->list (in-range 0 (length xs)))))))
+	    (define stack-space (align 
+				 (* (length xs)
+				    (send this variable-size))
+				 16))
+	    `(program ,stack-space (type ,ty)
+		      ,@(map (send this assign-homes new-homes) ss))]
 	   [`(program (,xs ...) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)

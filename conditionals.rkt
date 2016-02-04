@@ -14,6 +14,12 @@
       (set-union (super primitives) 
 		 (set 'eq? 'and 'or 'not)))
 
+    (define/public (insert-type-node node ty)
+      (match node
+        [`(program ,e) `(program (type ,ty) ,e)]
+        [`(program ,info ,rest ...)
+         `(program ,info (type ,ty) ,@rest)]))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S1 -> S1 (new pass)
     (define/public (type-check env)
@@ -25,8 +31,8 @@
 	    (let ([T ((send this type-check env) e)])
 	      ((send this type-check (cons (cons x T) env)) body))]
 	   [`(program ,body)
-	    ((send this type-check '()) body)
-	    `(program ,body)]
+	    (define ty ((send this type-check '()) body))
+	    `(program (type ,ty) ,body)]
 	   [#t 'Boolean]
 	   [#f 'Boolean]
 	   [`(if ,cnd ,thn ,els)
@@ -79,6 +85,8 @@
 		  [thn ((send this uniquify env) thn)]
 		  [els ((send this uniquify env) els)])
 	      `(if ,cnd ,thn ,els))]
+           [`(program (type ,ty) ,e)
+            `(program (type ,ty) ,((send this uniquify env) e))]
 	   [else ((super uniquify env) e)]
 	   )))
 
@@ -154,6 +162,14 @@
 	    (let-values ([(new-thn thn-ss) ((send this flatten #t) thn)]
 			 [(new-els els-ss) ((send this flatten #t) els)])
 	      ((send this flatten-if new-thn thn-ss new-els els-ss) cnd))]
+	   [`(program ,e)
+	    (define-values (new-e ss) ((send this flatten #t) e))
+	    (define xs (append* (map (send this collect-locals) ss)))
+	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
+	   [`(program (type ,ty) ,e)
+	    (define-values (new-e ss) ((send this flatten #t) e))
+	    (define xs (append* (map (send this collect-locals) ss)))
+	    `(program ,(remove-duplicates xs) (type ,ty) ,@(append ss `((return ,new-e))))]
 	   [else ((super flatten need-atomic) e)]
 	   )))
 
@@ -220,6 +236,9 @@
 	   [`(eq? ,a1 ,a2)
 	    `(eq? ,((send this select-instructions) a1)
 		  ,((send this select-instructions) a2))]
+	   [`(program ,locals (type ,ty) ,ss ...)
+	    (let ([new-ss (map (send this select-instructions) ss)])
+	      `(program ,locals (type ,ty) ,@(append* new-ss)))]
 	   [else ((super select-instructions) e)]
 	   )))
 
@@ -306,6 +325,21 @@
 		  [thn-ss (map (send this assign-homes homes) thn-ss)]
 		  [els-ss (map (send this assign-homes homes) els-ss)])
 	      `(if ,cnd ,thn-ss ,els-ss))]
+	   [`(program (,xs ...) (type ,ty) ,ss ...)
+	    ;; create mapping of variables to stack locations
+	    (define (make-stack-loc n)
+	      `(stack ,(+ (send this first-offset)
+			  (* (send this variable-size) n))))
+	    (define new-homes
+	      (make-hash (map cons xs
+			      (map make-stack-loc
+				   (stream->list (in-range 0 (length xs)))))))
+	    (define stack-space (align 
+				 (* (length xs)
+				    (send this variable-size))
+				 16))
+	    `(program ,stack-space (type ,ty)
+		      ,@(map (send this assign-homes new-homes) ss))]
 	   [else ((super assign-homes homes) e)]
 	   )))
       
@@ -328,9 +362,9 @@
 		      `((label ,thn-label)) thn-ss `((label ,end-label))
 	       ))]
 	   [`(callq ,f) `((callq ,f))]
-	   [`(program ,stack-space ,ss ...)
+	   [`(program ,stack-space (type ,ty) ,ss ...)
 	    (let ([new-ss (append* (map (send this lower-conditionals) ss))])
-	      `(program ,stack-space ,@new-ss))]
+	      `(program ,stack-space (type ,ty) ,@new-ss))]
 	   [`(,instr ,args ...)
 	    `((,instr ,@args))]
 	   [else
@@ -353,6 +387,9 @@
 		`((cmpq (int ,n2) ,a1))]
 	       [else
 		`((cmpq ,a1 ,a2))])]
+	   [`(program ,stack-space (type ,ty) ,ss ...)
+	    `(program ,stack-space (type ,ty)
+		      ,@(append* (map (send this patch-instructions) ss)))]
 	   [else ((super patch-instructions) e)]
 	   )))
 
@@ -369,6 +406,28 @@
 	   [`(je ,label) (format "\tje ~a\n" label)]
 	   [`(jmp ,label) (format "\tjmp ~a\n" label)]
 	   [`(label ,l) (format "~a:\n" l)]
+	   [`(program ,stack-space (type ,ty) ,ss ...)
+            (define print-fun
+              (match ty
+                ['Boolean "print_bool"]
+                ['Integer "print_int"]
+                [else (error (format "unknown type ~a" ty))]))
+	    (string-append
+	     (format "\t.globl ~a\n" (label-name "main"))
+	     (format "~a:\n" (label-name "main"))
+	     (format "\tpushq\t%rbp\n")
+	     (format "\tmovq\t%rsp, %rbp\n")
+	     (format "\tsubq\t$~a, %rsp\n" stack-space)
+	     "\n"
+	     (string-append* (map (send this print-x86) ss))
+	     "\n"
+             (format "\tmovq\t%rax, %rdi\n")
+             (format "\tcallq\t~a\n" (label-name print-fun))
+	     (format "\tmovq\t$0, %rax\n")
+	     (format "\taddq\t$~a, %rsp\n" stack-space)
+	     (format "\tpopq\t%rbp\n")
+	     (format "\tretq\n")
+	     )]
 	   [else ((super print-x86) e)]
 	   )))
 
