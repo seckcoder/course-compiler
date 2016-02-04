@@ -267,7 +267,8 @@
 ;; Edited by Jan Hubicˇka, Andreas Jaeger, Mark Mitchell
 ;; December 2, 2003
 
-(define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+;(define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+(define arg-registers (vector))
 
 (define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11 ))
 (define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
@@ -278,7 +279,8 @@
 				  'r13 'r14 'r15))
 
 ;; registers-for-alloc should always inlcude the arg-registers. -Jeremy 
-(define registers-for-alloc general-registers)
+;(define registers-for-alloc general-registers)
+(define registers-for-alloc (vector 'rbx))
 
 
 (define reg-colors

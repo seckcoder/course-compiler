@@ -405,3 +405,95 @@ Updating the passes: (without GC)
     update to handle (offset ,addr ,bytes)
 
 
+Lecture 7: Garbage Collection
+================================================================================
+
+Tuples (vectors) are represented by a pointer to a continguous chunk
+of memory.
+
+Def. A chunk is *garbage* if it is not reachable by the running
+program by any path of pointer traversals.
+
+Def. A *live* chunk is reachable by the running program by a pointer
+traversal path.
+
+A garbage collector preserves live chunks and deallocates garbage.
+Thus, the program will never traverse a dangling pointer into a
+deallocated chucnk.
+
+Comment on the connection between garbage collection and type safety.
+
+When does garbage collection happen? Typically during some calls to
+the allocation routine.
+
+Basic parts of a GC:
+1. Garbage detection
+2. Reclaiming garbage for reuse
+
+Garbage detection starts at the *root set*:
+* pointers on the stack
+* pointers in registers
+
+Reclaimed objects are typically put on a "free list" 
+that is used for allocation.
+
+Reference Counting
+------------------
+Each chunk keeps a count of how many pointers to it exist.
+
+The count goes up and down during allocation, assignment, and
+during reclamation.
+
+When the count reaches zero, reclaim the chunk and decrement
+the count for chunks pointed to by this one. This can trigger
+a cascade of reclaimations, e.g., for an entire list or tree.
+
+An *incremental* GC only does a fixed amount of work during each
+allocation. This property is important for programs with timing
+constraints, such as real-time systems.
+
+Reference counting can be made entirely incremental by cutting off the
+reclaimation, instead putting chunks with zero count on a to-reclaim
+list.
+
+Problems:
+* cycles
+* efficiency
+but recent research overcomes these problems
+"Taking Off the Gloves with Reference Counting Immix"
+by Shahriyar et al.
+
+Tracing GC's
+------------
+
+* Mark and Sweep
+   1. Garbage detection: "mark" all reachable chunks via DFS or BFS
+   2. Reclaiming garbage for reuse: "sweep" all of memory, reclaiming
+      the chunks that were not marked.
+   Problems:
+   * fragmentation
+   * cost is proportional to the size of the heap
+   * bad locality of reference
+
+* Mark-Compact
+   Moves the marked objects so they are contiguous, often
+     by sliding them down to the next object.
+   Allocation is just a pointer bump.
+
+* Copying Collectors
+   Divide the heap into two (or more) semispaces.
+   Allocation bumps a pointer in one of the spaces.
+   If there is no room left, stop and copy.
+
+   Copy all live chunks to the tospace, updating
+   the pointers in them to point to the new locations.
+
+   Cheney Algorithm:
+   * Implements BFS
+   * Queue stored in the tospace, between alloc pointer and
+     a "scan" pointer.
+   * Chunks in the queue may have stale pointers.
+   * Copied objects have forwarding pointers.
+
+
+
