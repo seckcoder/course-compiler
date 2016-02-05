@@ -453,8 +453,9 @@
 (define conditionals-passes
   (let ([compiler (new compile-R1)]
 	[interp (new interp-R1)])
-    `(("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+    `(
+;    ("type-check" ,(send compiler type-check '())
+;       ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)

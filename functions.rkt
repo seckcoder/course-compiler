@@ -436,8 +436,9 @@
 (define functions-passes
   (let ([compiler (new compile-R3)]
 	[interp (new interp-R3)])
-    `(("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+    `(
+      ;("type-check" ,(send compiler type-check '())
+;       ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())

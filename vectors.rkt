@@ -153,8 +153,9 @@
 (define vectors-passes
   (let ([compiler (new compile-R2)]
 	[interp (new interp-R2)])
-    `(("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+    `(
+;    ("type-check" ,(send compiler type-check '())
+;       ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)

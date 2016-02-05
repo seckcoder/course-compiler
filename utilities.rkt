@@ -122,18 +122,18 @@
     (define sexp (read-program program-name))
     (debug "program:" sexp)
     (define type-error-expected (file-exists? (format "tests/~a.tyerr" test-name)))
-    (define typechecks (test-typecheck typechecker sexp))
+    (define tsexp (test-typecheck typechecker sexp))
     
     (cond
-     [(and type-error-expected typechecks)
+     [(and type-error-expected tsexp)
       (error (format "expected type error in compiler '~a', but no error raised by typechecker" name))]
      [type-error-expected 'expected-type-error]
-     [typechecks 
-      (let loop ([passes passes] [p sexp]
+     [tsexp 
+      (let loop ([passes passes] [p tsexp]
                  [result (if (file-exists? input-file-name)
                              (with-input-from-file input-file-name
-                               (lambda () (initial-interp sexp)))
-                             (initial-interp sexp))])
+                               (lambda () (initial-interp tsexp)))
+                             (initial-interp tsexp))])
         (cond [(null? passes) result]
               [else
                (match (car passes)
@@ -187,8 +187,9 @@
       #:exists 'replace
       (lambda (out-file)
         (define sexp (read-program prog-file-name))
-        (if (test-typecheck typechecker sexp)
-            (let ([x86 (let loop ([passes passes] [p sexp])
+        (define tsexp (test-typecheck typechecker sexp))
+        (if tsexp
+            (let ([x86 (let loop ([passes passes] [p tsexp])
                          (cond [(null? passes) p]
                                [else
                                 (match (car passes)
@@ -298,12 +299,15 @@
 ;; returns whether a type error was encountered.
 (define test-typecheck 
   (lambda (tcer exp)
-    (if (eq? tcer #f) #t
+    (if (eq? tcer #f) exp
         (let ([res 
                (with-handlers ([exn:fail?
                                 (lambda (e) #f)])
                  (tcer exp))])
-          (if (eq? res #f) #f #t)))))
+          (match res
+           [#f #f]
+           [`(program ,elts ...) res]
+           [else exp])))))
 
 (define assert
   (lambda (msg b)

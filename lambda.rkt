@@ -149,8 +149,9 @@
 (define lambda-passes
   (let ([compiler (new compile-R4)]
         [interp (new interp-R4)])
-    `(("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+    `(
+      ;("type-check" ,(send compiler type-check '())
+      ; ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
