@@ -90,6 +90,10 @@
 	    (define new-e-vec ((send this select-instructions) e-vec))
 	    (define new-e-arg ((send this select-instructions) e-arg))
 	    `((movq ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
+           [`(program ,xs (type ,ty) ,ss ...)
+            `(program ,xs (type ,ty)
+                      (callq initialize)
+                      ,@(append* (map (send this select-instructions) ss)))]
            [`(program ,xs ,ss ...)
             `(program ,xs
                       (callq initialize)
