@@ -334,7 +334,7 @@
     (define fromspace_end   (box uninitialized))
     (define rootstack_begin (box uninitialized))
     (define rootstack_end   (box uninitialized))
-    ;; Like define but public
+    ;; field is like define but public
     (field [stack-size 8000 #;Bytes]
            [heap-size  10000   #;Bytes]
            [global-label-table
@@ -456,29 +456,8 @@
 
     (define (global-value-err ast)
       (lambda ()
-        (error 'interp-x86-exp "global label is unknown in ~a" ast)))
+        (error 'interp-R2 "global label is unknown in ~a" ast)))
     
-    (define/override (interp-C env)
-      (lambda (ast)
-        (vomit "R2/interp-C" ast env)
-        (match ast
-          ;; I should do better than make these noops
-          [`(initialize ,s ,h)
-           (unless (and (exact-nonnegative-integer? s)
-                        (exact-nonnegative-integer? h))
-             (error "intialize must be called with literals"))
-           ((initialize!) s h)
-           env]
-          [`(collection-needed? ,size)   #t]
-          [`(collect ,size)              env]
-          [`(collect ,rs ,size)          env]
-          [`(global-value ,l) (fetch-global l)]
-          [`(movq ,src ,dst)             env]
-          [`(allocate ,l ,t)
-           (build-vector l (lambda a uninitialized))]
-          [`(call-live-roots (,xs ...) ,ss ...)
-           ((send this seq-C env) ss)]
-          [otherwise ((super interp-C env) ast)])))
     
     (define/public (fetch-global label)
       (let* ([err (global-value-err label)]
@@ -490,6 +469,48 @@
                  "global value, ~a, used before initialization"
                  label))
         value))
+
+    
+    (define/override (interp-C env)
+      (lambda (ast)
+        (vomit "R2/interp-C" ast env)
+        (match ast
+          ;; I should do better than make these noops - andre
+          [`(initialize ,s ,h)
+           (unless (and (exact-nonnegative-integer? s)
+                        (exact-nonnegative-integer? h))
+             (error "intialize must be called with literals"))
+           ((initialize!) s h)
+           env]
+          ;; Determine if a collection is needed.
+          ;; Which it isn't because vectors stored in the environment
+          ;; is the representation of the heap in the C language,
+          ;; but collection is a no-op so we should check to see if
+          ;; everything is well formed anyhow.
+          [`(collection-needed? ,size)
+           (when (or (eq? (unbox free_ptr) uninitialized)
+                     (eq? (unbox fromspace_end) uninitialized))
+             (error 'interp-x86 "uninitialized state in ~a" ast))
+           #t]
+          ;; Collection isn't needed or possible in this representation
+          [`(collect ,size)
+           (unless (exact-nonnegative-integer? ((interp-C env) size))
+             (error 'interp-C "invalid argument to collect in ~a" ast)) 
+           env]
+          [`(collect ,rs ,size)
+           (unless (and (exact-nonnegative-integer? ((interp-C env) rs))
+                        (exact-nonnegative-integer? ((interp-C env) size)))
+             (error 'interp-C "invalid argument(s) to collect in ~a" ast)) 
+           env]
+          ;; Referece a global value (should I put these in the environment?)
+          [`(global-value ,l) (fetch-global l)]
+          ;; TODO: Highly expiramental semantics
+          [`(movq ,src ,dst) ((interp-x86 env) (list ast))]
+          ;; allocate a vector of length l and type t that is initialized.
+          [`(allocate ,l ,t) (build-vector l (lambda a uninitialized))]
+          ;; Analysis information making introduce rootstack easier
+          [`(call-live-roots (,xs ...) ,ss ...) ((send this seq-C env) ss)]
+          [otherwise ((super interp-C env) ast)])))
     
     (define/override (interp-x86-exp env)     
       (lambda (ast)
@@ -534,6 +555,8 @@
         (when (pair? ast)
           (vomit "R2/interp-x86" (car ast) env))
 	(match ast
+          ;; Get the value of the lt flag which doesn't actually exist
+          ;; the lt flag is simulated by overflow == sign for x86
           [`((setl ,d) . ,ss)
            (define eflags ((send this interp-x86-exp env) '(reg __flag)))
            (define overflow (bitwise-and eflags #b100000000000))
@@ -541,6 +564,9 @@
            (define lt       (if (= overflow sign) 1 0))
            (define new-env ((send this interp-x86-store env) d lt))
            ((send this interp-x86 new-env) ss)]
+          ;; cmpq performs a subq operation and examimines the state
+          ;; of the result, this is done without overiting the second
+          ;; register(I think). -andre
           [`((cmpq ,s1 ,s2) . ,ss)
            (vomit "cmpq" s1 s2)
            (let* ([v1 ((send this interp-x86-exp env) s1)] 
@@ -553,6 +579,7 @@
                   [overflow (arithmetic-shift 0 11)]
                   [eflags (bitwise-ior overflow sign zero)])
              ((send this interp-x86 (cons (cons '__flag eflags) env)) ss))]
+          ;; Initialize the state of the "runtime"
           [`((callq initialize) . ,ss)
            (define stack-size ((interp-x86-exp env) '(reg rdi)))
            (define heap-size ((interp-x86-exp env) '(reg rsi))) 

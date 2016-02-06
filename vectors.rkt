@@ -6,8 +6,6 @@
 
 (provide compile-R2 vectors-passes vectors-typechecker)
 
-
-
 (define compile-R2
   (class compile-R1
     (super-new)
@@ -269,7 +267,7 @@
          (unless (hash-ref env^ x #f)
            (error 'expose-allocation "type inference invalid ~a" x)))
        (let ([xs-t (hash->list env^)])
-         `(program ,xs-t (initialize ,(rootstack-length) ,(heap-length))
+         `(program ,xs-t (initialize ,(rootstack-size) ,(heap-size))
                    . ,ss^))]
       [`(assign ,lhs (vector ,(and (app (uncover-type-exp env) t*) e*) ...))
        (vomit "expose allocation assign" lhs t* e*)

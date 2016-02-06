@@ -7,105 +7,116 @@
 (require "functions.rkt")
 (require "lambda.rkt")
 (require "interp.rkt")
+(require "runtime-config.rkt")
 
-(define (range start end)
-  (let loop ([i start] [res '()])
-    (cond [(eq? i end) (reverse res)]
-   	  [else (loop (add1 i) (cons i res))])))
+;; Table associating names of compilers with the information for running
+;; and testing them.
+(define compiler-list
+  ;; Name           Typechecker               Compiler-Passes      Valid suites
+  `(("int_exp"      #f                        ,int-exp-passes      (0))
+    ("reg_int_exp"  #f                        ,reg-int-exp-passes  (0))
+    ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
+    ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
+    ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
+    ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))))
+
+(define compiler-table (make-immutable-hash compiler-list))
+
+(define suite-list
+  `((0 . ,(range 1 26))
+    (1 . ,(range 1 30)) 
+    (2 . ,(range 1 11))   
+    (3 . ,(range 1 11))
+    (4 . ,(range 0 5)))) 
+
+(define (suite-range x)
+  (let ([r? (assoc x suite-list)])
+    (unless r?
+      (error 'suite-range "invalid suite ~a" x))
+    (cdr r?)))
 
 (define (test-compiler name typechecker passes test-family test-nums)
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
   (interp-tests name typechecker passes interp-scheme test-family test-nums)
   (compiler-tests name typechecker passes test-family test-nums)
-  (newline)(display "tests passed")(newline)
-  )
+  (newline)(display "tests passed")(newline))
 
-(define ((run-single-test compiler-name test-name))
-  ;; Get the compiler configuration
-  (define (err-compiler)
-    (error 'run-single-test "invalid compiler ~a" compiler-name))
-  (match-define (list typechecker passes)
-    (hash-ref compiler-table compiler-name err-compiler))
+;; These parameters may be alterned by passing at the command line if
+;; they are not altered then the default is to test everything.
 
-  ;; Check to make sure that the test has a file backing it
-  (define test-source (build-path "tests" (string-append test-name ".rkt")))
-  (unless (file-exists? test-source)
-    (error 'run-single-test "invalid test ~a, no " test-name))
+(define compilers-to-test
+  (make-parameter #f))
+(define suites-to-test
+  (make-parameter #f))
+(define tests-to-run
+  (make-parameter #f))
 
-  (display "------------------------------------------------------")(newline)
-  (printf "testing compiler ~a on ~a\n" compiler-name test-name)
-  #;((check-passes compiler-name name typechecker passes interp-scheme) test-name)
-  )
+;; adds some object to the end of an optional list stored in a parameter
+;; seems case specific or else I would put it in utilities
+(define (snoc-to-opt-param param x)
+  (unless (parameter? param)
+    (error 'snoc-to-opt-param "expected a parameter: ~a" param))
+  (param (let ([list? (param)])
+           (if list?
+               (let snoc ([ls list?] [x x])
+                 (cond
+                   [(pair? ls)
+                    (cons (car ls)
+                          (snoc (cdr ls) x))]
+                   [else (list x)]))
+               (list x)))))
 
-(define s0_range (range 1 26))
-(define s1_range (range 1 30))
-(define s2_range (range 1 8))
-(define s3_range (range 1 11))
-(define s4_range (range 0 5))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define feature-table
-  (make-immutable-hash
-   `(("int" .
-      ,(lambda ()
-         (test-compiler "int_exp" #f int-exp-passes "s0" s0_range)))
-     ("reg" .
-      ,(lambda ()
-         (test-compiler "reg_int_exp" #f reg-int-exp-passes "s0" s0_range)))
-     ("if" .
-      ,(lambda ()
-         (let ([tc conditionals-typechecker]
-               [ps conditionals-passes])
-           (test-compiler "conditionals" tc ps "s0" s0_range)
-           (test-compiler "conditionals" tc ps "s1" s1_range))))
-     ("vector" .
-      ,(lambda ()
-         (let ([tc vectors-typechecker]
-               [ps vectors-passes])
-           ;;(test-compiler "vectors" tc ps "s0" s0_range)
-           ;;(test-compiler "vectors" tc ps "s1" s1_range)
-           (test-compiler "vectors" tc ps "s2" '(8)))))
-     ("function" .
-      ,(lambda ()
-         (let ([tc functions-typechecker]
-               [ps functions-passes])
-           (test-compiler "functions" tc ps "s0" s0_range)
-           (test-compiler "functions" tc ps "s1" s1_range)
-           (test-compiler "functions" tc ps "s2" s2_range)
-           (test-compiler "functions" tc ps "s3" s3_range))))
-     ("lambda" .
-      ,(lambda ()
-         (let ([tc lambda-typechecker]
-               [ps lambda-passes])
-           (test-compiler "lambda" tc ps "s0" s0_range)
-           (test-compiler "lambda" tc ps "s1" s1_range)
-           (test-compiler "lambda" tc ps "s2" s2_range)
-           (test-compiler "lambda" tc ps "s3" s3_range)
-           (test-compiler "lambda" tc ps "s4" s4_range)))))))
-
-(define compiler-table
-  (hash))
-
-(define feature-list
-  `("int" "reg" "if" "vector" "function" "lambda"))
+;; The is the actual function that drives the testing base
+;; on what happens below in the parsing of the command line
+;; arguments.
 
 
-(define specific-tests (make-parameter #f))
 (command-line
+ #:multi
+ ;; Add a compiler to the set of test to run
+ [("-c" "--compiler") name "add a compiler to the test set"
+  (unless (hash-ref compiler-table name #f)
+    (error 'run-tests
+           "compiler flag expects a compiler: ~a\nvalid compilers ~a"
+           name (map car compiler-list)))
+  (snoc-to-opt-param compilers-to-test name)]
+ ;; Add a test suite to the test to run
+ [("-s" "--suite") num "number of suite to run"
+  (let ([suite-n (string->number num)])
+    (unless (exact-nonnegative-integer? suite-n)
+      (error 'run-tests "suites are nonnegative integers, got ~a" num))
+    (snoc-to-opt-param suites-to-test suite-n))]
+ ;; Select individual tests to run
+ [("-t" "--test") num "specify specific test numbers to run"
+  (let ([test-n (string->number num)])
+    (unless (exact-nonnegative-integer? test-n)
+      (error 'run-tests "tests are nonnegative integers, got ~a" num))
+    (snoc-to-opt-param tests-to-run test-n))]
+ ;; turn up the debbugging volume
+ ["-d" "increment debugging level" (debug-level (add1 (debug-level)))]
+
+ ;; These are the flags that are each allowed once
  #:once-each
+ [("-r" "--rootstack-size") bytes
+  "set the size of rootstack for programs compiled"
+  (let ([bytes? (string->number bytes)])
+    (unless (and (exact-positive-integer? bytes?)
+                 (= (remainder bytes? 8) 0))
+      (error 'run-tests
+             "rootstack-size expected positive multiple of 8: ~v"
+             bytes)) 
+    (rootstack-size bytes?))]
+
+ [("-m" "--heap-size") bytes
+  "set the size of initial heap for programs compiled"
+  (let ([bytes? (string->number bytes)])
+    (unless (and (exact-positive-integer? bytes?)
+                 (= (remainder bytes? 8) 0))
+      (error 'run-tests
+             "heap-size expected positive multiple of 8: ~v" bytes)) 
+    (heap-size bytes?))]
+
  ;; Allows setting the number of columns that the pretty printer
  ;; uses to display s-expressions.
  [("-w" "--pprint-width") columns "set the width for pretty printing"
@@ -113,26 +124,33 @@
     (unless (exact-positive-integer? columns)
       (error 'run-tests "expected positive integer, but found ~v" columns)) 
     (pretty-print-columns columns))]
- #:multi
- [("-f" "--feature") name "feature name (int, reg, if, vector, function, lambda)"
-  (define (oops) (error 'run-tests "unrecognized feature ~a" name))
-  (specific-tests
-   (cons (hash-ref feature-table name oops)
-         (or (specific-tests) '())))]
- #;
- [("-t" "--test") compiler test ""
- (specific-test
- (cons (run-single-test compiler test)
-       (or (specific-test) '())))]
-;; If you pass -d or --debug to the file all the (debug label val ...)
-;; statements will print the labels and values. This is done by
-;; setting the debug-state parameter in utilities.rkt to be true.
-["-d" "increment debugging level" (debug-level (add1 (debug-level)))]
-#:args ()
-(if (not (specific-tests))
-    (for ([feature feature-list])
-      ((hash-ref feature-table feature)))
-    (for ([test (specific-tests)]) (test))))
+
+
+ #:args ()
+ ;; default to testing all compilers 
+ (unless (compilers-to-test)
+   (compilers-to-test (map car compiler-list)))
+
+ ;; default to testing all suites
+ (unless (suites-to-test)
+   (suites-to-test (map car suite-list)))
+
+ ;; default to testing the first 100 tests in each suite
+ (unless (tests-to-run)
+   (tests-to-run (range 0 100)))
+
+ ;; This is the loop that calls test compile for each suite
+ (for ([compiler (compilers-to-test)])
+    (let ([info? (hash-ref compiler-table compiler #f)])
+      (unless info?
+        (error 'run-tests "invalid compiler: ~a" compiler))
+      (match-let ([(list tyck pass suites) info?])
+        (for ([suite (suites-to-test)])
+          (when (set-member? suites suite)
+            (let* ([sname (format "s~a" suite)]
+                   [test-set (set-intersect (suite-range suite) (tests-to-run))]
+                   [tests (sort test-set <)])
+              (test-compiler compiler tyck pass sname tests))))))))
 
  
 

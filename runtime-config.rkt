@@ -3,11 +3,14 @@
 (require racket/contract)
 (provide
  (contract-out
-  [rootstack-length (parameter/c exact-nonnegative-integer?)]
-  [heap-length      (parameter/c exact-nonnegative-integer?)]))
+  [rootstack-size (parameter/c exact-nonnegative-integer?)]
+  [heap-size      (parameter/c exact-nonnegative-integer?)]))
 
-(define rootstack-length
-  (make-parameter 10000))
 
-(define heap-length
-  (make-parameter 10000))
+;; Parameter that determines what the initial rootstack size of the program is.
+(define rootstack-size
+  (make-parameter (expt 2 13)))
+
+;; Parameter that determines what the initial heap size of the program is.
+(define heap-size 
+  (make-parameter (expt 2 16)))

@@ -100,35 +100,42 @@ ptr rootstack_end;
 
 int initialized = 0;
 
-void initialize(long int rootstack_length, long int heap_length)
+void initialize(long int rootstack_size, long int heap_size)
 {
-
-  long int space_length = heap_length / 2;
+  if (0 != (heap_size % 8)){
+    printf("invalid heap size %ld\n", heap_size);
+    exit(-1);
+  }
   
-  if (!(fromspace_begin = malloc(8 * space_length)))
+  if (0 != (rootstack_size % 8)) {
+    printf("invalid rootstack size %ld\n", rootstack_size);
+    exit(-1);
+  }
+  
+  if (!(fromspace_begin = malloc(heap_size)))
     {
-      printf("Failed to malloc %ld byte fromspace\n", 8 * space_length);
+      printf("Failed to malloc %ld byte fromspace\n", heap_size);
       exit(-1);
     }
   
-  fromspace_end = fromspace_begin + space_length;
+  fromspace_end = fromspace_begin + (heap_size / 8);
   free_ptr = fromspace_begin;
   
-  if (!(tospace_begin = malloc(8 * space_length)))
+  if (!(tospace_begin = malloc(heap_size)))
     {
-      printf("Failed to malloc %ld byte tospace\n", 8 * space_length);
+      printf("Failed to malloc %ld byte tospace\n", heap_size);
       exit(-1);
     }
   
-  tospace_end = tospace_begin + space_length;
+  tospace_end = tospace_begin + (heap_size / 8);
 
-  if (!(rootstack_begin = malloc(8 * rootstack_length)))
+  if (!(rootstack_begin = malloc(rootstack_size)))
     {
-      printf("Failed to malloc %ld byte rootstack", 8 * rootstack_length);
+      printf("Failed to malloc %ld byte rootstack", rootstack_size);
       exit(-1);
     }
   
-  rootstack_end = rootstack_begin + initial_len;
+  rootstack_end = rootstack_begin + (rootstack_size / 8);
   initialized = 1;
 
   return;
@@ -166,6 +173,7 @@ ptr debug_collect(ptr rootstack_ptr, long int bytes_requested){
 
 ptr collect(ptr rootstack_ptr, long int bytes_requested)
 {
+  fprintf(stderr,"calling collect");
   //ptr free_ptr;
   ptr scan_ptr;
 

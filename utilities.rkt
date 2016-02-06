@@ -43,7 +43,9 @@
            (printf "~a @ ~a:~a\n" label #,src #,lno)
         (begin
           (printf "~a:\n" 'value)
-          (pretty-print value)
+          (if (string? value)
+              (display value)
+              (pretty-print value))
           (newline))
         ...
         (newline))
@@ -189,13 +191,12 @@
     (define input-file-name (format "tests/~a.in" test-name))
     (define program-name (format "tests/~a.rkt" test-name))
     (define sexp (read-program program-name))
-    (debug "program:" sexp)
+    (debug "check passes:" sexp)
     (define type-error-expected (file-exists? (format "tests/~a.tyerr" test-name)))
     (define typechecks (test-typecheck typechecker sexp))
-    
     (cond
      [(and type-error-expected typechecks)
-      (error (format "expected type error in compiler '~a', but no error raised by typechecker" name))]
+      (error 'check-passes "expected type error in compiler '~a', but no error raised by typechecker" name)]
      [type-error-expected 'expected-type-error]
      [typechecks 
       (let loop ([passes passes] [p sexp]
@@ -207,9 +208,13 @@
               [else
                (match (car passes)
                  [`(,pass-name ,pass ,interp)
-                  (debug "running pass" pass-name)
+                  (let ([input p])
+                    (debug (string-append "running pass" pass-name)
+                           input))
                   (define new-p (pass p))
-                  (debug pass-name new-p)
+                  (let ([output new-p])
+                    (debug (string-append "running pass" pass-name)
+                           output))
                   (cond [interp
                          (let ([new-result
                                 ;; if there is an input file with the same name
@@ -226,14 +231,16 @@
                                         [else
                                          (display "in program")(newline)
                                          (pretty-print new-p)(newline)
-                                         (error (format "differing results in compiler '~a' pass '~a', expected ~a, not" name pass-name result )
-                                                new-result)])]
+                                         (error 'check-passes
+                                                "differing results in compiler '~a' pass '~a', expected ~a, not"
+                                                name pass-name result
+                                                #;new-result
+                                                )])]
                                  [else ;; no result to check yet
                                   (loop (cdr passes) new-p new-result)]))]
                         [else
-                         (loop (cdr passes) new-p result)])])]))
-      ]
-     [else (error (format "unexpected type error raised by compiler '~a'" name))])))
+                         (loop (cdr passes) new-p result)])])]))]
+     [else (error 'check-passes "unexpected type error raised by compiler '~a'" name)])))
 
 (define (compile passes)
   (let ([prog-file-name (vector-ref (current-command-line-arguments) 0)])
