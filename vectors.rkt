@@ -1,7 +1,9 @@
 #lang racket
-(require "conditionals.rkt")
-(require "interp.rkt")
-(require "utilities.rkt")
+(require "conditionals.rkt"
+         "interp.rkt"
+         "utilities.rkt"
+         "runtime-config.rkt")
+
 (provide compile-R2 vectors-passes vectors-typechecker)
 
 
@@ -12,21 +14,13 @@
 
     (define/override (primitives)
       (set-union (super primitives) 
-		 (set 'vector 'vector-ref 'vector-set! '<)))
-
-    (define/public (relops-table)
-      (make-immutable-hash
-       '((=  . je)
-         (<  . jl) (<= . jle)
-         (>  . jg) (>= . jge))))
-
-    (define/public (relop? x)
-      (if (hash-ref x (send this relops-table) #f) #t #f))
+		 (set 'vector 'vector-ref 'vector-set!)))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S2 -> S2    
     (define/override (type-check env)
       (lambda (e)
+        (vomit "vectors/type-check" e env)
 	(match e
           [`(vector ,es ...)
            `(Vector ,@(map (send this type-check env) es))]
@@ -65,368 +59,490 @@
     ;; flatten : S1 -> C1-expr x (C1-stmt list)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uncover-call-live-roots : C1-Expr (Uid -> Type) -> C1-Expr x (Uid list)
+    ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
+    ;; This is a reimplementation of type check which could be fixed if we ellaborated
+    ;; the types at every previous step in the compiler.
+   
+    ;; root? returns true if x is a root or false otherwise.
+    ;; root? : (Hashtable id type) id -> boolean
+    (define/public (root? env x)
+      (let* ([e (lambda () (error 'root? "unbound ~a" x))]
+             [t (hash-ref env x e)])
+        (root-type? t)))
 
+    (define/public (root-type? t)
+      (and (pair? t) (eq? (car t) 'Vector)))
 
-    ;; Merge two hash tables that do not have contradictory key/value pairs
-    (define (hash-merge h1 h2)
-      ;; h2 is consistent with h1
-      (for ([(k v) (in-hash h1)])
-        (let ([v? (hash-ref h2 k #f)])
-          (unless (and v? (eq? v? v))
-            (error 'vectors/hash-merger "h2 is not consistent with h1"))))
-      ;; h1 is consistent with h2 and do the merge
-      (for/fold ([env h2])
-                ([(k v) (in-hash h1)])
-        (let ([v? (hash-ref h2 k #f)])
-          (cond
-            [(not v?) (hash-set c-env k v)]
-            [(eq? v? v) env]
-            [else (error 'vectors/introduce-rootset
-                         "h1 is not consistent with h2")]))))
+    ;; This is the clause that processes expressions
+    ;; It returns the type and any live roots of the expression.
+    (define (set-union* l*) (foldl set-union (set) l*))
+    (define (primitive? x) (set-member? (send this primitives) x))
 
-    (define (env-ref env)
-      (lambda (x)
-        (hash-ref env x (lambda () (error 'vectors/env-ref "unmatched ~a" x)))))
+    #;
+    (define/public (uncover-type-exp env)
+    (define (recur x) ((uncover-type-exp env) x))
+    (lambda (e)
+      (match e
+        [(? symbol? x)  (env-ref env x)]
+        [`(vector ,(app recur t*) ...) `(Vector ,@t*)]
+        ;; I has to be a literal integer ;
+        [`(vector-ref ,(app recur `(Vector ,t* ...)) ,i)
+         (list-ref t* i)]
+        [(? integer?)  `Integer]
+        [(? boolean?)  `Boolean]
+        [`(,(? primitive? op) ,_ ...)
+         (case op
+           [(+ - * read) 'Integer]
+           [(and or not eq?) 'Boolean])]
+        [else (error 'uncover-live-roots-exp "unmatched ~a" e)])))
 
-    (define/public (root-type? env x)
-      (let ([t ((env-ref env) x)])
-        (and (pair? t) (eq? (car t) 'Vector))))
-    
-    (define/public (uncover-live-exp env)
-      (lambda (e)
-        (match e
-          [else (error 'uncover-live-roots-exp "unmatched ~a" e)])))
+  ;; Uncover the 
+  (define/public (uncover-env-stmt env)
+    (define (stmt s env) ((uncover-env-stmt env) s))
+    (lambda (s)
+      (vomit "uncover env statement" s env)
+      (flush-output)
+      (match s
+        [`(assign ,v ,(app (uncover-type-exp env) t)) (env-set env v t)]
+        [`(if ,r ,c ,a) (env-merge (foldl stmt env c) (foldl stmt env a))]
+        [otherwise env])))
 
-    (define/public (uncover-live-stmt env)
-      (lambda (s)
-        (match s
-          [else (error 'uncover-live-roots-stmt "unmatched ~a" s)])))
-
-    (define/public (uncover-type-exp x)
+  (define/public (uncover-call-live-seq env clr*)
+    ;; This pass could do better if it had most of the type information precomputed
+    (lambda (x)
+      (vomit "uncover call live sequence" x env clr*)
       (match x
-        [`(,op ...) ]))
-    
-    (define/public (uncover-env-stmt env)
-      (lambda (s)
-        (match s
-          [(assign ,v ,exp)]
-          [else (error 'vectors/uncover-env-stmt s)])))
-    
-    (define/public (uncover-live-roots env [base (set)])
-      ;; This pass could do better if it had most of the type information precomputed
-      (lambda (ss)
-        (match ss
-          ;; Base Case for list recusion
-          [`() (values '() base)]
-          ;; Interesting cases
-          [`((assign ,v (vector ,vs ...)) . ,ss)
-           (define var-types   (map (env-ref env) vs))
-           (define vector-type `(Vector ,@var-types))
-           (define new-env (hash-set v vector-type))
-           (define-values (ss^ ss-lr)
-             ((uncover-live-roots new-env base) ss))
-           (define live-roots
-             (set-union ss-lr (list->set (filter (vector-type? env) vs))))
-           (values `((assign ,v (vector ,live-roots ,vector-type ,@vs)) . ,ss^)
-                   live-roots)]
-          [`((assign ,v (vector-ref ,e-vec ,i)) . ,ss)
-           (match-define `(Vector ,n-type ...) ((env-ref env) e-vec))
-           (define v-type (list-ref n-type i))
-           (define-values (ss-rec ss-lr)
-             ((uncover-live-roots (hash-set env v v-type) base) ss))
-           (values `((assign ,v (vector-ref ,e-vec ,i)) . ,ss-rec)
-                   (set-union ss-lr (set e-vect)))]
-          [`((vector-set! ,e-vec ,i ,e-arg) . ,ss)
-           (define live-roots
-             (if ((vector-type? env) e-arg)
-                 (set e-vec e-arg)
-                 (set e-vec)))
-           (define-values (ss-rec ss-lr) ((uncover-live-roots env base) ss))
-           (values `((vector-set! ,e-vec ,i ,e-arg) . ,ss-rec)
-                   (set-union ss-lr live-roots))]
-          ;; App case doesn't exist yet but would be an interesting case
-          [`((if ,t ,c ,a) . ,(app (uncover-live-roots env base) ss^ clr*))
-           (define (a^ a-clr*) ((uncover-live-roots env clr*) a))
-           (define (c^ c-clr*) ((uncover-live-roots env clr*) c))
-           (define (t^ t-clr*) ((uncover-live-roots env (set-union c-clr a-clr)) t))
-           (values `((if ,t^ ,c^ ,a^) . ,ss^) t-clr)]
-          [((assign ,v ,rhs) . ,ss)
-           ;; TODO
-           ]
-          [(,s . ,ss)
-           ;; TODO
-           ]
-          ;; mostly boring 
-          [`(assign ,lhs (vector ,es ...)) (error 'introduce-rootset/todo/vector)]
-          [else (error 'vectors/introduce-rootset "unmatched ~a" ss)])))
+        ;; Base Case for list recusion -- the starting root set is the live root set
+        ['() (values '() clr*)]
+        ;; env is collected and forward threaded through the recursion
+        ;; then lives are collected through each return and used to
+        ;; rebuild the ast at each step
+        [(cons s ss)           
+         (let*-values ([(ss clr*) ((uncover-call-live-seq env clr*) ss)]
+                       [(s  clr*) ((uncover-call-live-roots env clr*) s)])
+           (vomit "let body" env ss s clr*)
+           (values `(,s . ,ss) clr*))
+         #;
+         (let ([env^ ((uncover-env-stmt env) s)])
+         (vomit "in let" env env^) (flush-output)
+         )]          
+      [else (error 'vectors/introduce-rootset "unmatched ~a" x)])))
 
-        ;; expose-allocation
-        (define/public (expose-allocation)
-          (lambda (ss)
-            (define (recur x) ((expose-allocation) x))
-            (match ss
-              [`() `()]
-              [`(program . ,(app recur ss)) `(program (initialize) . ,ss)]
-              [`(,(assign ,lhs (vector ,cl ,t ,es ...)) . ,(app recur ss))
-               (unless (symbol? lhs)
-                 (error 'vectors/expose-allocation "invalid ~a" lhs))
-               (for ([e (in-list es)])
-                 (unless (or (symbol? e) (boolean? e) (integer? e))
-                   (error 'vectors/expose-allocation "invalid ~a" e)))
-               (define length (length es))           
-               (define size   (* (+ length 1) 8))
-               `((if (collection-needed? ,size)
-                     ((call-live cl
-                      (collect size)))
-                     ())
-                 (assign lhs (allocate ,t ,size))
-                 . ,(let inits ([es es][i 0])
-                      (if (null? es)
-                          ss
-                          `((vector-set ,lhs ,i ,(car es))
-                            . ,(inits (cdr es) (add1 0))))))]
-              [`((if ,t ,(app recur c) ,(app recur a)) . ,(app recur ss))
-               `((if ,t ,c ,a) . ,ss)]
-              [`(,(app recur s) . ,(app recur ss)) `(,s . ,ss)])))
+(define/public (uncover-call-live-roots env clr*)
+  ;; This pass could do better if it had most of the type information precomputed
+  (lambda (x)
+    (define (recur x) ((uncover-call-live-roots env clr*) x))
+    (vomit "uncover call live roots" x env clr*)
+    (match x
+      ;; Base Case for list recusion -- the starting root set is the live root set
+      [`(program ,x.ts ,ss ...)
+       (vomit "uncover call live program")
+       (let ([v* (get-vars)])
+         (unless (null? v*)
+           (error 'uncover-call-live-roots
+                  "empty vars invariant" v*)))
+       (let*-values ([(new-env) (make-immutable-hash x.ts)]
+                     [(ss clr*) ((uncover-call-live-seq new-env clr*) ss)]
+                     [(xs)  (map car x.ts)]
+                     [(xs^) (get-vars)])
+         (unless (set-empty? clr*)
+           (error 'uncover-call-live-roots 
+                  "empty program call live roots invariant ~a" clr*))
+         `(program ,(append xs xs^) ,@ss))]
+      ;; Remove variables when they are assigned
+      [`(assign ,v ,e) ;; v is not live in e
+       (vomit "uncover call live program")
+       (let*-values ([(clr*)   (set-remove clr* v)]
+                     [(e clr*) ((uncover-call-live-roots env clr*) e)])
+         (values `(assign ,v ,e) clr*))]
+      ;; The union of both branches are still allive
+      [`(if ,t ,c* ,a*)
+       (vomit "uncover call live if")
+       (let-values ([(c* c-clr*) ((uncover-call-live-seq env clr*) c*)]
+                    [(a* a-clr*) ((uncover-call-live-seq env clr*) a*)])
+         (let*-values ([(b-clr*) (set-union c-clr* a-clr*)]
+                       [(t clr*) ((uncover-call-live-roots env b-clr*) t)])
+           (values `(if ,t ,c* ,a*) clr*)))]
+      [`(return ,(app recur e lr*)) (values `(return ,e) lr*)]
+      ;; Exp Cases
+      [(? symbol? x)
+       (values x (if (root? env x) (set-add clr* x) clr*))]
+      [(or (? integer? x) (? boolean? x)) (values x clr*)]
+      [(and x `(allocate ,l ,t)) (values x clr*)]
+      [(and x `(collect ,size))
+       (define call-live-roots (set->list clr*))
+       (values `(call-live-roots ,call-live-roots
+                                 (collect ,size))
+               clr*)]
+      [`(initialize ,stack ,heap)
+       (unless (set-empty? clr*)
+         (error 'uncover-call-live-roots
+                "call live roots exist during initialization of rootstack"))
+       (values `(initialize ,stack ,heap) (set))]
+      [`(collection-needed? ,size) (values x clr*)]
+      [`(,(? primitive? op)
+         ,(app (uncover-call-live-roots env (set)) e* clr**) ...)
+       (values `(,op ,@e*) (set-union clr* (set-union* clr**)))]
 
-              #|
-           (define initializers
-             ;; Starts at 1 because the tag is in the first cell
-             (cons
-              `(movq (int ,meta-tag) (offset ,new-lhs 0))
-              (for/list ([e new-es] [i (in-range 1)])
-                #;(when (vector-type? e)
-                (error 'vectors/select-instructions "need find all vector types"))
-                ;; Need to add the code here for setting the tag bits
-                `(movq ,e (offset ,new-lhs ,(* i 8))))))
-           
-           #;
-            `((movq (int ,bytes) (reg rdi))
-           (callq alloc)
-           (movq (reg rax) ,new-lhs)
-           . ,initializers)
-           
-          `(;; rdi is the rootstack pointer in all racket calls
-            ;; Get the next free memory locations
-              (movq (global-value free_ptr) (reg rcx))
-              ;; Create a copy so that if the check succeeds we can set new-lhs
-              (movq (reg rcx) (reg rdx))
-              ;; Put the number of bytes in the second argument register
-              ;; if the check fails we are now ready to call collect
-              (movq (int ,bytes) (reg rsi))
-              ;; Add bytes to free ptr to find the end of allocated memory
-              ;; rcx is chosen because it isn't needed to call collect
-              ;; but it must be ready if the check succeeds to store as the new
-              ;; free pointer.
-              (addq (reg rsi) (reg rcx))
-              ;; Get the end of the allocation space
-              (movq (global-value fromspace_end) (reg rax))
-              ;; perform the comparison
-              (cmpq (reg rcx) (reg rax))
-              ;; check the less than flag
-              ;; al is chosen because it will be smashed by the if
-              (setl (byte-reg al))
-              ;; scale the value up to proper size
-              (movzbq (byte-reg al) (reg r8))
-              (if (reg r8)
-                  ((movq (reg rcx) (global-value free_ptr))
-                   (movq (reg rdx) ,new-lhs))
-                 ;; rdi has root stack
-                 ;; rsi has bytes to allocate
-                  ((callq debug_collect)
-                   (movq (reg rax) (reg rsi))
-                   (movq (reg rax) ,new-lhs)
-                   (addq (int ,bytes) (reg rsi))
-                   (movq (reg rsi) (global-value free_ptr))))
-              ,@initializers)]
-              [`(,s . ,ss)
-        |#
-        
+      #|
+      [`(vector-set! ,(app recur e1 lr*) ,i
+      ,(app (uncover-call-live-roots env (set)) e2 clr*^))
+      (values `(vector-set! ,e1 ,i ,e2) (set-union clr* clr*^))]
+      [`(vector ,(and (app (uncover-type-exp env) t*)
+      (app (uncover-call-live-roots env (set)) e* clr**))
+      ...)
+      (let ([clr* (set-union clr* (set-union* clr**))]
+      [type `(Vector ,@t*)])
+      (values `(vector ,clr* ,type ,@e*) clr*))]
+      [`(vector-ref ,(app (uncover-call-live-roots env clr*) e lr*) ,i)
+      (values `(vector-ref ,e ,i) lr*)]
+      |#
+     
+      [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
+
+;; Merge two hash tables that do not have contradictory key/value pairs
+(define (env-merge e1 e2)
+  (vomit "env-merge" e1 e2)
+  (define res
+    ;; add each of the keys in e2 to e1
+    (for/fold ([e1 e1]) ([(k v) (in-hash e2)])
+      ;; but first check to see if the key already exists in e1
+      (let ([v? (hash-ref e1 k #f)])
+        (cond
+          ;; If it doesn't exist no problem just add the key value pair
+          [(not v?) (hash-set e1 k v)]
+          ;; if it does exits make sure the values are equal?
+          [(equal? v? v) e1]
+          [else
+           (error 'env-merge "inconsistent environments ~a ~a" e1 e2)]))))
+  (vomit "env-merge" res)
+  res)
+
+(define (env-ref env x)
+  (hash-ref env x (lambda () (error 'env-ref "unmatched ~a" x))))
+
+(define (env-set env k v)
+  (let ([v? (hash-ref env k #f)])
+    (if (and v? (not (equal? v v?)))
+        (error 'env-set "~a : ~a is inconsistent with ~a" k v env)
+        (hash-set env k v))))
+
+(define vars (box '()))
+(define (get-vars)
+  (let ((tmp (unbox vars)))
+    (set-box! vars '())
+    tmp))
+(define (unique-var [x 'u])
+  (let ((tmp (gensym x)))
+    (set-box! vars (cons tmp (unbox vars)))
+    tmp))
+
+(define/public (uncover-type-exp env)
+  (define (recur x) ((uncover-type-exp env) x))
+  (lambda (e)
+    (vomit "uncover-type-exp" e env)
+    (match e
+      [(? symbol? x)  (env-ref env x)]
+      [`(allocate ,l ,t) t]
+      [`(vector ,(app recur t*) ...) `(Vector ,@t*)]
+      ;; I has to be a literal integer
+      [`(vector-ref ,(app recur `(Vector ,t* ...)) ,i)
+       (list-ref t* i)]
+      [(? integer?)  `Integer]
+      [(? boolean?)  `Boolean]
+      [`(,(? primitive? op) ,_ ...)
+       (case op
+         [(+ - * read) 'Integer]
+         [(and or not eq?) 'Boolean])]
+      [else (error 'uncover-live-roots-exp "unmatched ~a" e)])))
+
+(define/public (expose-allocation env)
+  (define (recur x) ((expose-allocation) x))
+  (lambda (x)
+    (vomit "expose allocation" x env)
+    (match x
+      [`(program ,xs . ,ss)
+       (vomit "expose allocation program" xs ss)
+       (define-values (ss^ env^) ((expose-allocation-seq env) ss))
+       (define xs^ (append xs (get-vars)))
+       (for ([x xs^])
+         (unless (hash-ref env^ x #f)
+           (error 'expose-allocation "type inference invalid ~a" x)))
+       (let ([xs-t (hash->list env^)])
+         `(program ,xs-t (initialize ,(rootstack-length) ,(heap-length))
+                   . ,ss^))]
+      [`(assign ,lhs (vector ,(and (app (uncover-type-exp env) t*) e*) ...))
+       (vomit "expose allocation assign" lhs t* e*)
+       (let* ([length (length e*)]
+              [size (* (+ length 1) 8)]
+              [type `(Vector ,@t*)])
+         (define-values (inits vars)
+           (for/lists (i* v*)
+                      ([e (in-list e*)]
+                       [n (in-naturals)])
+             (let ([void (unique-var 'void)])
+               (values `(assign ,void (vector-set! ,lhs ,n ,e))
+                       void))))
+         (define new-env
+           (for/fold ([env env]) ([v (in-list vars)])
+             (hash-set env v 'Void)))
+         (values
+          `((if (collection-needed? ,size)
+                ((collect ,size))
+                ())
+            (assign ,lhs (allocate ,length ,type))
+            ,@inits)
+          (env-set new-env lhs type)))]
+      [`(assign ,lhs ,(app (uncover-type-exp env) t))
+       (vomit "expose allocation assign" lhs t)
+       (values (list x) (env-set env lhs t))]
+      [`(if ,t ,c ,a)
+       (vomit "expose allocation if" t c a env)
+       (let-values ([(c c-env) ((expose-allocation-seq env) c)]
+                    [(a a-env) ((expose-allocation-seq env) a)])
+         (vomit "expose allocation if 2" c a c-env a-env)
+         (values `((if ,t ,c ,a)) (env-merge c-env a-env)))]
+      [otherwise
+       (vomit "expose allocation other")
+       (values `(,x) env)])))
+
+(define/public (expose-allocation-seq env)
+  (lambda (ss)
+    (vomit "expose allocation sequence" ss env)
+    (match ss
+      ['()
+       (vomit "null")
+       (values '() env)]
+      [(cons s ss)
+       (vomit "cons" s ss)
+       (let*-values ([(s^  env^)  ((expose-allocation env) s)]
+                     [(ss^ env^^) ((expose-allocation-seq env^) ss)])
+         (values (append s^ ss^) env^^))]
+      [else (error 'expose-allocation-seq)])))
+
+#|
+(define initializers
+  ;; Starts at 1 because the tag is in the first cell
+  (cons
+   `(movq (int ,meta-tag) (offset ,new-lhs 0))
+   (for/list ([e new-es] [i (in-range 1)])
+     #;(when (vector-type? e)
+     (error 'vectors/select-instructions "need find all vector types"))
+     ;; Need to add the code here for setting the tag bits
+     `(movq ,e (offset ,new-lhs ,(* i 8))))))
+
+#;
+`((movq (int ,bytes) (reg rdi))
+(callq alloc)
+(movq (reg rax) ,new-lhs)
+. ,initializers)
+
+`(;; rdi is the rootstack pointer in all racket calls
+;; Get the next free memory locations
+(movq (global-value free_ptr) (reg rcx))
+;; Create a copy so that if the check succeeds we can set new-lhs
+(movq (reg rcx) (reg rdx))
+;; Put the number of bytes in the second argument register
+;; if the check fails we are now ready to call collect
+(movq (int ,bytes) (reg rsi))
+;; Add bytes to free ptr to find the end of allocated memory
+;; rcx is chosen because it isn't needed to call collect
+;; but it must be ready if the check succeeds to store as the new
+;; free pointer.
+(addq (reg rsi) (reg rcx))
+;; Get the end of the allocation space
+(movq (global-value fromspace_end) (reg rax))
+;; perform the comparison
+(cmpq (reg rcx) (reg rax))
+;; check the less than flag
+;; al is chosen because it will be smashed by the if
+(setl (byte-reg al))
+;; scale the value up to proper size
+(movzbq (byte-reg al) (reg r8))
+(if (reg r8)
+    ((movq (reg rcx) (global-value free_ptr))
+     (movq (reg rdx) ,new-lhs))
+    ;; rdi has root stack
+    ;; rsi has bytes to allocate
+    ((callq debug_collect)
+     (movq (reg rax) (reg rsi))
+     (movq (reg rax) ,new-lhs)
+     (addq (int ,bytes) (reg rsi))
+     (movq (reg rsi) (global-value free_ptr))))
+,@initializers)]
+[`(,s . ,ss)
+ |#
+ 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; introduce-rootset : C1-Expr (Uid x Uid)
+ ;; introduce-rootset : Uid -> stmt -> (listof stmt)
 
-    ;; do not split live ranges of variable at call sites
-    (define/public (introduce-rootstack rs-var)
-      (lambda (s)
-        (define (recur x) ((introduce-rootstack rs-var env) x))
-        (match s
-          [`(program (initialize) ,ss ...)
-           (define rs-var (gensym 'rootstack))
-           `(program (initialize)
-                     (assign ,rs-var ,(global-value rootstack_begin))
-                     (append* (map (introduce-rootstack rs-var) ss)))]
-          [(call-live-roots (,clr* ...) (collect ,size))
-           ;; We could consider having a frame marker of some sort
-           (define new-rs-var  (gensym 'rootstack))
-           (define frame-size  (* (length clr*) 8))
-           (define pushes
-             (for/list ([root (in-list clr*)] [i (in-naturals)])
-               `(movq ,root (offset ,rs-var ,(* i 8)))))
-           ;; reverse order of pushes
-           (define pops
-             (for/fold ([pops '()]) ([root (in-list clr*)] [i (in-naturals)])
-               `((movq ,root (offset ,rs-var ,(* i 8))) . ,pops)))
-           `(,@pushes
-             (assign ,new-rs (+ ,rs-var ,frame-size))
-             (collect ,new-rs ,size)
-             ,@pops  
-             ,@ss-rec)]
-          ;; This is the only node that has to worry about congruence for now
-          [`(if ,(app recur t) (,(app recur c) ...) (,(app recur a) ...))
-           `(if ,t ,c ,a)]
-          [otherwise s])))
-    
+ ;; do not split live ranges of variable at call sites
+ (define/public (introduce-rootstack rs-var)
+   (lambda (x)
+     (define (recur x) ((introduce-rootstack rs-var) x))
+     (match x
+       [`(call-live-roots (,clr* ...) (collect ,size))
+        (define rs-var^ (unique-var 'rootstack))
+        (define frame-size  (* (length clr*) 8))
+        (define pushes
+          (for/list ([root (in-list clr*)] [i (in-naturals)])
+            `(movq (var ,root) (offset (var ,rs-var) ,(* i 8)))))
+        ;; reverse order of pushes
+        (define pops
+          (for/fold ([pops '()]) ([root (in-list clr*)] [i (in-naturals)])
+            `((movq (offset (var ,rs-var) ,(* i 8)) (var ,root)) . ,pops)))
+        `(,@pushes
+          (assign ,rs-var^ (+ ,rs-var ,frame-size))
+          (collect ,rs-var^ ,size)
+          ,@pops)]
+       [`(if ,t (,(app recur c**) ...) (,(app recur a**) ...))
+        `((if ,t ,(append* c**) ,(append* a**)))]
+       [`(program ,xs (initialize ,stack ,heap) . ,ss)
+        (unless (null? (get-vars))
+          (error 'introduce-rootstack "empty rootstack invariant"))
+        (let* ([x   (unique-var 'rootstack)]
+               [s   `(assign ,x (global-value rootstack_begin))]
+               [ss  (append* (map (introduce-rootstack x) ss))]
+               [xs  (append xs (get-vars))])
+          `(program ,xs (initialize ,stack ,heap) ,s . ,ss))]
+       [otherwise `(,x)])))
+ 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; select-instructions : C2 -> psuedo-x86
+ ;; select-instructions : C2 -> psuedo-x86
 
-    (define/override (select-instructions)
-      (lambda (e)
-	(match e
-          [`(assign ,lhs (allocate (Vector ts ...) ,length))
-           (define tmp (gensym tmp))
-           (define lhs^ ((select-intructions) lhs))
-           (define size (* (add1 length) 8))
-           (define tag
-             (for/fold ([tag length])
-                       ([t (in-list ts)]
-                        [i (in-naturals 6)])
-               (if (and (pair? t) (eq? Vector (car t)))
-                   (bitwise-ior tag (arithmetic-shift 1 i))
-                   tag)))
-           `((movq (Global-Value free_ptr) (reg rax))
-             (movq (reg rax) ,lhs)
-             (addq (int ,size) ,(var rax))
-             (movq (reg rax) (global-value free_ptr))
-             (movq (offset ,lhs 0) (int ,tag)))]
-          [`(collect ,rs ,size)
-           (define rs^ ((select-insrtructions) rs))
-           (define size^ ((select-instructions) size))
-           `((movq ,rs^ (reg rdi))
-             (movq ,size^ (ref rsi))
-             (callq collect))]
-          [`(if (collection-needed? ,size) ,cs ,as)
-           (define cs^  (append* (map (select-instructions) cs)))
-           (define as^  (append* (map (select-instructions) as)))
-           (define data (gensym 'end-data))
-           (define heap (gensym 'end-heap))
-           `((movq (global-value free-ptr) (reg rsi))
-             (addq (int ,size) (reg rsi))
-             (movq (global-value fromspace_end) (var heap))
-             (cmpq (reg rsi) (var heap))
-             (setl (byte-reg al))
-             (movzbq (byte-reg al) (var rax))
-             (if (reg rax) as^ cs^)) #| purposefully fliped |#]
-          [`(assign ,lhs (vector-ref ,e-vec ,i))
-           (define new-lhs ((send this select-instructions) lhs))
-           (define new-e-vec ((send this select-instructions) e-vec))
-           `((movq (offset ,new-e-vec ,(* i 8)) ,new-lhs))]
-          [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
-           (define new-lhs ((send this select-instructions) lhs))
-           (define new-e-vec ((send this select-instructions) e-vec))
-           (define new-e-arg ((send this select-instructions) e-arg))
-           `((movq ,new-e-arg (offset ,new-e-vec ,(* i 8))))]
-          #|
-           [`(if (,(? relop? relop) ,a1 ,a2)
-                 (,(app (send this select-instructions) then-sss) ...)
-                 (,(app (send this select-instructions) else-sss) ...))
-            `(if (,relop? ,a1 ,a2)
-                 ,(append* then-sss)
-                 ,(append* else-sss))]
-           |#
-           [`(program ,xs (initialize) ,ss ...)
-            `(program ,xs (callq initialize)
-
-                      ,@(append* (map (send this select-instructions) ss)))]
-	   [else ((super select-instructions) e)]
-	   )))
-    
+ (define/override (select-instructions)
+   (lambda (x)
+     (vomit "select instructions" x vars)
+     (match x
+       [`(global-value ,l) `(,x)]
+       ;; Gets caught in the unary app case otherwise
+       [`(assign ,lhs (global-value ,l))
+        (define lhs^ ((select-instructions) lhs))
+        `((movq (global-value ,l) ,lhs^))]
+       [`(initialize ,s ,h)
+        `((movq (int ,s) (reg rdi))
+          (movq (int ,h) (reg rsi))
+          (callq initialize))]
+       [`(movq ,lhs ,rhs) `(,x)]
+       [`(assign ,lhs (allocate ,length (Vector ,ts ...)))
+        (define lhs^ ((select-instructions) lhs))
+        (define size (* (add1 length) 8))
+        ;;highest 7 bits are unused
+        ;;lowest 1 bit is 0 saying this is not a forwarding pointer
+        (define isForward-tag 0)
+        ;;next 6 lowest bits are the length
+        (define length-tag (arithmetic-shift size 1))
+        ;;bits [6,56] are a bitmask indicating if [0,50] are pointers
+        (define ptr-tag
+          (for/fold ([tag 0])
+                    ([t (in-list ts)]
+                     [i (in-naturals 7)])
+            (bitwise-ior tag (arithmetic-shift (b2i (root-type? t)) i))))
+        (define tag (bitwise-ior ptr-tag length-tag isForward-tag))
+        `((movq (global-value free_ptr) ,lhs^)
+          (addq (int ,size) (global-value free_ptr))
+          (movq (int ,tag) (offset ,lhs^ 0)))]
+       [`(collect ,rs ,size)
+        (define rs^ ((select-instructions) rs))
+        (define size^ ((select-instructions) size))
+        `((movq ,rs^ (reg rdi))
+          (movq ,size^ (reg rsi))
+          (callq collect))]
+       [`(if (collection-needed? ,size) ,cs ,as)
+        (define cs^  (append* (map (select-instructions) cs)))
+        (define as^  (append* (map (select-instructions) as)))
+        (define data (unique-var 'end-data))
+        (define lt   (unique-var 'lt))
+        (vomit "collection needed?" data lt)
+        `((movq (global-value free_ptr) (var ,data))
+          (addq (int ,size) (var ,data))
+          (cmpq (var ,data) (global-value fromspace_end))
+          (setl (byte-reg al))
+          (movzbq (byte-reg al) (var ,lt))
+          #| purposefully fliped clauses because we want (not lt)|#
+          (if (eq? (int 0) (var ,lt)) ,as^ ,cs^))]
+       [`(assign ,lhs (vector-ref ,e-vec ,i))
+        (define lhs^ ((send this select-instructions) lhs))
+        (define e-vec^ ((send this select-instructions) e-vec))
+        `((movq (offset ,e-vec^ ,(* (add1 i) 8)) ,lhs^))]
+       [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
+        (define new-lhs ((send this select-instructions) lhs))
+        (define new-e-vec ((send this select-instructions) e-vec))
+        (define new-e-arg ((send this select-instructions) e-arg))
+        `((movq ,new-e-arg (offset ,new-e-vec ,(* (add1 i) 8))))]
+       [`(program ,xs . ,ss)
+        (vomit "program" xs)
+        (unless (null? (get-vars))
+          (error 'select-instructions "empty vars invariant broken"))
+        (let* ([ss (append* (map (select-instructions) ss))])
+          (let ([xs^ (get-vars)])
+            (let ([xs (append xs xs^)])
+              (vomit "program" xs xs^)
+              `(program ,xs ,@ss))))]
+       [else ((super select-instructions) x)]
+       )))
+ 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uncover-live
-    (define/override (free-vars a)
-      (match a
-        [`(global-value ,l) (set)]
-        [`(offset ,e ,i) (send this free-vars e)]
-        [else (super free-vars a)]
-        ))
+ ;; uncover-live
+ (define/override (free-vars a)
+   (match a
+     [`(global-value ,l) (set)]
+     [`(offset ,e ,i) (send this free-vars e)]
+     [else (super free-vars a)]
+     ))
 
-    (define/override (write-vars x)
-      (match x
-        [`(setl ,d) (send this free-vars d)]
-        [else (super write-vars x)]))
+ (define/override (write-vars x)
+   (match x
+     [`(setl ,d) (send this free-vars d)]
+     [else (super write-vars x)]))
 
-    (define/override (read-vars x)
-      (match x
-        [`(setl ,d) (set)]
-        [else (super read-vars x)]))
-    
+ (define/override (read-vars x)
+   (match x
+     [`(setl ,d) (set)]
+     [else (super read-vars x)]))
+ 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
-    (define/override (assign-homes homes)
-      (lambda (e)
-	(match e
-          [`(global-value ,l) e]
-          [`(offset ,e ,i)
-	    (define new-e ((assign-homes homes) e))
-	    `(offset ,new-e ,i)]
-          [`(setl ,e)
-           (define new-e ((assign-homes homes) e))
-           `(setl ,new-e)]
-          [else ((super assign-homes homes) e)]
-	   )))
+ ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
+ (define/override (assign-homes homes)
+   (lambda (e)
+     (match e
+       [`(global-value ,l) e]
+       [`(offset ,e ,i)
+        (define new-e ((assign-homes homes) e))
+        `(offset ,new-e ,i)]
+       [`(setl ,e)
+        (define new-e ((assign-homes homes) e))
+        `(setl ,new-e)]
+       [else ((super assign-homes homes) e)]
+       )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; patch-instructions : psuedo-x86 -> x86
+ ;; patch-instructions : psuedo-x86 -> x86
 
-    (define/override (on-stack? a)
-      (match a
-        [`(offset ,e ,i) #t]
-        [else (super on-stack? a)]))
-
-
-    (define/override (instructions)
-      (set-add (super instructions) 'setl))
-
-    
-    (define/override (patch-instructions)
-      (lambda (e)
-        (match e
-          #;
-          [`(if (,(? relop? relop) ,a1 ,a2)
-          (,(app (send this patch-instructions) then-sss) ...)
-          (,(app (send this patch-instructions) else-sss) ...))
-        (define else-label (gensym 'else))
-        (define join-label (gensym 'if_end))
-        (define jump
-          (hash-ref relop (send this relops-table)
-                    (error 'INTERNAL/vector "undefined relop ~a" relop)))
-        `((cmpq ,a1 ,a2)
-          (,jump ,else-label)
-          ,@(append* then-sss)
-          (jmp ,join-label)
-          (label ,else-label)
-          ,@(append* else-sss)
-          (label ,join-label))]
-      [other ((super patch-instructions) other)])))
+ (define/override (on-stack? a)
+   (match a
+     [`(offset ,e ,i) #t]
+     [else (super on-stack? a)]))
 
 
-    
+ (define/override (instructions)
+   (set-add (super instructions) 'setl))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; print-x86 : x86 -> string
-    
-    (define/override (print-x86)
-      (lambda (e)
-	(match e
-          [`(offset (stack ,n) ,i)
-	    (format "~a(%rbp)" (- i n))]
-          [`(offset ,e ,i)
-	    (format "~a(~a)" i ((send this print-x86) e))]
-          [`(global-value ,label)
-           (format "~a(%rip)" (label-name (symbol->string label)))]
-          [`(setl ,d) (format "\tsetl\t~a\n" ((send this print-x86) d))]
-          [else ((super print-x86) e)]
-	   )))
-    ));; compile-R2
+;; print-x86 : x86 -> string
+
+(define/override (print-x86)
+  (lambda (e)
+    (match e
+      [`(offset (stack ,n) ,i)
+       (format "~a(%rbp)" (- i n))]
+      [`(offset ,e ,i)
+       (format "~a(~a)" i ((send this print-x86) e))]
+      [`(global-value ,label)
+       (format "~a(%rip)" (label-name (symbol->string label)))]
+      [`(setl ,d) (format "\tsetl\t~a\n" ((send this print-x86) d))]
+      [else ((super print-x86) e)]
+      )))));; compile-R2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
@@ -441,6 +557,16 @@
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("expose allocation"
+       ,(send compiler expose-allocation (hash))
+       ,(send interp interp-C '()))
+      ("uncover call live roots"
+       ,(send compiler uncover-call-live-roots (hash) (set))
+       ,(send interp interp-C '()))
+
+      ("introduce rootstack"
+       ,(send compiler introduce-rootstack 'rootstack)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))

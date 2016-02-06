@@ -74,24 +74,23 @@
     (define/public (interp-C env)
       (lambda (ast)
         (vomit "R0/interp-C" ast env)
-	(match ast
-           [(? symbol?)
-	    (lookup ast env)]
-	   [(? integer?) ast]
-	   [`(assign ,x ,e)
-	    (let ([v ((send this interp-C env) e)])
-	      (cons (cons x v) env))]
-	   [`(return ,e)
-	    (let ([v ((send this interp-C env) e)])
-	      (cons (cons result v) env))]
-	   [`(program ,xs ,ss ...)
-	    (define env ((send this seq-C '()) ss))
-	    (lookup result env)]
-	   [`(,op ,args ...) #:when (set-member? (send this primitives) op)
-	    (apply (interp-op op) (map (send this interp-C env) args))]
-	   [else
-	    (error "no match in interp-C0 for " ast)]
-	   )))
+        (match ast
+          [(? symbol? x) (lookup x env)]
+          [(? integer? i) i]
+          [`(assign ,x ,e)
+           (let ([v ((send this interp-C env) e)])
+             (cons (cons x v) env))]
+          [`(return ,e)
+           (let ([v ((send this interp-C env) e)])
+             (cons (cons result v) env))]
+          [`(program ,xs ,ss ...)
+           (define env ((send this seq-C '()) ss))
+           (lookup result env)]
+          [`(,op ,args ...) #:when (set-member? (send this primitives) op)
+                            (apply (interp-op op) (map (send this interp-C env) args))]
+          [else
+           (error "no match in interp-C0 for " ast)]
+          )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; psuedo-x86 and x86
@@ -178,14 +177,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S1: Booleans and conditionals
 
-(define (i2b i)
-  (cond [(eq? i 0) #f]
-        [else #t]))
-
-(define (b2i b)
-  (cond [b 1]
-        [else 0]))
-
 (define interp-R1
   (class interp-R0
     (super-new)
@@ -209,32 +200,31 @@
       (lambda (ast)
         (vomit "R1/interp-scheme" env)
 	(match ast
-           [#t #t]
-           [#f #f]
-	   [`(and ,e1 ,e2)
-	    (match ((send this interp-scheme env) e1)
-	      [#t (match ((send this interp-scheme env) e2)
-		    [#t #t] [#f #f])]
-              [#f #f])]
-	   [`(if ,cnd ,thn ,els)
-	    (if ((send this interp-scheme env) cnd)
-		((send this interp-scheme env) thn)
-		((send this interp-scheme env) els))]
-           [else ((super interp-scheme env) ast)]
-	   )))
+          [#t #t]
+          [#f #f]
+          [`(and ,e1 ,e2)
+           (match ((send this interp-scheme env) e1)
+             [#t (match ((send this interp-scheme env) e2)
+                   [#t #t] [#f #f])]
+             [#f #f])]
+          [`(if ,cnd ,thn ,els)
+           (if ((send this interp-scheme env) cnd)
+               ((send this interp-scheme env) thn)
+               ((send this interp-scheme env) els))]
+          [else ((super interp-scheme env) ast)]
+          )))
 
     (define/override (interp-C env)
       (lambda (ast)
-	(vomit "R1/interp-C" ast)
-	(match ast
-           [#t #t]
-           [#f #f]
-	   [`(if ,cnd ,thn ,els)
-	    (if ((send this interp-C env) cnd)
-		((send this seq-C env) thn)
-		((send this seq-C env) els))]
-	   [else ((super interp-C env) ast)]
-	   )))
+        (vomit "R1/interp-C" ast)
+        (match ast
+          [#t #t]
+          [#f #f]
+          [`(if ,cnd ,thn ,els)
+           (if ((send this interp-C env) cnd)
+               ((send this seq-C env) thn)
+               ((send this seq-C env) els))]
+          [else ((super interp-C env) ast)])))
 
     (define (goto-label label ss)
       (cond [(null? ss)
@@ -288,44 +278,44 @@
       (lambda (ast)
         (when (pair? ast)
           (vomit "R1/interp-x86" (car ast) env))
-	(match ast
+        (match ast
           [`((sete ,d) . ,ss)
            (define eflags ((send this interp-x86-exp env) '(reg __flag)))
-           (define zero   (bitwise-and eflags #b1000000))
+           (define zero   (arithmetic-shift (bitwise-and eflags #b1000000) -6))
            (define name (send this get-name d))
            ((send this interp-x86 (cons (cons name zero) env)) ss)]
-	   ;; if's are present before patch-instructions
-	   [(or `((if ,cnd ,thn ,els) . ,ss)
-		`((if ,cnd ,thn ,_ ,els ,_) . ,ss))
-	    (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))
-		((send this interp-x86 env) (append thn ss))
-		((send this interp-x86 env) (append els ss)))]
-	   [`((label ,l) . ,ss)
-	    ((send this interp-x86 env) ss)]
+          ;; if's are present before patch-instructions
+          [(or `((if ,cnd ,thn ,els) . ,ss)
+               `((if ,cnd ,thn ,_ ,els ,_) . ,ss))
+           (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))
+               ((send this interp-x86 env) (append thn ss))
+               ((send this interp-x86 env) (append els ss)))]
+          [`((label ,l) . ,ss)
+           ((send this interp-x86 env) ss)]
           [`((cmpq ,s1 ,s2) . ,ss)
            (let* ([v1 ((send this interp-x86-exp env) s1)] 
                   [v2 ((send this interp-x86-exp env) s2)]
                   [zero   (arithmetic-shift (b2i (eq? v1 v2)) 6)]
                   [eflags (bitwise-ior zero)])
              ((send this interp-x86 (cons (cons '__flag eflags) env)) ss))]
-	   [`((movzbq ,s ,d) . ,ss)
-	    (define x (send this get-name d))
-	    (define v ((send this interp-x86-exp env) s))
-	    ((send this interp-x86 (cons (cons x v) env)) ss)]
-	   [`((jmp ,label) . ,ss)
-	    ((send this interp-x86 env) (goto-label label (program)))]
-	   [`((je ,label) . ,ss)
-	    (let* ([eflags (lookup '__flag env)]
-                   [zero   (bitwise-and #b1000000 eflags)]
-                   [zero?  (i2b (arithmetic-shift zero -6))])
-	      (cond [zero? 
-		     ((send this interp-x86 env) (goto-label label (program)))]
-		    [else ((send this interp-x86 env) ss)]))]
-	   [`(program ,xs ,ss ...)
-	    (parameterize ([program ss])
-	     ((super interp-x86 '()) ast))]
-	   [else ((super interp-x86 env) ast)]
-	   )))
+          [`((movzbq ,s ,d) . ,ss)
+           (define x (send this get-name d))
+           (define v ((send this interp-x86-exp env) s))
+           ((send this interp-x86 (cons (cons x v) env)) ss)]
+          [`((jmp ,label) . ,ss)
+           ((send this interp-x86 env) (goto-label label (program)))]
+          [`((je ,label) . ,ss)
+           (let* ([eflags (lookup '__flag env)]
+                  [zero   (bitwise-and #b1000000 eflags)]
+                  [zero?  (i2b (arithmetic-shift zero -6))])
+             (cond [zero? 
+                    ((send this interp-x86 env) (goto-label label (program)))]
+                   [else ((send this interp-x86 env) ss)]))]
+          [`(program ,xs ,ss ...)
+           (parameterize ([program ss])
+             ((super interp-x86 '()) ast))]
+          [else ((super interp-x86 env) ast)]
+          )))
 	    
     ));; class interp-R1
     
@@ -346,7 +336,7 @@
     (define rootstack_end   (box uninitialized))
     ;; Like define but public
     (field [stack-size 8000 #;Bytes]
-           [heap-size  80   #;Bytes]
+           [heap-size  10000   #;Bytes]
            [global-label-table
             (make-immutable-hash
              `((free_ptr         . ,free_ptr)
@@ -375,7 +365,7 @@
         (error 'interp-R2/collect! "not yet implemented")))
 
     (define/public (initialize!)
-      (lambda ()
+      (lambda (stack-length heap_length)
         (set-box! memory '())
         (let* ([s-begin (allocate! 'rootstack stack-size)]
                [h-begin (allocate! 'fromspace heap-size)])
@@ -448,15 +438,15 @@
     
     (define/override (interp-op op)
       (match op
-         ['eq? (lambda (v1 v2)
-                 (cond [(or (and (fixnum? v1) (fixnum? v2)) 
-			    (and (boolean? v1) (boolean? v2))
-			    (and (vector? v1) (vector? v2)))
-			(eq? v1 v2)]))]
-         ['vector vector]
-	 ['vector-ref vector-ref]
-	 ['vector-set! vector-set!]
-	 [else (super interp-op op)]))
+        ['eq? (lambda (v1 v2)
+                (cond [(or (and (fixnum? v1) (fixnum? v2)) 
+                           (and (boolean? v1) (boolean? v2))
+                           (and (vector? v1) (vector? v2)))
+                       (eq? v1 v2)]))]
+        ['vector vector]
+        ['vector-ref vector-ref]
+        ['vector-set! vector-set!]
+        [else (super interp-op op)]))
     
     (define (mem-error message expr)
       (lambda (who fmt . args)
@@ -468,17 +458,43 @@
       (lambda ()
         (error 'interp-x86-exp "global label is unknown in ~a" ast)))
     
+    (define/override (interp-C env)
+      (lambda (ast)
+        (vomit "R2/interp-C" ast env)
+        (match ast
+          ;; I should do better than make these noops
+          [`(initialize ,s ,h)
+           (unless (and (exact-nonnegative-integer? s)
+                        (exact-nonnegative-integer? h))
+             (error "intialize must be called with literals"))
+           ((initialize!) s h)
+           env]
+          [`(collection-needed? ,size)   #t]
+          [`(collect ,size)              env]
+          [`(collect ,rs ,size)          env]
+          [`(global-value ,l) (fetch-global l)]
+          [`(movq ,src ,dst)             env]
+          [`(allocate ,l ,t)
+           (build-vector l (lambda a uninitialized))]
+          [`(call-live-roots (,xs ...) ,ss ...)
+           ((send this seq-C env) ss)]
+          [otherwise ((super interp-C env) ast)])))
+    
+    (define/public (fetch-global label)
+      (let* ([err (global-value-err label)]
+             [ref (hash-ref global-label-table label err)]
+             [value (unbox ref)])
+        (when (equal? value uninitialized)
+          (debug "fetch" global-label-table)
+          (error 'interp-R2/fetch-global
+                 "global value, ~a, used before initialization"
+                 label))
+        value))
+    
     (define/override (interp-x86-exp env)     
       (lambda (ast)
-	(match ast
-          [`(global-value ,label)
-           (define value
-             (unbox (hash-ref global-label-table label (global-value-err ast))))
-           (when (equal? value uninitialized)
-             (error 'interp-x86-exp
-                    "global value used before initialization in ~a"
-                    ast))
-           value]
+        (match ast
+          [`(global-value ,label) (fetch-global label)]
           [`(offset ,d ,i)
            (define base ((send this interp-x86-exp env) d))
            (define addr (+ base i))
@@ -538,14 +554,19 @@
                   [eflags (bitwise-ior overflow sign zero)])
              ((send this interp-x86 (cons (cons '__flag eflags) env)) ss))]
           [`((callq initialize) . ,ss)
-           ((initialize!))
+           (define stack-size ((interp-x86-exp env) '(reg rdi)))
+           (define heap-size ((interp-x86-exp env) '(reg rsi))) 
+           ((initialize!)  stack-size heap-size)
            ((send this interp-x86 env) ss)]
           [`((callq malloc) . ,ss)
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
            ((send this interp-x86 `((rax . ,(allocate! 'malloc num-bytes)) . ,env)) ss)]
           [`((callq alloc) . ,ss)
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
-           ((send this interp-x86 `((rax . ,(allocate! 'alloc num-bytes)) . ,env)) ss)]        
+           ((send this interp-x86 `((rax . ,(allocate! 'alloc num-bytes)) . ,env)) ss)]
+          [`((callq collect) . ,ss)
+           ;; TODO move some pointers around
+           ((send this interp-x86 env) ss)]
           [`((movq ,s ,d) . ,ss)
            (define value   ((send this interp-x86-exp env) s))
            (define new-env ((send this interp-x86-store env) d value))

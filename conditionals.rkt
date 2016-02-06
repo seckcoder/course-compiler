@@ -18,7 +18,8 @@
     ;; type-check : env -> S1 -> S1 (new pass)
     (define/public (type-check env)
       (lambda (e)
-	(match e
+        (vomit "conditionals/type-check" e env)
+        (match e
 	   [(? symbol?) (lookup e env)]
 	   [(? integer?) 'Integer]
 	   [`(let ([,x ,e]) ,body)

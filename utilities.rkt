@@ -2,9 +2,11 @@
 (require racket/pretty)
 (require (for-syntax racket))
 (provide debug-level debug vomit
-         map2 label-name lookup  make-dispatcher assert
+         map2 b2i i2b
+         fix while 
+         label-name lookup  make-dispatcher assert
          read-fixnum read-program 
-	 compile compile-file check-passes interp-tests compiler-tests fix while 
+	 compile compile-file check-passes interp-tests compiler-tests
 	 make-graph add-edge adjacent vertices print-dot
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align)
@@ -71,6 +73,16 @@
       (loop))))
 
 (define fix (lambda (f) (lambda (x) ((f (fix f)) x))))
+
+;; These functions convert between booleans and integers in
+;; the regular C convention
+(define (i2b i)
+  (cond [(eq? i 0) #f]
+        [else #t]))
+
+(define (b2i b)
+  (cond [b 1]
+        [else 0]))
 
 ;; This function is like map but the function f returns
 ;; two values using the ``values'' form. Thus, the result

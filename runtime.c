@@ -78,6 +78,7 @@ static void process_vector(ptr* scan_ptr, ptr* free_ptr);
     as large as before.
 
   Object Tag (64 bits)
+  #b|- 7 bit unused -|- 50 bit field [50, 0] -| 6 bits lenght -| 1 bit isForwarding Pointer  
   * If the bottom-most bit is zero, the tag is really a forwarding pointer.
   * Otherwise, its an object. In that case, the next 
     6 bits give the length of the object (max of 50 64-bit words).
@@ -97,25 +98,40 @@ ptr fromspace_end;
 ptr rootstack_begin;
 ptr rootstack_end;
 
-
 int initialized = 0;
 
-void initialize()
+void initialize(long int rootstack_length, long int heap_length)
 {
-  long int initial_len = 1000000;
 
-  fromspace_begin = malloc(8 * initial_len);
-  fromspace_end = fromspace_begin + initial_len;
-
-  tospace_begin = malloc(8 * initial_len);
-  tospace_end = tospace_begin + initial_len;
-
+  long int space_length = heap_length / 2;
+  
+  if (!(fromspace_begin = malloc(8 * space_length)))
+    {
+      printf("Failed to malloc %ld byte fromspace\n", 8 * space_length);
+      exit(-1);
+    }
+  
+  fromspace_end = fromspace_begin + space_length;
   free_ptr = fromspace_begin;
+  
+  if (!(tospace_begin = malloc(8 * space_length)))
+    {
+      printf("Failed to malloc %ld byte tospace\n", 8 * space_length);
+      exit(-1);
+    }
+  
+  tospace_end = tospace_begin + space_length;
 
-  rootstack_begin = malloc(8 * initial_len);
+  if (!(rootstack_begin = malloc(8 * rootstack_length)))
+    {
+      printf("Failed to malloc %ld byte rootstack", 8 * rootstack_length);
+      exit(-1);
+    }
+  
   rootstack_end = rootstack_begin + initial_len;
-
   initialized = 1;
+
+  return;
 }
 
 ptr alloc(long int bytes_requested)
@@ -242,13 +258,16 @@ void copy_vector(ptr* vec, ptr* free_ptr)
 void process_vector(ptr* scan_ptr, ptr* free_ptr)
 {
   long int tag = **scan_ptr;
+  // Clear the forwarding pointer
   tag = tag >> 1;
+  // Extract length from the tag
   int len = (tag & six_ones());
+  // Each bit low to high says if the next index is a ptr
   tag = tag >> 6;
   
   /* advance past the tag */
   *scan_ptr = *scan_ptr + 1;
-  
+
   for (int i = 0; i != len; ++i) {
     if ((tag & 1) == 1) {
       copy_vector(scan_ptr, free_ptr);
