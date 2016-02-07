@@ -394,11 +394,13 @@
 
 (define/override (write-vars x)
   (match x
+    [`(movq ,s (offset ,d ,i)) (set)]
     [`(setl ,d) (send this free-vars d)]
     [else (super write-vars x)]))
 
 (define/override (read-vars x)
   (match x
+    [`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
     [`(setl ,d) (set)]
     [else (super read-vars x)]))
 

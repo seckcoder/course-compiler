@@ -25,7 +25,7 @@
 (define suite-list
   `((0 . ,(range 1 26))
     (1 . ,(range 1 31)) 
-    (2 . ,(range 1 11))   
+    (2 . ,(range 1 12))   
     (3 . ,(range 1 11))
     (4 . ,(range 0 5)))) 
 

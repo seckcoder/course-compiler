@@ -266,7 +266,6 @@
 
     (define/override (write-vars instr)
       (match instr
-        [`(movq ,s (offset ,d ,i)) (set)]
         [`(movzbq ,s ,d) (send this free-vars d)]
         [`(cmpq ,s1 ,s2) (set '__flag)]
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
