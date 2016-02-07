@@ -24,7 +24,7 @@
 
 (define suite-list
   `((0 . ,(range 1 26))
-    (1 . ,(range 1 30)) 
+    (1 . ,(range 1 31)) 
     (2 . ,(range 1 11))   
     (3 . ,(range 1 11))
     (4 . ,(range 0 5)))) 
@@ -141,16 +141,17 @@
 
  ;; This is the loop that calls test compile for each suite
  (for ([compiler (compilers-to-test)])
-    (let ([info? (hash-ref compiler-table compiler #f)])
-      (unless info?
-        (error 'run-tests "invalid compiler: ~a" compiler))
-      (match-let ([(list tyck pass suites) info?])
-        (for ([suite (suites-to-test)])
-          (when (set-member? suites suite)
-            (let* ([sname (format "s~a" suite)]
-                   [test-set (set-intersect (suite-range suite) (tests-to-run))]
-                   [tests (sort test-set <)])
-              (test-compiler compiler tyck pass sname tests))))))))
+   (let ([info? (hash-ref compiler-table compiler #f)])
+     (unless info?
+       (error 'run-tests "invalid compiler: ~a" compiler))
+     (match-let ([(list tyck pass suites) info?])
+       (for ([suite (suites-to-test)])
+         (when (set-member? suites suite)
+           (let* ([sname (format "s~a" suite)]
+                  [test-set (set-intersect (suite-range suite) (tests-to-run))]
+                  [tests (sort test-set <)])
+             (test-compiler compiler tyck pass sname tests))))))))
+
 
  
 

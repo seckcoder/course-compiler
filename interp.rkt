@@ -211,20 +211,25 @@
            (if ((send this interp-scheme env) cnd)
                ((send this interp-scheme env) thn)
                ((send this interp-scheme env) els))]
+          [`(program (type ,ty) ,e) ((send this interp-scheme '()) e)]
           [else ((super interp-scheme env) ast)]
           )))
 
     (define/override (interp-C env)
       (lambda (ast)
-        (vomit "R1/interp-C" ast)
-        (match ast
-          [#t #t]
-          [#f #f]
-          [`(if ,cnd ,thn ,els)
-           (if ((send this interp-C env) cnd)
-               ((send this seq-C env) thn)
-               ((send this seq-C env) els))]
-          [else ((super interp-C env) ast)])))
+	(vomit "R1/interp-C" ast)
+	(match ast
+           [#t #t]
+           [#f #f]
+	   [`(if ,cnd ,thn ,els)
+	    (if ((send this interp-C env) cnd)
+		((send this seq-C env) thn)
+		((send this seq-C env) els))]
+	   [`(program ,xs (type ,ty) ,ss ...)
+            ((super interp-C env) `(program ,xs ,@ss))]
+	   [else ((super interp-C env) ast)]
+	   )))
+
 
     (define (goto-label label ss)
       (cond [(null? ss)
@@ -290,6 +295,7 @@
            (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))
                ((send this interp-x86 env) (append thn ss))
                ((send this interp-x86 env) (append els ss)))]
+
           [`((label ,l) . ,ss)
            ((send this interp-x86 env) ss)]
           [`((cmpq ,s1 ,s2) . ,ss)
@@ -311,12 +317,60 @@
              (cond [zero? 
                     ((send this interp-x86 env) (goto-label label (program)))]
                    [else ((send this interp-x86 env) ss)]))]
-          [`(program ,xs ,ss ...)
-           (parameterize ([program ss])
-             ((super interp-x86 '()) ast))]
-          [else ((super interp-x86 env) ast)]
-          )))
+
+          #|[`(program ,xs ,ss ...)
+             (parameterize ([program ss])
+               ((super interp-x86 '()) ast))]
+            [else ((super interp-x86 env) ast)]
+          )))|#
 	    
+;; TODO Fix this once all the tests pass
+	
+#|[`((sete ,d) . ,ss)
+	    (let ([v ((send this interp-x86-exp env) '(reg __flag))]
+		  [x (send this get-name d)])
+	      ((send this interp-x86 (cons (cons x v) env)) ss))]
+	   ;; if's are present before patch-instructions
+          [(or `((if ,cnd ,thn ,els) . ,ss)
+               `((if ,cnd ,thn ,_ ,els ,_) . ,ss))
+           (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))
+               ((send this interp-x86 env) (append thn ss))
+               ((send this interp-x86 env) (append els ss)))]
+	   [`((label ,l) . ,ss)
+	    ((send this interp-x86 env) ss)]
+	   [`((cmpq ,s1 ,s2) . ,ss)
+	    (let ([v1 ((send this interp-x86-exp env) s1)] 
+		  [v2 ((send this interp-x86-exp env) s2)])
+	      ((send this interp-x86 (cons (cons '__flag 
+						 (b2i (eq? v1 v2))) 
+					   env))
+	       ss))]
+	   [`((movzbq ,s ,d) . ,ss)
+	    (define x (send this get-name d))
+	    (define v ((send this interp-x86-exp env) s))
+	    ((send this interp-x86 (cons (cons x v) env)) ss)]
+	   [`((jmp ,label) . ,ss)
+	    ((send this interp-x86 env) (goto-label label (program)))]
+	   [`((je ,label) . ,ss)
+	    (let ([flag (lookup '__flag env)])
+	      (cond [(i2b flag)
+		     ((send this interp-x86 env) (goto-label label (program)))]
+		    [else ((send this interp-x86 env) ss)]))]
+           |#
+	   [`(program ,xs (type ,ty) ,ss ...)
+            (send this display-by-type ty ((send this interp-x86 env) `(program ,xs ,@ss)))]
+	   [`(program ,xs ,ss ...)
+	    (parameterize ([program ss])
+	     ((super interp-x86 '()) ast))]
+	   [else ((super interp-x86 env) ast)]
+	   )))
+
+    (define/public (display-by-type ty val)
+      (match ty
+        ['Boolean (if val #t #f)]
+        ['Integer val]
+        [else (error (format "don't know how to display type ~a" ty))]))
+
     ));; class interp-R1
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -642,6 +696,8 @@
 		  (define new-env (append (map cons xs new-args) env))
 		  ((send this interp-scheme new-env) body)]
 		 [else (error "interp-scheme, expected function, not" f-val)]))]
+	   [`(program (type ,ty) ,ds ... ,body)
+	    ((send this interp-scheme env) `(program ,@ds ,body))]
 	   [`(program ,ds ... ,body)
 	    (let ([top-level (map  (send this interp-scheme '()) ds)])
 	      ((send this interp-scheme top-level) body))]
@@ -675,6 +731,8 @@
 		(define result-env ((send this seq-C new-env) ss))
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
+           [`(program ,locals (type ,ty) (defines ,ds) ,ss ...)
+            ((send this interp-C env) `(program ,locals (defines ,ds) ,@ss))]
 	   [`(program ,locals (defines ,ds) ,ss ...)
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
@@ -733,6 +791,7 @@
         (when (pair? ast)
           (debug "R3/interp-x86" (car ast) env))
 	(match ast
+#|
           [`(define (,f) ,n ,extra ,ss ...)
            (cons f `(lambda ,n ,@ss))]
           ;; Treat lea like mov -Jeremy
@@ -752,6 +811,29 @@
              (lookup 'rax result-env))]
           [else ((super interp-x86 env) ast)]
           )))
+|#
+	   [`(define (,f) ,n ,extra ,ss ...)
+	    (cons f `(lambda ,n ,@ss))]
+	   ;; Treat lea like mov -Jeremy
+	   [`((leaq ,s ,d) . ,ss)
+	    (define x (send this get-name d))
+	    (define v ((send this interp-x86-exp env) s))
+	    ((send this interp-x86 (cons (cons x v) env)) ss)]
+	   [`((indirect-callq ,f) . ,ss)
+	    (define f-val ((send this interp-x86-exp env) f))
+	    (call-function f-val ss env)]
+	   [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
+	    (call-function (lookup f env) ss env)]
+           [`(program ,extra (type ,ty) (defines ,ds) ,ss ...)
+            (send this display-by-type ty ((send this interp-x86 env)
+                                                 `(program ,extra (defines ,ds) ,@ss)))]
+	   [`(program ,extra (defines ,ds) ,ss ...)
+	    (parameterize ([program ss])
+	       (define env (map (send this interp-x86 '()) ds))
+	       (define result-env ((send this interp-x86 env) ss))
+	       (lookup 'rax result-env))]
+	   [else ((super interp-x86 env) ast)]
+	   )))
 
     ));; interp-R3
 
@@ -779,6 +861,8 @@
 		 [else (error "interp-scheme, expected function, not" f-val)]))]
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
 	    (mcons f `(lambda ,xs ,body))]
+	   [`(program (type ,ty) ,ds ... ,body)
+            ((send this interp-scheme env) `(program ,@ds ,body))]
 	   [`(program ,ds ... ,body)
 	    (let ([top-level (map (send this interp-scheme '()) ds)])
 	      ;; Use set-cdr! on define lambda's for mutual recursion
@@ -789,6 +873,7 @@
 	      ((send this interp-scheme top-level) body))]
 	   [else ((super interp-scheme env) ast)]
 	   )))
+      
 
     )) ;; interp-R4
 

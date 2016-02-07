@@ -48,8 +48,8 @@
 				      (cons (fun-def-name d) (fun-def-type d))))
 	    (for ([d ds])
 	       ((send this type-check new-env) d))
-	    ((send this type-check new-env) body)
-	    `(program ,@ds ,body)]
+	    (define ty ((send this type-check new-env) body))
+	    `(program (type ,ty) ,@ds ,body)]
 	   [else ((super type-check env) e)]
 	   )))
 
@@ -69,7 +69,7 @@
 	    `(define (,(cdr (assq f env)) 
 		      ,@(map (lambda (x t) `[,x : ,t]) new-xs ps)) : ,rt 
 		      ,((send this uniquify new-env) body))]
-	   [`(program ,ds ... ,body)
+	   [`(program (type ,ty) ,ds ... ,body)
 	    (define new-env
 	      (for/list ([d ds])
 	         (match d
@@ -77,7 +77,7 @@
 		     (define new-f (gensym f))
 		     `(,f . ,new-f)]
 		    [else (error "type-check, ill-formed function def")])))
-	    `(program ,@(map (send this uniquify new-env) ds)
+	    `(program (type ,ty) ,@(map (send this uniquify new-env) ds)
 		      ,((send this uniquify new-env) body))]
 	   [else ((super uniquify env) e)]
 	   )))
@@ -102,9 +102,9 @@
 	      `(if ,(recur cnd) ,(recur thn) ,(recur els))]
 	     [`(define (,f ,params ...) : ,rt ,body)
 	      `(define (,f ,@params) : ,rt ,(recur body))]
-	     [`(program ,ds ... ,body)
+	     [`(program (type ,ty) ,ds ... ,body)
 	      (define funs (for/list ([d ds]) (fun-def-name d)))
-	      `(program ,@(map (send this reveal-functions funs) ds)
+	      `(program (type ,ty) ,@(map (send this reveal-functions funs) ds)
 			,((send this reveal-functions funs) body))]
 	     [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	      `(,op ,@(map recur es))]
@@ -125,10 +125,10 @@
     (define/override (flatten need-atomic)
       (lambda (ast)
 	(match ast
-	   [`(program ,ds ... ,body)
+	   [`(program (type ,ty) ,ds ... ,body)
 	    (define-values (locals new-body) (flatten-body body))
 	    (define new-ds (map (send this flatten #f) ds))
-	    `(program ,locals (defines ,new-ds) ,@new-body)]
+	    `(program ,locals (type ,ty) (defines ,new-ds) ,@new-body)]
 	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
 	    (define-values (locals new-body) (flatten-body body))
 	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
@@ -196,11 +196,12 @@
 	    (set! max-stack (max max-stack (length last-args)))
 	    (append mov-stack mov-regs
 	     `((indirect-callq ,new-f) (movq (reg rax) ,new-lhs)))]
-	   [`(program ,locals (defines ,ds) ,ss ...)
+	   [`(program ,locals (type ,ty) (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this select-instructions) ds))
 	    (set! max-stack 0)
             `(program
               (,locals ,max-stack)
+              (type ,ty)
               (defines ,new-ds)
               (callq initialize)
               ,@(append* (map (send this select-instructions) ss)))]
@@ -234,11 +235,11 @@
 	(match ast
 	   [`(define (,f) ,n (,locals ,max-stack) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    `(define (,f) ,n (,locals ,max-stack ,lives) ,@new-ss)]
-           [`(program (,locals ,max-stack) (defines ,ds) ,ss ...)
+	    `(define (,f) ,n (,locals ,max-stack ,(cdr lives)) ,@new-ss)]
+           [`(program (,locals ,max-stack) (type ,ty) (defines ,ds) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    (define new-ds (map (send this uncover-live (set)) ds))
-	    `(program (,locals ,max-stack ,lives) (defines ,new-ds) ,@new-ss)]
+	    `(program (,locals ,max-stack ,(cdr lives)) (type ,ty) (defines ,new-ds) ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
     
@@ -255,14 +256,14 @@
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
-           [`(program (,locals ,max-stack ,lives) (defines ,ds) ,ss ...)
+           [`(program (,locals ,max-stack ,lives) (type ,ty) (defines ,ds) ,ss ...)
 	    (define new-G (make-graph locals))
 	    (define new-ds (for/list ([d ds])
 			      ((send this build-interference (void) (void)) d)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
 			((send this build-interference live-after new-G) inst)))
-	    `(program (,locals ,max-stack ,new-G) (defines ,new-ds) ,@new-ss)]
+	    `(program (,locals ,max-stack ,new-G) (type ,ty) (defines ,new-ds) ,@new-ss)]
 	   [else ((super build-interference live-after G) ast)]
 	   )))
 
@@ -273,7 +274,7 @@
     (define/override (build-move-graph G)
       (lambda (ast)
 	(match ast
-           [`(program (,locals ,max-stack ,IG) (defines ,ds) ,ss ...)
+           [`(program (,locals ,max-stack ,IG) (type ,ty) (defines ,ds) ,ss ...)
 	    (define new-ds (for/list ([d ds])
                              ((send this build-move-graph (void)) d)))
             (define MG (make-graph locals))
@@ -281,7 +282,7 @@
               (for/list ([inst ss])
                 ((send this build-move-graph MG) inst)))
             (print-dot MG "./move.dot")
-            `(program (,locals ,max-stack ,IG ,MG) (defines ,new-ds) ,@new-ss)]
+            `(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,new-ds) ,@new-ss)]
 	   [`(define (,f) ,n (,locals ,max-stack ,IG) ,ss ...)
             (define MG (make-graph locals))
             (define new-ss
@@ -320,12 +321,12 @@
 	      (send this allocate-homes IG MG xs ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-           [`(program (,locals ,max-stack ,IG ,MG) (defines ,ds) ,ss ...)
+           [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds) ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes IG MG locals ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
-	    `(program ,(+ stk-size (* 8 max-stack))
+	    `(program ,(+ stk-size (* 8 max-stack)) (type ,ty)
 		      (defines ,new-ds) ,@new-ss)]
 	   )))
 
@@ -345,11 +346,11 @@
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
 	   [`(indirect-callq ,f)
 	    `((indirect-callq ,f))]
-	   [`(program ,stack-space (defines ,ds) ,ss ...)
+	   [`(program ,stack-space (type ,ty) (defines ,ds) ,ss ...)
 	    (define new-ds (for/list ([d ds])
 				     ((send this patch-instructions) d)))
 	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
-	    `(program ,stack-space (defines ,new-ds) ,@(append* sss))]
+	    `(program ,stack-space (type ,ty) (defines ,new-ds) ,@(append* sss))]
 	   [`(leaq ,s ,d)
 	    (cond [(on-stack? d)
 		   `((leaq ,s (reg rax))
@@ -369,12 +370,12 @@
 	    `(define (,f) ,n ,stack-space
 	       ,@(append* (map (send this lower-conditionals) ss)))]
 
-	   [`(program ,stack-space (defines ,ds) ,ss ...)
+	   [`(program ,stack-space (type ,ty) (defines ,ds) ,ss ...)
 	    (define new-ds (for/list ([d ds])
 				     ((send this lower-conditionals) d)))
 	    (define new-ss (for/list ([s ss])
 				     ((send this lower-conditionals) s)))
-	    `(program ,stack-space (defines ,new-ds) ,@(append* new-ss))]
+	    `(program ,stack-space (type ,ty) (defines ,new-ds) ,@(append* new-ss))]
 	   [else ((super lower-conditionals) e)]
 	   )))
 
@@ -416,11 +417,11 @@
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
-	   [`(program ,stack-space (defines ,ds) ,ss ...)
+	   [`(program ,stack-space (type ,ty) (defines ,ds) ,ss ...)
 	    (string-append
 	     (string-append* (for/list ([d ds]) ((send this print-x86) d)))
 	     "\n"
-	     ((super print-x86) `(program ,stack-space ,@ss)))]
+	     ((super print-x86) `(program ,stack-space (type ,ty) ,@ss)))]
 	   [else ((super print-x86) e)]
 	   )))
 
@@ -435,8 +436,9 @@
 (define functions-passes
   (let ([compiler (new compile-R3)]
 	[interp (new interp-R3)])
-    `(("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+    `(
+      ;("type-check" ,(send compiler type-check '())
+;       ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())

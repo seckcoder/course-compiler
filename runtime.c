@@ -13,6 +13,13 @@ void print_int(long x) {
   printf("%ld", x);
 }
 
+void print_bool(int x) {
+  if (x) 
+    printf("#t");
+  else printf("#f");
+}
+
+
 static void copy_vector(ptr* vec, ptr* free_ptr);
 static void process_vector(ptr* scan_ptr, ptr* free_ptr);
 
@@ -162,7 +169,7 @@ ptr alloc(long int bytes_requested)
   }
 
   ptr new_ptr = free_ptr;
-  free_ptr = free_ptr + (bytes_requested / sizeof(char));
+  free_ptr = free_ptr + (bytes_requested / 8);
   return new_ptr;
 }
 
@@ -171,15 +178,11 @@ ptr debug_collect(ptr rootstack_ptr, long int bytes_requested){
   exit(-1);
 }
 
-ptr collect(ptr rootstack_ptr, long int bytes_requested)
+void cheney(ptr rootstack_ptr)
 {
-  fprintf(stderr,"calling collect");
-  //ptr free_ptr;
-  ptr scan_ptr;
-
+  ptr scan_ptr = tospace_begin;
   free_ptr = tospace_begin;
-  scan_ptr = tospace_begin;
-
+  
   /* traverse the root set to create the initial queue */
   for (ptr root = rootstack_begin; root != rootstack_ptr; ++root) {
     copy_vector(&root, &free_ptr);
@@ -197,31 +200,73 @@ ptr collect(ptr rootstack_ptr, long int bytes_requested)
   tospace_end = fromspace_end;
   fromspace_begin = tmp_begin;
   fromspace_end = tmp_end;
+}
+
+void collect(ptr rootstack_ptr, long int bytes_requested)
+{
+  
+  cheney(rootstack_ptr);
   
   /* if there is not enough room left for the bytes_requested,
-     allocate larger tospace and fromspace */
-  
-  if (sizeof(char) * (fromspace_end - free_ptr) < bytes_requested) {
+     allocate larger tospace and fromspace.
+     
+     In order to determine the new size of the heap double the
+     heap size until it is bigger than the occupied portion of
+     the heap plus the bytes requested.
+     
+     This covers the corner case of heaps objects that are
+     more than half the size of the heap. No a very likely
+     scenario but slightly more robust.
+     
+     One corner case that isn't handled is if the heap is size
+     zero. My thought is that malloc probably wouldn't give
+     back a pointer if you asked for 0 bytes. Thus initialize
+     would fail.
+  */
+
+  if (8 * (fromspace_end - free_ptr) < bytes_requested){
+    long int occupied_bytes = (free_ptr - fromspace_begin) * 8;
+    long int needed_bytes = occupied_bytes + bytes_requested;
     long int old_len = fromspace_end - fromspace_begin;
     long int old_bytes = 8 * old_len;
+    long int new_bytes = 2 * old_bytes;
+    
+    while (new_bytes < needed_bytes) new_bytes = 2 * new_bytes;
+                                           
+    free(tospace_begin);
+
+    if (!(tospace_begin = malloc(new_bytes))) {
+      printf("failed to malloc %ld byte fromspace", new_bytes);
+      exit(-1);
+    }
+    
+    tospace_end = tospace_begin + new_bytes / 8;
+
+    /* 
+       The pointers on the stack and in the heap must be updated,
+       so this cannot be just a memcopy of the heap.
+       Performing cheney's algorithm again will have the correct
+       effect, and we have already implemented it.
+    */
+
+    cheney(rootstack_ptr);
+
+    /*
+      Cheney has flips tospace and fromspace once again now we
+      allocate a new tospace once again.
+    */
 
     free(tospace_begin);
-    tospace_begin = malloc(2 * old_bytes);
-    tospace_end = tospace_begin + 2 * old_len;
 
-    ptr from = malloc(2 * old_bytes);
-    ptr new_free_ptr = from;
-    for (ptr p = fromspace_begin; p != free_ptr; ++p) {
-      *new_free_ptr = *p;
-      ++new_free_ptr;
+    if (!(tospace_begin = malloc(new_bytes))) {
+      printf("failed to malloc %ld byte tospace", new_bytes);
+      exit(-1);
     }
-    free(fromspace_begin);
-    fromspace_begin = from;
-    fromspace_end = fromspace_begin + 2 * old_len;
-    free_ptr = new_free_ptr;
+
+    tospace_end = tospace_begin + new_bytes / 8;
+    
   } /* end if */
 
-  return free_ptr;
 }
 
 static inline int is_forwarding(long int tag) {

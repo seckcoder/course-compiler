@@ -126,10 +126,10 @@
 	       `(define (,f ,@(cons `[fvs : _] params)) : ,rt 
 		  ,(convert-fun-body '() new-body))
 	       body-fs))]
-	   [`(program ,ds ... ,body)
+	   [`(program (type ,ty) ,ds ... ,body)
 	    (define new-ds (apply append (map recur ds)))
 	    (define-values (new-body body-fs) (recur body))
-	    `(program ,@(append new-ds body-fs)
+	    `(program (type ,ty) ,@(append new-ds body-fs)
 		      ,new-body)]
 	   ;; Keep the below case last -Jeremy
 	   [`(,op ,es ...)
@@ -149,8 +149,9 @@
 (define lambda-passes
   (let ([compiler (new compile-R4)]
         [interp (new interp-R4)])
-    `(("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+    `(
+      ;("type-check" ,(send compiler type-check '())
+      ; ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
