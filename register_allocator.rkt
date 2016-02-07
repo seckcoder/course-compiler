@@ -49,7 +49,7 @@
       (lambda (orig-ss)
 	(let loop ([ss (reverse orig-ss)] [live-after orig-live-after] 
 		   [lives (list orig-live-after)] [new-ss '()])
-	  (cond [(null? ss) (values new-ss (cdr lives))]
+	  (cond [(null? ss) (values new-ss lives)]
 		[else
 		 (define-values (new-s new-live-after)
 		   ((send this uncover-live live-after) (car ss)))
@@ -61,12 +61,12 @@
 	(match ast
           [`(program ,xs (type ,ty) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    (assert "lives ss size" (= (length lives) (length new-ss)))
-	    `(program (,xs ,lives) (type ,ty) ,@new-ss)]
+	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
+	    `(program (,xs ,(cdr lives)) (type ,ty) ,@new-ss)]
           [`(program ,xs ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    (assert "lives ss size" (= (length lives) (length new-ss)))
-	    `(program (,xs ,lives) ,@new-ss)]
+	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
+	    `(program (,xs ,(cdr lives)) ,@new-ss)]
 	   [else
 	    (values ast (set-union (set-subtract live-after 
 						 (send this write-vars ast))

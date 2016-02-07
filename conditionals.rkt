@@ -280,11 +280,12 @@
 	      ((send this liveness-ss live-after) thn-ss))
 	    (define-values (new-els-ss els-lives)
 	      ((send this liveness-ss live-after) els-ss))
+	    ;; I doubt that thn-lives can be null -Jeremy
 	    (define live-after-thn (cond [(null? thn-lives) live-after]
 					 [else (car thn-lives)]))
 	    (define live-after-els (cond [(null? els-lives) live-after]
 					 [else (car els-lives)]))
-	    (values `(if ,cnd ,new-thn-ss ,thn-lives ,new-els-ss ,els-lives)
+	    (values `(if ,cnd ,new-thn-ss ,(cdr thn-lives) ,new-els-ss ,(cdr els-lives))
 		    (set-union live-after-thn live-after-els
 			       (send this free-vars cnd)))]
 	   [else ((super uncover-live live-after) ast)]

@@ -235,11 +235,11 @@
 	(match ast
 	   [`(define (,f) ,n (,locals ,max-stack) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    `(define (,f) ,n (,locals ,max-stack ,lives) ,@new-ss)]
+	    `(define (,f) ,n (,locals ,max-stack ,(cdr lives)) ,@new-ss)]
            [`(program (,locals ,max-stack) (type ,ty) (defines ,ds) ,ss ...)
 	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
 	    (define new-ds (map (send this uncover-live (set)) ds))
-	    `(program (,locals ,max-stack ,lives) (type ,ty) (defines ,new-ds) ,@new-ss)]
+	    `(program (,locals ,max-stack ,(cdr lives)) (type ,ty) (defines ,new-ds) ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
     
