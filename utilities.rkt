@@ -209,11 +209,11 @@
                (match (car passes)
                  [`(,pass-name ,pass ,interp)
                   (let ([input p])
-                    (debug (string-append "running pass" pass-name)
+                    (vomit (string-append "running pass: " pass-name)
                            input))
                   (define new-p (pass p))
                   (let ([output new-p])
-                    (debug (string-append "running pass" pass-name)
+                    (debug (string-append "running pass: " pass-name)
                            output))
                   (cond [interp
                          (let ([new-result
