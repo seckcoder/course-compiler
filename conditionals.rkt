@@ -266,12 +266,13 @@
 
     (define/override (write-vars instr)
       (match instr
-         [`(movzbq ,s ,d) (send this free-vars d)]
-     	 [`(cmpq ,s1 ,s2) (set '__flag)]
-     	 [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
-	  (send this free-vars d)]
-     	 [`(sete ,d) (send this free-vars d)]
-     	 [else (super write-vars instr)]))
+        [`(movq ,s (offset ,d ,i)) (set)]
+        [`(movzbq ,s ,d) (send this free-vars d)]
+        [`(cmpq ,s1 ,s2) (set '__flag)]
+        [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
+         (send this free-vars d)]
+        [`(sete ,d) (send this free-vars d)]
+        [else (super write-vars instr)]))
 
     (define/override (uncover-live live-after)
       (lambda (ast)
