@@ -45,6 +45,11 @@
 		  (error "expected branches of if to have same type"
 			 (list T-thn T-els)))
 	      T-thn)]
+           [`(eq? ,e1 ,e2)
+            (let ([t1 ((send this type-check env) e1)]
+                  [t2 ((send this type-check env) e2)])
+              (cond [(eq? t1 t2) 'Boolean]
+                    [else (error "checking equality between different-typed values")]))]
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
 	    (let ([ts (map (send this type-check env) es)])
 	      (define binary-ops

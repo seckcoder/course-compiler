@@ -164,7 +164,7 @@
                         [else
                          (loop (cdr passes) new-p result)])])]))
       ]
-     [else (error (format "unexpected type error raised by compiler '~a'" name))])))
+     [else (error (format "unexpected type error raised by compiler '~a' in test ~a" name test-name))])))
 
 (define (compile passes)
   (let ([prog-file-name (vector-ref (current-command-line-arguments) 0)])
