@@ -222,6 +222,7 @@
 		     `((cmpq ,new-e2 ,new-e1))]
 		    [else 
 		     `((cmpq ,new-e1 ,new-e2))]))
+            ;; This works because movzbq %al, %rax is a valid instruction
 	    (append comparison
               `((sete (byte-reg al))
 		(movzbq (byte-reg al) ,new-lhs))

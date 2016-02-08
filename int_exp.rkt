@@ -198,12 +198,18 @@
     (define/public (patch-instructions)
       (lambda (e)
 	(match e
+          ;; Large integers cannot be moved directly to memory
+          ;; I am not sure what sizes can be moved directly to
+          ;; memory. This is a conservative estimate. -andre 
+          [`(movq (int ,n) ,(? on-stack? d)) #:when (> n (expt 2 16))
+           `((movq (int ,n) (reg rax))
+             (movq (reg rax) ,d))]
            [`(movq ,s ,d)
 	    (cond [(equal? s d) '()] ;; trivial move, delete it
 		  [(and (on-stack? s) (on-stack? d))
 		   `((movq ,s (reg rax))
 		     (movq (reg rax) ,d))]
-		  [else `((movq ,s ,d))])]
+                  [else `((movq ,s ,d))])]
 	   [`(callq ,f) `((callq ,f))]
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
