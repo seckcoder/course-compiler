@@ -9,9 +9,17 @@
 	 compile compile-file check-passes interp-tests compiler-tests
 	 make-graph add-edge adjacent vertices print-dot
 	 general-registers registers-for-alloc caller-save callee-save
-	 arg-registers register->color registers align)
+	 arg-registers register->color registers align
+         byte-reg->full-reg)
 
-;; debug state is a possitive integer range.
+;; debug state is a nonnegative integer.
+;; The easiest way to increment it is passing the -d option
+;; to run-tests.rkt
+;; 0 none 
+;; 1 trace passes in run-test (-d)
+;; 2 debug macros (-dd)
+;; 3 verbose debugging (-ddd)
+;; 4 (vomit) absolutely everything (-dddd)
 ;; The higher the setting the more information is reported.
 (define debug-level
   (make-parameter
@@ -34,11 +42,11 @@
 (define-syntax (print-label-and-values stx)
   (syntax-case stx ()
     [(_ label value ...)
-     (let* ([src (syntax-source stx)]
+     (let* ([src (syntax-source #'label)]
             [src (if (path? src)
                      (find-relative-path (current-directory) src)
                      src)]
-            [lno (syntax-line stx)])
+            [lno (syntax-line #'label)])
        #`(begin
            (printf "~a @ ~a:~a\n" label #,src #,lno)
         (begin
@@ -48,13 +56,21 @@
               (pretty-print value))
           (newline))
         ...
-        (newline))
-)]))
+        (newline)))]))
+
+(pretty-print-depth 5)
 
 ;; print label followed by values when debug-state is greater than 1.
 (define-syntax (debug stx)
   (syntax-case stx ()
-    [(_ label value ...)
+    [(_ label value ...) 
+     #`(when (at-debug-level 2)
+         #,(syntax/loc stx
+             (print-label-and-values label value ...)))]))
+
+(define-syntax (trace stx)
+  (syntax-case stx ()
+    [(_ label value ...) 
      #`(when (at-debug-level 1)
          #,(syntax/loc stx
              (print-label-and-values label value ...)))]))
@@ -63,7 +79,7 @@
 (define-syntax (vomit stx)
   (syntax-case stx ()
     [(_ label value ...)
-     #`(when (at-debug-level 2)
+     #`(when (at-debug-level 4)
          #,(syntax/loc stx
              (print-label-and-values label value ...)))]))
 
@@ -209,11 +225,11 @@
                (match (car passes)
                  [`(,pass-name ,pass ,interp)
                   (let ([input p])
-                    (vomit (string-append "running pass: " pass-name)
+                    (debug (string-append "running pass: " pass-name)
                            input))
                   (define new-p (pass p))
                   (let ([output new-p])
-                    (debug (string-append "running pass: " pass-name)
+                    (trace (string-append "running pass: " pass-name)
                            output))
                   (cond [interp
                          (let ([new-result
@@ -412,6 +428,19 @@
 
 ;; registers-for-alloc should always inlcude the arg-registers. -Jeremy 
 (define registers-for-alloc general-registers)
+
+(define byte-register-table
+  (make-immutable-hash
+   `((ah . rax) (al . rax)
+     (bh . rbx) (bl . rbx)
+     (ch . rcx) (cl . rcx)
+     (dh . rdx) (dl . rdx))))
+
+(define (byte-reg->full-reg x)
+  (let ([r? (hash-ref byte-register-table x #f)])
+    (unless r?
+      (error 'byte-reg->full-reg "invalid byte register ~a" x))
+    r?))
 
 
 (define reg-colors

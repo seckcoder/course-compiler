@@ -19,10 +19,6 @@ void print_bool(int x) {
   else printf("#f");
 }
 
-
-static void copy_vector(ptr* vec, ptr* free_ptr);
-static void process_vector(ptr* scan_ptr, ptr* free_ptr);
-
 /*
   Garbage collection via copying collection.
 
@@ -94,21 +90,51 @@ static void process_vector(ptr* scan_ptr, ptr* free_ptr);
 
  */
 
-static ptr tospace_begin;
-static ptr tospace_end;
+//Object tags constants
+static const int TAG_IS_NOT_FORWARD_MASK = 1;
+static const int TAG_LENGTH_MASK = 126;
+static const int TAG_LENGTH_RSHIFT = 1;
+static const int TAG_PTR_BITFIELD_RSHIFT = 7;
 
-ptr free_ptr;
+static inline int is_forwarding(ptr tag) {
+  return !(tag & TAG_IS_NOT_FORWARD_MASK);
+}
 
-ptr fromspace_begin;
-ptr fromspace_end;
+static inline int get_length(ptr tag){
+  return (tag & TAG_LENGTH_MASK) >> TAG_LENGTH_RSHIFT;
+}
 
-ptr rootstack_begin;
-ptr rootstack_end;
+static inline ptr get_ptr_bitfield(ptr tag){
+  return tag >> TAG_PTR_BITFIELD_RSHIFT;
+}
+
+
+static ptr* tospace_begin;
+static ptr* tospace_end;
+
+ptr* free_ptr;
+
+ptr* fromspace_begin;
+ptr* fromspace_end;
+
+ptr** rootstack_begin;
+ptr** rootstack_end;
 
 int initialized = 0;
 
+// cheney implements cheney's copying collection algorithm
+static void cheney(ptr** rootstack_ptr);
+
+static void copy_vector(ptr** vector_loc);
+//static void process_vector(ptr* scan_ptr);
+
 void initialize(long int rootstack_size, long int heap_size)
 {
+  if (sizeof(int64_t) != sizeof(ptr)){
+    printf("The runtime was compiler with an incompatible pointer size");
+    exit(-1);
+  }
+  
   if (0 != (heap_size % 8)){
     printf("invalid heap size %ld\n", heap_size);
     exit(-1);
@@ -148,66 +174,13 @@ void initialize(long int rootstack_size, long int heap_size)
   return;
 }
 
-ptr alloc(long int bytes_requested)
-{
-  if (!initialized) {
-    //allocations must be in full words
-    printf("Initialization didn't run");
-    exit(-1);
-  }
-  
-  if (bytes_requested % 8 != 0){
-    //allocations must be in full words
-    printf("Can't allocate fractions of a ptr");
-    exit(-1);
-  }
-
-  if (bytes_requested > (fromspace_end - free_ptr) * 8){
-    //collect(bytes_requested, rootstack_ptr);
-    printf("Collection not yet implemented\n");
-    exit(-1);
-  }
-
-  ptr new_ptr = free_ptr;
-  free_ptr = free_ptr + (bytes_requested / 8);
-  return new_ptr;
-}
-
-ptr debug_collect(ptr rootstack_ptr, long int bytes_requested){
-  printf("Collection not yet implemented\n");
-  exit(-1);
-}
-
-void cheney(ptr rootstack_ptr)
-{
-  ptr scan_ptr = tospace_begin;
-  free_ptr = tospace_begin;
-  
-  /* traverse the root set to create the initial queue */
-  for (ptr root = rootstack_begin; root != rootstack_ptr; ++root) {
-    copy_vector(&root, &free_ptr);
-  }
-  
-  /* conduct the breadth-first search */
-  while (scan_ptr != free_ptr) {
-    process_vector(&scan_ptr, &free_ptr);
-  }
-
-  /* swap the tospace and fromspace */
-  ptr tmp_begin = tospace_begin; 
-  ptr tmp_end = tospace_end;
-  tospace_begin = fromspace_begin;
-  tospace_end = fromspace_end;
-  fromspace_begin = tmp_begin;
-  fromspace_end = tmp_end;
-}
-
-void collect(ptr rootstack_ptr, long int bytes_requested)
+void collect(ptr** rootstack_ptr, long int bytes_requested)
 {
   
   cheney(rootstack_ptr);
   
-  /* if there is not enough room left for the bytes_requested,
+  /* 
+     If there is not enough room left for the bytes_requested,
      allocate larger tospace and fromspace.
      
      In order to determine the new size of the heap double the
@@ -224,11 +197,11 @@ void collect(ptr rootstack_ptr, long int bytes_requested)
      would fail.
   */
 
-  if (8 * (fromspace_end - free_ptr) < bytes_requested){
+  if (sizeof(ptr) * (fromspace_end - free_ptr) < bytes_requested){
     long int occupied_bytes = (free_ptr - fromspace_begin) * 8;
     long int needed_bytes = occupied_bytes + bytes_requested;
     long int old_len = fromspace_end - fromspace_begin;
-    long int old_bytes = 8 * old_len;
+    long int old_bytes = old_len * sizeof(long int);
     long int new_bytes = 2 * old_bytes;
     
     while (new_bytes < needed_bytes) new_bytes = 2 * new_bytes;
@@ -240,7 +213,7 @@ void collect(ptr rootstack_ptr, long int bytes_requested)
       exit(-1);
     }
     
-    tospace_end = tospace_begin + new_bytes / 8;
+    tospace_end = tospace_begin + new_bytes / (sizeof(ptr));
 
     /* 
        The pointers on the stack and in the heap must be updated,
@@ -252,8 +225,8 @@ void collect(ptr rootstack_ptr, long int bytes_requested)
     cheney(rootstack_ptr);
 
     /*
-      Cheney has flips tospace and fromspace once again now we
-      allocate a new tospace once again.
+      Cheney flips tospace and fromspace. Thus, we allocate another 
+      tospace not fromspace as we might expect.
     */
 
     free(tospace_begin);
@@ -263,58 +236,182 @@ void collect(ptr rootstack_ptr, long int bytes_requested)
       exit(-1);
     }
 
-    tospace_end = tospace_begin + new_bytes / 8;
+    tospace_end = tospace_begin + new_bytes / (sizeof(ptr));
     
   } /* end if */
 
 }
 
-static inline int is_forwarding(long int tag) {
-  return (tag & 1) == 0;
+
+
+
+
+void cheney(ptr** rootstack_ptr)
+{
+  ptr* scan_ptr = tospace_begin;
+  free_ptr = tospace_begin;
+  
+  /* traverse the root set to create the initial queue */
+  for (ptr** root = rootstack_begin; root != rootstack_ptr; ++root) {
+    /*
+      We pass copy vector the pointer to the pointer to the vector.
+      This is because we need to be able to rewrite the pointer after
+      the object has been moved.
+    */
+    copy_vector(root);
+  }
+  
+  /* 
+     Here we need to scan tospace until we reach the free_ptr pointer.
+     This will end up being a breadth first search of the pointers in
+     from space.
+  */
+  while (scan_ptr != free_ptr) {
+    /* 
+       I inlined this to leave maniuplation of scan_ptr to a single
+       function. This can be accomplished by passing the location
+       of the pointer into helper, but let's not make reasoning
+       through the algorithm any harder.
+    
+       The invarient of the outer loop is that scan_ptr is either
+       at the front of a vector, or == to free_ptr.
+    */
+    
+    // Since this tag is already in tospace we know that it isn't
+    // a forwarding pointer.
+    ptr tag = *scan_ptr;
+    
+    // the length of the vector is contained in bits [1,6]
+    int len = get_length(tag);
+
+    // Find the next vector or the next free_ptr;
+    // with is len + 1 away from the current;
+    ptr* next_ptr = scan_ptr + len + 1;
+    
+    // each bit low to high says if the next index is a ptr
+    int64_t isPointerBits = get_ptr_bitfield(tag);
+
+    // Advance the scan_ptr then check to
+    // see if we have arrived at the beginning of the next array.
+    scan_ptr += 1;
+    while(scan_ptr != next_ptr){
+      if ((isPointerBits & 1) == 1) {
+        // since the tag says that the scan ptr in question is a
+        // ptr* we known that scan_ptr currently points to a ptr*
+        // and must be a ptr** itself.
+        copy_vector((ptr**)scan_ptr);
+      }
+      // Advance the tag so the next check is for the next scan ptr
+      isPointerBits = isPointerBits >> 1;
+      scan_ptr += 1;
+    }
+
+    //scan_ptr == next_ptr 
+
+    // todo delete this.
+    /*
+    for (int i = 0; i != len; ++i) {
+      if ((tag & 1) == 1) {
+        copy_vector(scan_ptr, free_ptr);
+      }
+      tag = tag >> 1;
+      *scan_ptr = *scan_ptr + 1;
+    }
+    */
+    
+  }
+
+  /* swap the tospace and fromspace */
+  ptr* tmp_begin = tospace_begin; 
+  ptr* tmp_end = tospace_end;
+  tospace_begin = fromspace_begin;
+  tospace_end = fromspace_end;
+  fromspace_begin = tmp_begin;
+  fromspace_end = tmp_end;
 }
 
-static inline long int six_ones() {
-  long int all_ones = ~0;
-  long int six_zeroes = all_ones << 6;
-  return ~six_zeroes;
-}
 
 /* Copy vector from fromspace into the tospace */
-void copy_vector(ptr* vec, ptr* free_ptr)
+void copy_vector(ptr** vector_loc)
 {
-  long int tag = **vec;
+  
+  ptr* old_vector = *vector_loc;
+  ptr tag = old_vector[0];
+   
+  // If our search has already moved the vector then we
+  //  would have left a forwarding pointer.
+
   if (is_forwarding(tag)) {
-    /* update vec to the forwarded address */
-    *vec = (ptr)**vec;
+    // Since we left a forwarding pointer the we have already
+    // moved this vector. All we need to do is update the pointer
+    // that was pointing to the old vector. To point we the
+    // forwarding pointer says the new copy is.
+    *vector_loc = (ptr*) tag;
+    
   } else {
-    tag = tag >> 1;
-    int len = (tag & six_ones());
+    // This is the first time we have followed this pointer.
+    
+    // Since we are about to jumble all the pointers around lets
+    // set up some structure to the world.
+
+    // The tag we grabbed earlier contains some usefull info for
+    // forwarding copying the vector.
+    int len = get_length(tag);
+    
+    // The new vector is going to be where the free ptr pointer
+    // currently points.
+    ptr* new_vector = free_ptr;
+
+    // Just perform a straight forward copy from old to new.
+    // The length is a bit of a lie because includeing the
+    // meta information the actual length is len + 1;
+    for (int i = 0; i < len + 1; i++){
+      new_vector[i] = old_vector[i];
+    }
+        
+    // the free ptr can be updated to point to the next free ptr.
+    free_ptr = free_ptr + len + 1;    
+
+    // We need to set the forwarding pointer in the old_vector
+    old_vector[0] = (ptr) new_vector;
+
+    // And where we found the old vector we need to update the
+    // pointer to point to the new vector
+    *vector_loc = new_vector;
+
+    //TODO delete this block once the code works
+    /*
+    //and each subsequent bit tells us whether the ptr pointed
+    //by current is a pointer.
     ptr current = *vec;
     ptr new_vec = *free_ptr;
 
-    /* copy the tag into the new vector */
+    // copy the tag into the new vector
     **free_ptr = *current;
     current = current + 1;
     *free_ptr = *free_ptr + 1;
-    /* copy the rest of the vector */
+    //copy the rest of the vector
     for (int i = 0; i != len; ++i) {
       current = current + 1;
       *free_ptr = *free_ptr + 1;      
     }
-    /* set the forwarding pointer */
+    
+    //set the forwarding pointer
     **vec = (long int)new_vec;
-    /* update vec to the new location in tospace */
+    // update vec to the new location in tospace
     *vec = (ptr)**vec;
+    */
   }
 }
 
-void process_vector(ptr* scan_ptr, ptr* free_ptr)
+void process_vector(ptr* scan_ptr)
 {
-  long int tag = **scan_ptr;
+  
+  ptr tag = *scan_ptr;
   // Clear the forwarding pointer
   tag = tag >> 1;
   // Extract length from the tag
-  int len = (tag & six_ones());
+  int len = get_length(tag);
   // Each bit low to high says if the next index is a ptr
   tag = tag >> 6;
   
@@ -323,7 +420,7 @@ void process_vector(ptr* scan_ptr, ptr* free_ptr)
 
   for (int i = 0; i != len; ++i) {
     if ((tag & 1) == 1) {
-      copy_vector(scan_ptr, free_ptr);
+      copy_vector((ptr**) scan_ptr);
     }
     tag = tag >> 1;
     *scan_ptr = *scan_ptr + 1;

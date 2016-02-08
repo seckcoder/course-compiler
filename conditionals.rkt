@@ -248,7 +248,7 @@
 
     (define/override (free-vars a)
       (match a
-	 [`(byte-reg al) (set 'rax)]
+	 [`(byte-reg ,r) (set (byte-reg->full-reg r))]
 	 [`(eq? ,e1 ,e2) (set-union (send this free-vars e1)
 				    (send this free-vars e2))]
 	 [else (super free-vars a)]
@@ -256,14 +256,14 @@
     
     (define/override (read-vars instr)
       (match instr
-         [`(movzbq ,s ,d) (send this free-vars s)]
-     	 [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
+        [`(movzbq ,s ,d) (send this free-vars s)]
+        [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
      				    (send this free-vars s2))]
-     	 [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d))
-	  (set-union (send this free-vars s) (send this free-vars d))]
-     	 [`(sete ,d) (set)]
-     	 [else (super read-vars instr)]))
-
+        [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d))
+         (set-union (send this free-vars s) (send this free-vars d))]
+        [`(sete ,d) (set)]
+        [else (super read-vars instr)]))
+    
     (define/override (write-vars instr)
       (match instr
         [`(movzbq ,s ,d) (send this free-vars d)]
@@ -375,20 +375,28 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     (define/override (patch-instructions)
+      (define (mem? x) (send this on-stack? x))
       (lambda (e)
 	(match e
 	   [`(je ,label) `((je ,label))]
 	   [`(jmp ,label) `((jmp ,label))]
 	   [`(label ,label) `((label ,label))]
 	   [`(cmpq ,a1 ,a2)
-	    (match (cons a1 a2)
-	       [`((int ,n1) . (int ,n2))
+	    (match* (a1 a2)
+	       [(`(int ,n1) `(int ,n2))
 		`((movq (int ,n2) (reg rax))
 		  (cmpq (int ,n1) (reg rax)))]
-	       [`(,a1 . (int ,n2))
+	       [(a1 `(int ,n2))
 		`((cmpq (int ,n2) ,a1))]
-	       [else
+               [((? mem? n1) (? mem? n2))
+                `((movq ,n2 (reg rax))
+		  (cmpq ,n1 (reg rax)))]
+               [(_ _)
 		`((cmpq ,a1 ,a2))])]
+           ;; destination must be a register -andre
+           [`(movzbq ,s ,(? mem? d))
+            `((movzbq ,s (reg rax))
+              (movq (reg rax) ,d))]
 	   [`(program ,stack-space (type ,ty) ,ss ...)
 	    `(program ,stack-space (type ,ty)
 		      ,@(append* (map (send this patch-instructions) ss)))]

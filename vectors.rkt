@@ -338,15 +338,15 @@
        (define size (* (add1 length) 8))
        ;;highest 7 bits are unused
        ;;lowest 1 bit is 0 saying this is not a forwarding pointer
-       (define isForward-tag 0)
+       (define is-not-forward-tag 1)
        ;;next 6 lowest bits are the length
-       (define length-tag (arithmetic-shift size 1))
+       (define length-tag (arithmetic-shift length 1))
        ;;bits [6,56] are a bitmask indicating if [0,50] are pointers
        (define ptr-tag
          (for/fold ([tag 0]) ([t (in-list ts)] [i (in-naturals 7)])
            (bitwise-ior tag (arithmetic-shift (b2i (root-type? t)) i))))
        ;; Combine the tags into a single quad word
-       (define tag (bitwise-ior ptr-tag length-tag isForward-tag))
+       (define tag (bitwise-ior ptr-tag length-tag is-not-forward-tag))
        `((movq (global-value free_ptr) ,lhs^)
          (addq (int ,size) (global-value free_ptr))
          (movq (int ,tag) (offset ,lhs^ 0)))]
@@ -425,6 +425,7 @@
 (define/override (on-stack? a)
   (match a
     [`(offset ,e ,i) #t]
+    [`(global-value ,l) #t]
     [else (super on-stack? a)]))
 
 
