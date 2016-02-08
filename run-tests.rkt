@@ -9,6 +9,14 @@
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
+;; I have made the original run-tests more programmatic so that we don't
+;; have to edit it in order to change which test are run or change paramerter
+;; to the compiler. To get the defualt behavior simply type "racket run-tests.rkt"
+;; at the command line. To get a description of what can be manipulated pass "-h"
+;; for the help message.
+;; I will add the abilility to run student tests shortly.
+
+
 ;; Table associating names of compilers with the information for running
 ;; and testing them.
 (define compiler-list
@@ -22,6 +30,8 @@
 
 (define compiler-table (make-immutable-hash compiler-list))
 
+;; This list serves the same function as the range definitions that were used
+;; prior to giving run-tests a command line interfaces.
 (define suite-list
   `((0 . ,(range 1 26))
     (1 . ,(range 1 31)) 
@@ -35,16 +45,17 @@
       (error 'suite-range "invalid suite ~a" x))
     (cdr r?)))
 
-(define (test-compiler name typechecker passes test-family test-nums)
+;; test-compiler runs a compiler (list of passes) with a name and
+;; typechecker on a list of tests in a particular test-suite.
+(define (test-compiler name typechecker passes test-suite test-nums)
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
-  (interp-tests name typechecker passes interp-scheme test-family test-nums)
-  (compiler-tests name typechecker passes test-family test-nums)
+  (interp-tests name typechecker passes interp-scheme test-suite test-nums)
+  (compiler-tests name typechecker passes test-suite test-nums)
   (newline)(display "tests passed")(newline))
 
-;; These parameters may be alterned by passing at the command line if
+;; These parameters may be altered by passing at the command line if
 ;; they are not altered then the default is to test everything.
-
 (define compilers-to-test
   (make-parameter #f))
 (define suites-to-test
@@ -52,8 +63,8 @@
 (define tests-to-run
   (make-parameter #f))
 
-;; adds some object to the end of an optional list stored in a parameter
-;; seems case specific or else I would put it in utilities
+;; add some object to the end of an optional list stored in a parameter.
+;; This seems case specific or else I would put it in utilities. -andre
 (define (snoc-to-opt-param param x)
   (unless (parameter? param)
     (error 'snoc-to-opt-param "expected a parameter: ~a" param))
@@ -67,11 +78,8 @@
                    [else (list x)]))
                (list x)))))
 
-;; The is the actual function that drives the testing base
-;; on what happens below in the parsing of the command line
-;; arguments.
-
-
+;; The command-line macro is a standard racket function for controlling
+;; 
 (command-line
  #:multi
  ;; Add a compiler to the set of test to run
@@ -151,7 +159,6 @@
                   [test-set (set-intersect (suite-range suite) (tests-to-run))]
                   [tests (sort test-set <)])
              (test-compiler compiler tyck pass sname tests))))))))
-
 
  
 

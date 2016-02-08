@@ -1,7 +1,7 @@
 #lang racket
 (require racket/pretty)
 (require (for-syntax racket))
-(provide debug-level debug vomit
+(provide debug-level debug verbose vomit
          map2 b2i i2b
          fix while 
          label-name lookup  make-dispatcher assert
@@ -23,7 +23,7 @@
 ;; The higher the setting the more information is reported.
 (define debug-level
   (make-parameter
-   0
+   0    ;; If you have to hard code me change 0 to 1-4
    (lambda (d)
      (unless (exact-nonnegative-integer? d) 
        (error 'debug-state "expected nonnegative-integer in ~a" d))
@@ -42,11 +42,11 @@
 (define-syntax (print-label-and-values stx)
   (syntax-case stx ()
     [(_ label value ...)
-     (let* ([src (syntax-source #'label)]
+     (let* ([src (syntax-source stx)]
             [src (if (path? src)
                      (find-relative-path (current-directory) src)
                      src)]
-            [lno (syntax-line #'label)])
+            [lno (syntax-line stx)])
        #`(begin
            (printf "~a @ ~a:~a\n" label #,src #,lno)
         (begin
@@ -58,16 +58,22 @@
         ...
         (newline)))]))
 
-(pretty-print-depth 5)
+;; This series of macros are used for debuging purposes
+;; and print out
+(define-syntax-rule (define-debug-level name level)
+    (...
+     (define-syntax (name stx)
+      (syntax-case stx ()
+        [(_ label value ...)
+         #`(when (at-debug-level level)
+             #,(syntax/loc stx
+                 (print-label-and-values label value ...)))]))))
+(define-debug-level trace 1)
+(define-debug-level debug 2)
+(define-debug-level verbose 3)
+(define-debug-level vomit 4)
 
-;; print label followed by values when debug-state is greater than 1.
-(define-syntax (debug stx)
-  (syntax-case stx ()
-    [(_ label value ...) 
-     #`(when (at-debug-level 2)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-
+#|
 (define-syntax (trace stx)
   (syntax-case stx ()
     [(_ label value ...) 
@@ -75,14 +81,21 @@
          #,(syntax/loc stx
              (print-label-and-values label value ...)))]))
 
-;; print label followed by values when debug-state is greater than 2.
+(define-syntax (debug stx)
+  (syntax-case stx ()
+    [(_ label value ...) 
+     #`(when (at-debug-level 2)
+         #,(syntax/loc stx
+             (print-label-and-values label value ...)))]))
+
+
 (define-syntax (vomit stx)
   (syntax-case stx ()
     [(_ label value ...)
      #`(when (at-debug-level 4)
          #,(syntax/loc stx
              (print-label-and-values label value ...)))]))
-
+|#
 
 (define-syntax-rule (while condition body ...)
   (let loop ()

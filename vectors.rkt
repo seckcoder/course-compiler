@@ -274,150 +274,127 @@
     (set-member? (send this primitives) x))
   
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  ;; introduce-rootset : Uid -> stmt -> (listof stmt)
-  
-  ;; do not split live ranges of variable at call sites
-  #;
-  (define/public (introduce-rootstack rs-var)
-  (lambda (x)
-  (define (recur x) ((introduce-rootstack rs-var) x))
-  (match x
+  ;; select-instructions : C2 -> psuedo-x86
 
-    [`(if ,t (,(app recur c**) ...) (,(app recur a**) ...))
-     `((if ,t ,(append* c**) ,(append* a**)))]
-    [`(program ,xs ,ty (initialize ,stack ,heap) . ,ss)
-     (unless (null? (get-vars))
-       (error 'introduce-rootstack "empty rootstack invariant"))
-     (let* ([x   (unique-var 'rootstack)]
-            [s   `(assign ,x (global-value rootstack_begin))]
-            [ss  (append* (map (introduce-rootstack x) ss))]
-            [xs  (append xs (get-vars))])
-       `(program ,xs ,ty (initialize ,stack ,heap) ,s . ,ss))]
-    [otherwise `(,x)])))
+  (define/override (select-instructions [rs-var 'Unknown])
+    (define (known-invariant rs-var x)
+      (when (eq? 'Unkown rs-var)
+        (error 'select-instructions "known invariant broken ~a" x)))
+    (lambda (x)
+      (vomit "select instructions" x vars)
+      (match x
+        [`(call-live-roots (,clr* ...) . ,ss)
+         (if (null? clr*)
+             (append* (map (select-instructions rs-var) ss))
+             (let ([rs-var^ (unique-var 'rootstack)]
+                   [frame-size  (* (length clr*) 8)]
+                   [pushes
+                    (for/list ([root (in-list clr*)] [i (in-naturals)])
+                      `(movq (var ,root) (offset (var ,rs-var) ,(* i 8))))]
+                   [pops
+                    (for/list ([root (in-list clr*)] [i (in-naturals)])
+                      `(movq (offset (var ,rs-var) ,(* i 8)) (var ,root)))])
+               `(,@pushes
+                 (movq (var ,rs-var) (var ,rs-var^))
+                 (addq (int ,frame-size) (var ,rs-var^))
+                 ,@(append* (map (select-instructions rs-var^) ss))
+                 ,@pops)))]
+        [`(initialize ,s ,h)
+         (known-invariant rs-var x)
+         `((movq (int ,s) (reg rdi))
+           (movq (int ,h) (reg rsi))
+           (callq initialize)
+           (movq (global-value rootstack_begin) (var ,rs-var)))]
+        [`(collect ,size)
+         (known-invariant rs-var x)
+         `((movq (var ,rs-var) (reg rdi))
+           (movq ,((select-instructions rs-var) size) (reg rsi))
+           (callq collect))]
+        [`(assign ,lhs (allocate ,length (Vector ,ts ...)))
+         (define lhs^ ((select-instructions rs-var) lhs))
+         ;; Add one quad word for the meta info tag
+         (define size (* (add1 length) 8))
+         ;;highest 7 bits are unused
+         ;;lowest 1 bit is 0 saying this is not a forwarding pointer
+         (define is-not-forward-tag 1)
+         ;;next 6 lowest bits are the length
+         (define length-tag (arithmetic-shift length 1))
+         ;;bits [6,56] are a bitmask indicating if [0,50] are pointers
+         (define ptr-tag
+           (for/fold ([tag 0]) ([t (in-list ts)] [i (in-naturals 7)])
+             (bitwise-ior tag (arithmetic-shift (b2i (root-type? t)) i))))
+         ;; Combine the tags into a single quad word
+         (define tag (bitwise-ior ptr-tag length-tag is-not-forward-tag))
+         `((movq (global-value free_ptr) ,lhs^)
+           (addq (int ,size) (global-value free_ptr))
+           (movq (int ,tag) (offset ,lhs^ 0)))]
+        [`(if (collection-needed? ,size) ,cs ,as)
+         (define cs^  (append* (map (select-instructions rs-var) cs)))
+         (define as^  (append* (map (select-instructions rs-var) as)))
+         (define data (unique-var 'end-data))
+         (define lt   (unique-var 'lt))
+         `((movq (global-value free_ptr) (var ,data))
+           (addq (int ,size) (var ,data))
+           (cmpq (var ,data) (global-value fromspace_end))
+           (setl (byte-reg al))
+           (movzbq (byte-reg al) (var ,lt))
+           #| purposefully fliped clauses because we want (not lt)|#
+           (if (eq? (int 0) (var ,lt)) ,as^ ,cs^))]
+        [`(assign ,lhs (vector-ref ,e-vec ,i))
+         (define lhs^ ((select-instructions rs-var) lhs))
+         (define e-vec^ ((select-instructions rs-var) e-vec))
+         `((movq (offset ,e-vec^ ,(* (add1 i) 8)) ,lhs^))]
+        [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
+         (define new-lhs ((select-instructions rs-var) lhs))
+         (define new-e-vec ((select-instructions rs-var) e-vec))
+         (define new-e-arg ((select-instructions rs-var) e-arg))
+         `((movq ,new-e-arg (offset ,new-e-vec ,(* (add1 i) 8))))]
+        ;; If has to be overridden because it needs to propagate
+        [`(if ,cnd ,thn-ss ,els-ss)
+         (let ([cnd ((select-instructions rs-var) cnd)]
+               [thn-ss (append* (map (select-instructions rs-var) thn-ss))]
+               [els-ss (append* (map (select-instructions rs-var) els-ss))])
+           `((if ,cnd ,thn-ss ,els-ss)))]
+        [`(program ,xs (type ,ty) . ,ss)
+         (define rs-var (unique-var 'rootstack))
+         (define ss^ (append* (map (select-instructions rs-var) ss)))
+         `(program ,(append xs (get-vars)) (type ,ty) ,@ss^)]
+        [otherwise ((super select-instructions) otherwise)])))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; select-instructions : C2 -> psuedo-x86
-
-(define/override (select-instructions [rs-var 'Unknown])
-  (define (known-invariant rs-var x)
-    (when (eq? 'Unkown rs-var)
-      (error 'select-instructions "known invariant broken ~a" x)))
-  (lambda (x)
-    (vomit "select instructions" x vars)
-    (match x
-      [`(call-live-roots (,clr* ...) . ,ss)
-       (if (null? clr*)
-           (append* (map (select-instructions rs-var) ss))
-           (let ([rs-var^ (unique-var 'rootstack)]
-                 [frame-size  (* (length clr*) 8)]
-                 [pushes
-                  (for/list ([root (in-list clr*)] [i (in-naturals)])
-                    `(movq (var ,root) (offset (var ,rs-var) ,(* i 8))))]
-                 [pops
-                  (for/list ([root (in-list clr*)] [i (in-naturals)])
-                    `(movq (offset (var ,rs-var) ,(* i 8)) (var ,root)))])
-             `(,@pushes
-               (movq (var ,rs-var) (var ,rs-var^))
-               (addq (int ,frame-size) (var ,rs-var^))
-               ,@(append* (map (select-instructions rs-var^) ss))
-               ,@pops)))]
-      [`(initialize ,s ,h)
-       (known-invariant rs-var x)
-       `((movq (int ,s) (reg rdi))
-         (movq (int ,h) (reg rsi))
-         (callq initialize)
-         (movq (global-value rootstack_begin) (var ,rs-var)))]
-      [`(collect ,size)
-       (known-invariant rs-var x)
-       `((movq (var ,rs-var) (reg rdi))
-         (movq ,((select-instructions rs-var) size) (reg rsi))
-         (callq collect))]
-      [`(assign ,lhs (allocate ,length (Vector ,ts ...)))
-       (define lhs^ ((select-instructions rs-var) lhs))
-       ;; Add one quad word for the meta info tag
-       (define size (* (add1 length) 8))
-       ;;highest 7 bits are unused
-       ;;lowest 1 bit is 0 saying this is not a forwarding pointer
-       (define is-not-forward-tag 1)
-       ;;next 6 lowest bits are the length
-       (define length-tag (arithmetic-shift length 1))
-       ;;bits [6,56] are a bitmask indicating if [0,50] are pointers
-       (define ptr-tag
-         (for/fold ([tag 0]) ([t (in-list ts)] [i (in-naturals 7)])
-           (bitwise-ior tag (arithmetic-shift (b2i (root-type? t)) i))))
-       ;; Combine the tags into a single quad word
-       (define tag (bitwise-ior ptr-tag length-tag is-not-forward-tag))
-       `((movq (global-value free_ptr) ,lhs^)
-         (addq (int ,size) (global-value free_ptr))
-         (movq (int ,tag) (offset ,lhs^ 0)))]
-      [`(if (collection-needed? ,size) ,cs ,as)
-       (define cs^  (append* (map (select-instructions rs-var) cs)))
-       (define as^  (append* (map (select-instructions rs-var) as)))
-       (define data (unique-var 'end-data))
-       (define lt   (unique-var 'lt))
-       `((movq (global-value free_ptr) (var ,data))
-         (addq (int ,size) (var ,data))
-         (cmpq (var ,data) (global-value fromspace_end))
-         (setl (byte-reg al))
-         (movzbq (byte-reg al) (var ,lt))
-         #| purposefully fliped clauses because we want (not lt)|#
-         (if (eq? (int 0) (var ,lt)) ,as^ ,cs^))]
-      [`(assign ,lhs (vector-ref ,e-vec ,i))
-       (define lhs^ ((select-instructions rs-var) lhs))
-       (define e-vec^ ((select-instructions rs-var) e-vec))
-       `((movq (offset ,e-vec^ ,(* (add1 i) 8)) ,lhs^))]
-      [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
-       (define new-lhs ((select-instructions rs-var) lhs))
-       (define new-e-vec ((select-instructions rs-var) e-vec))
-       (define new-e-arg ((select-instructions rs-var) e-arg))
-       `((movq ,new-e-arg (offset ,new-e-vec ,(* (add1 i) 8))))]
-      ;; If has to be overridden because it needs to propagate
-      [`(if ,cnd ,thn-ss ,els-ss)
-       (let ([cnd ((select-instructions rs-var) cnd)]
-             [thn-ss (append* (map (select-instructions rs-var) thn-ss))]
-             [els-ss (append* (map (select-instructions rs-var) els-ss))])
-         `((if ,cnd ,thn-ss ,els-ss)))]
-      [`(program ,xs (type ,ty) . ,ss)
-       (define rs-var (unique-var 'rootstack))
-       (define ss^ (append* (map (select-instructions rs-var) ss)))
-       `(program ,(append xs (get-vars)) (type ,ty) ,@ss^)]
-      [otherwise ((super select-instructions) otherwise)])))
-
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; uncover-live
-(define/override (free-vars a)
-  (match a
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; uncover-live
+  (define/override (free-vars a)
+    (match a
     [`(global-value ,l) (set)]
     [`(offset ,e ,i) (send this free-vars e)]
     [else (super free-vars a)]
     ))
 
-(define/override (write-vars x)
-  (match x
-    [`(movq ,s (offset ,d ,i)) (set)]
-    [`(setl ,d) (send this free-vars d)]
-    [else (super write-vars x)]))
-
-(define/override (read-vars x)
-  (match x
-    [`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
-    [`(setl ,d) (set)]
-    [else (super read-vars x)]))
+  (define/override (write-vars x)
+    (match x
+      [`(movq ,s (offset ,d ,i)) (set)]
+      [`(setl ,d) (send this free-vars d)]
+      [else (super write-vars x)]))
+  
+  (define/override (read-vars x)
+    (match x
+      [`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
+      [`(setl ,d) (set)]
+      [else (super read-vars x)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
-(define/override (assign-homes homes)
-  (lambda (e)
-    (match e
-      [`(global-value ,l) e]
-      [`(offset ,e ,i)
-       (define new-e ((assign-homes homes) e))
-       `(offset ,new-e ,i)]
-      [`(setl ,e)
-       (define new-e ((assign-homes homes) e))
-       `(setl ,new-e)]
-      [else ((super assign-homes homes) e)]
-      )))
+    ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
+    (define/override (assign-homes homes)
+      (lambda (e)
+        (match e
+          [`(global-value ,l) e]
+          [`(offset ,e ,i)
+           (define new-e ((assign-homes homes) e))
+           `(offset ,new-e ,i)]
+          [`(setl ,e)
+           (define new-e ((assign-homes homes) e))
+           `(setl ,new-e)]
+          [else ((super assign-homes homes) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; patch-instructions : psuedo-x86 -> x86
