@@ -445,6 +445,7 @@
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
+      
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
       ("liveness analysis" ,(send compiler uncover-live (void))

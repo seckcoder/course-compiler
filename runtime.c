@@ -1,262 +1,438 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "runtime.h"
+#define DEBUG_MODE 1
+/*
+// The next free memory location 
+int64_t* free_ptr;
 
-long int read_int() {
-  long int i;
-  scanf("%ld", &i);
-  return i;
+// The beginning and end of the working heap for the "mutator"
+// the program for which we are providing runtime services.
+int64_t* fromspace_begin;
+int64_t* fromspace_end;
+
+// The rootset of the "mutator" organized in a stack. Each root
+// in the stack is a pointer into fromspace, while the "mutator"
+// is executing.
+int64_t** rootstack_begin;
+int64_t** rootstack_end;
+*/
+
+// Often misunderstood static global variables in C are not
+// accessible to code outside of the module.
+// No one besides the collector ever needs to know tospace exists.
+static int64_t* tospace_begin;
+static int64_t* tospace_end;
+
+// initialized it set during initialization of the heap, and can be
+// checked in order to ensure that initialization has occurred.
+static int initialized = 0;
+
+// Vectors have a tag describing their contents in their first memory
+// location here are some helpers that can help with their manipulation.
+static const int TAG_IS_NOT_FORWARD_MASK = 1;
+static const int TAG_LENGTH_MASK = 126;
+static const int TAG_LENGTH_RSHIFT = 1;
+static const int TAG_PTR_BITFIELD_RSHIFT = 7;
+
+// Check to see if a tag is actually a forwarding pointer.
+static inline int is_forwarding(int64_t tag) {
+  return !(tag & TAG_IS_NOT_FORWARD_MASK);
 }
 
-
-void print_int(long x) {
-  printf("%ld", x);
+// Get the length field out of a tag.
+static inline int get_length(int64_t tag){
+  return (tag & TAG_LENGTH_MASK) >> TAG_LENGTH_RSHIFT;
 }
 
-void print_bool(int x) {
-  if (x) 
-    printf("#t");
-  else printf("#f");
+// Get the "is pointer bitfield" out of a tag.
+static inline int64_t get_ptr_bitfield(int64_t tag){
+  return tag >> TAG_PTR_BITFIELD_RSHIFT;
 }
 
+// initialize the state of the collector so that allocations can occur
+void initialize(int64_t rootstack_size, int64_t heap_size)
+{
+  // 1. Check to make sure that our assumptions about the world are correct.
+  if (DEBUG_MODE){
+    if (sizeof(int64_t) != sizeof(int64_t*)){
+      printf("The runtime was compiler on an incompatible plaform");
+      exit(-1);
+    }
+    
+    if ((heap_size % 8) != 0){
+      printf("invalid heap size %lld\n", heap_size);
+      exit(-1);
+    }
+    
+    if ((rootstack_size % 8) != 0) {
+      printf("invalid rootstack size %lld\n", rootstack_size);
+      exit(-1);
+    }
+  }
+  
+  // 2. Allocate memory (You should always check if malloc gave you memory)
+  if (!(fromspace_begin = malloc(heap_size))) {
+      printf("Failed to malloc %lld byte fromspace\n", heap_size);
+      exit(-1);
+  }
 
-static void copy_vector(ptr* vec, ptr* free_ptr);
-static void process_vector(ptr* scan_ptr, ptr* free_ptr);
+  if (!(tospace_begin = malloc(heap_size))) {
+      printf("Failed to malloc %lld byte tospace\n", heap_size);
+      exit(-1);
+  }
+
+  if (!(rootstack_begin = malloc(rootstack_size))) {
+    printf("Failed to malloc %lld byte rootstack", rootstack_size);
+    exit(-1);
+  }
+  
+  // 2.5 Calculate the ends memory we are using.
+  // Note: the pointers are for a half open interval [begin, end)
+  fromspace_end = fromspace_begin + (heap_size / 8);
+  tospace_end = tospace_begin + (heap_size / 8);
+  rootstack_end = rootstack_begin + (rootstack_size / 8);
+
+  // 3 Initialize the global free pointer 
+  free_ptr = fromspace_begin;
+  
+  // Useful for debugging
+  initialized = 1;
+
+}
+
+// cheney implements cheney's copying collection algorithm
+// There is a stub and explaination below.
+static void cheney(int64_t** rootstack_ptr);
+
+void collect(int64_t** rootstack_ptr, int64_t bytes_requested)
+{
+  // 1. Check our assumptions about the world
+  if (DEBUG_MODE) {
+    if (!initialized){
+      printf("Collection tried with uninitialized runtime\n");
+      exit(-1);
+    }
+  
+    if (rootstack_ptr < rootstack_begin){
+      printf("rootstack_ptr = %p < %p = rootstack_begin\n",
+             rootstack_ptr, rootstack_begin);
+      exit(-1);
+    }
+
+    if (rootstack_ptr > rootstack_end){
+      printf("rootstack_ptr = %p > %p = rootstack_end\n",
+             rootstack_ptr, rootstack_end);
+      exit(-1);
+    }
+
+    for(int i = 0; rootstack_begin + i < rootstack_ptr; i++){
+      int64_t* a_root = rootstack_begin[i];
+      if (!(fromspace_begin <= a_root && a_root < fromspace_end)) {
+        printf("rootstack contains non fromspace pointer\n");
+        exit(-1);
+      }
+    }
+  }
+
+  
+  // 2. Perform collection
+  cheney(rootstack_ptr);
+  
+  // 3. Check if collection freed enough space in order to allocate
+  if (sizeof(int64_t) * (fromspace_end - free_ptr) < bytes_requested){
+    /* 
+       If there is not enough room left for the bytes_requested,
+       allocate larger tospace and fromspace.
+       
+       In order to determine the new size of the heap double the
+       heap size until it is bigger than the occupied portion of
+       the heap plus the bytes requested.
+       
+       This covers the corner case of heaps objects that are
+       more than half the size of the heap. No a very likely
+       scenario but slightly more robust.
+     
+       One corner case that isn't handled is if the heap is size
+       zero. My thought is that malloc probably wouldn't give
+       back a pointer if you asked for 0 bytes. Thus initialize
+       would fail, but our runtime-config.rkt file has a contract
+       on the heap_size parameter that the code generator uses
+       to determine initial heap size to this is a non-issue
+       in reality.
+    */
+    
+    long occupied_bytes = (free_ptr - fromspace_begin) * 8;
+    long needed_bytes = occupied_bytes + bytes_requested;
+    long old_len = fromspace_end - fromspace_begin;
+    long old_bytes = old_len * sizeof(int64_t);
+    long new_bytes = old_bytes;
+    
+    while (new_bytes < needed_bytes) new_bytes = 2 * new_bytes;
+
+    // Free and allocate a new tospace of size new_bytes
+    free(tospace_begin);
+
+    if (!(tospace_begin = malloc(new_bytes))) {
+      printf("failed to malloc %ld byte fromspace", new_bytes);
+      exit(-1);
+    }
+    
+    tospace_end = tospace_begin + new_bytes / (sizeof(int64_t));
+
+    // The pointers on the stack and in the heap must be updated,
+    // so this cannot be just a memcopy of the heap.
+    // Performing cheney's algorithm again will have the correct
+    // effect, and we have already implemented it.
+    cheney(rootstack_ptr);
+
+    
+    // Cheney flips tospace and fromspace. Thus, we allocate another 
+    // tospace not fromspace as we might expect.
+    free(tospace_begin);
+
+    if (!(tospace_begin = malloc(new_bytes))) {
+      printf("failed to malloc %ld byte tospace", new_bytes);
+      exit(-1);
+    }
+
+    tospace_end = tospace_begin + new_bytes / (sizeof(int64_t));
+    
+  }
+}
+
+// copy_vector is responsible for doing a pointer oblivious
+// move of vector data and updating the vector pointer with
+// the new address of the data.
+// There is a stub and explaination for copy_vector below.
+static void copy_vector(int64_t** vector_ptr_loc);
 
 /*
-  Garbage collection via copying collection.
-
-  Entities:
-
-  * root stack
-        local variables that are pointers into the heap (e.g., vectors)
-
-  * fromspace: the current heap
-
-  * tospace: to old, unused heap
-
-  Interface to the generated code:
-
-  * Root Stack Pointer, a register 
-    Allocate at the beginning of a procedure by checking for room
-    then moving this pointer forward and initialize with zeroes.
-
-  * global variable for the end of the root stack
-     (exit the program if you run out of space on the root stack)
-
-  * Allocation Pointer: register pointing to the next opening in the fromspace.
-    allocate by checking for room then moving this pointer forward.
-
-  * Allocation End Pointer: register pointing to the end of the fromspace.
-
-  * Vectors start with a bitfield that says which elements are pointers
-    or that indicates that the vector has just been copied to tospace
-    and the first element is now a forwarding pointer.
-
-  * initialize function
-    Allocate the fromspace, tospace, and rootstack. Return the address of
-    the start and end of the fromspace and the start of the rootstack.
-
-  * collect function
-    Call this when there is not enough room in the fromspace.
-    Returns the address of the next allocation and end of the new fromspace.
-
-    Do a breadth-first traversal of the fromspace, starting with
-    the root stack. The queue for the BFS is stored in the tospace.
-
-    Maintain two pointers into the tospace. 
-    * free pointer: points to the next available slot in the tospace,
-      which also represents the end of the BFS queue.
-
-    * scan pointer: points to the front of the queue. The items
-      in the queue may have pointers into the fromspace and those
-      objects need to get copied over to the tospace.
-      
-    Forwarding pointers: the graph of pointers in fromspace may
-      include multiple pointers to the same object, so we need
-      to make sure to only copy each object once, and to maintain
-      the original aliasing. This is accomplished by placing
-      a forwarding pointer in the fromspace object
-      after it is copied to tospace. Also, the tag at the beginning of
-      the object is changed to say that there is a forwarding pointer.
-
-    What to do if there is not enough room after collection for the new
-    allocation? Allocate a new tospace and fromspace that is twice
-    as large as before.
-
-  Object Tag (64 bits)
-  * If the bottom-most bit is zero, the tag is really a forwarding pointer.
-  * Otherwise, its an object. In that case, the next 
-    6 bits give the length of the object (max of 50 64-bit words).
-    The next 50 bits say where there are pointers.
-    A '1' is a pointer, a '0' is not a pointer.
-
- */
-
-static ptr tospace_begin;
-static ptr tospace_end;
-
-ptr free_ptr;
-
-ptr fromspace_begin;
-ptr fromspace_end;
-
-ptr rootstack_begin;
-ptr rootstack_end;
-
-
-int initialized = 0;
-
-void initialize()
-{
-  long int initial_len = 1000000;
-
-  fromspace_begin = malloc(8 * initial_len);
-  fromspace_end = fromspace_begin + initial_len;
-
-  tospace_begin = malloc(8 * initial_len);
-  tospace_end = tospace_begin + initial_len;
-
-  free_ptr = fromspace_begin;
-
-  rootstack_begin = malloc(8 * initial_len);
-  rootstack_end = rootstack_begin + initial_len;
-
-  initialized = 1;
-}
-
-ptr alloc(long int bytes_requested)
-{
-  if (!initialized) {
-    //allocations must be in full words
-    printf("Initialization didn't run");
-    exit(-1);
-  }
+  The cheney algorithm takes a pointer to the top of the rootstack.
+  It resets the free pointer to be at the begining of tospace, copies
+  (or reallocates) the data pointed to by the roots into tospace and
+  replaces the pointers in the rootset with pointers to the
+  copies. (See the description of copy_vector below).
   
-  if (bytes_requested % 8 != 0){
-    //allocations must be in full words
-    printf("Can't allocate fractions of a ptr");
-    exit(-1);
-  }
+  While this initial copying of root vectors is occuring the free_ptr
+  has been maintained to remain at the next free memory location in
+  tospace. Cheney's algorithm then scans a vector at a time until it
+  reaches the free_ptr.
 
-  if (bytes_requested > (fromspace_end - free_ptr) * 8){
-    //collect(bytes_requested, rootstack_ptr);
-    printf("Collection not yet implemented\n");
-    exit(-1);
-  }
+  At each vector we use the meta information stored in the vector tag
+  to find the length of the vector and tell which fields inside the
+  vector are vector pointers. Each new vector pointer must have its
+  data copied and every vector pointer must be updated to to point to
+  the copied data. (The description of copy_vector will help keep this
+  organized.
 
-  ptr new_ptr = free_ptr;
-  free_ptr = free_ptr + (bytes_requested / sizeof(char));
-  return new_ptr;
-}
+  This process is a breadth first graph traversal. Copying a vector
+  places its contents at the end of a Fifo queue and scanning a vector
+  removes it. Eventually the graph traversal will run out of unseen
+  nodes "catch up" to the free pointer. When this occurs we know that
+  all live data in the program is contained by tospace, and that
+  everything left in fromspace is unreachable by the program.
 
+  After this point the free pointer will be pointing into what until
+  now we considered tospace. This means the program will allocate
+  object here. In order to keep track of the we "flip" fromspace and
+  tospace by making the fromspace pointers point to tospace and vice
+  versa.
+*/
 
-ptr collect(long int bytes_requested, ptr rootstack_ptr)
+void cheney(int64_t** rootstack_ptr)
 {
-  //ptr free_ptr;
-  ptr scan_ptr;
-
+  int64_t* scan_ptr = tospace_begin;
   free_ptr = tospace_begin;
-  scan_ptr = tospace_begin;
-
+  
   /* traverse the root set to create the initial queue */
-  for (ptr root = rootstack_begin; root != rootstack_ptr; ++root) {
-    copy_vector(&root, &free_ptr);
+  for (int64_t** root_loc = rootstack_begin;
+       root_loc != rootstack_ptr;
+       ++root_loc) {
+    /*
+      We pass copy vector the pointer to the pointer to the vector.
+      This is because we need to be able to rewrite the pointer after
+      the object has been moved.
+    */
+    copy_vector(root_loc);
   }
   
-  /* conduct the breadth-first search */
+  /* 
+     Here we need to scan tospace until we reach the free_ptr pointer.
+     This will end up being a breadth first search of the pointers in
+     from space.
+  */
   while (scan_ptr != free_ptr) {
-    process_vector(&scan_ptr, &free_ptr);
+    /* 
+       I inlined this to leave maniuplation of scan_ptr to a single
+       function. This can be accomplished by passing the location
+       of the pointer into helper, but let's not make reasoning
+       through the algorithm any harder.
+    
+       The invarient of the outer loop is that scan_ptr is either
+       at the front of a vector, or == to free_ptr.
+    */
+    
+    // Since this tag is already in tospace we know that it isn't
+    // a forwarding pointer.
+    int64_t tag = *scan_ptr;
+    
+    // the length of the vector is contained in bits [1,6]
+    int len = get_length(tag);
+
+    // Find the next vector or the next free_ptr;
+    // with is len + 1 away from the current;
+    int64_t* next_ptr = scan_ptr + len + 1;
+    
+    // each bit low to high says if the next index is a ptr
+    int64_t isPointerBits = get_ptr_bitfield(tag);
+
+    // Advance the scan_ptr then check to
+    // see if we have arrived at the beginning of the next array.
+    scan_ptr += 1;
+    while(scan_ptr != next_ptr){
+      if ((isPointerBits & 1) == 1) {
+        // since the tag says that the scan ptr in question is a
+        // ptr* we known that scan_ptr currently points to a ptr*
+        // and must be a ptr** itself.
+        copy_vector((int64_t**)scan_ptr);
+      }
+      // Advance the tag so the next check is for the next scan ptr
+      isPointerBits = isPointerBits >> 1;
+      scan_ptr += 1;
+    }
+
   }
 
   /* swap the tospace and fromspace */
-  ptr tmp_begin = tospace_begin; 
-  ptr tmp_end = tospace_end;
+  int64_t* tmp_begin = tospace_begin; 
+  int64_t* tmp_end = tospace_end;
   tospace_begin = fromspace_begin;
   tospace_end = fromspace_end;
   fromspace_begin = tmp_begin;
   fromspace_end = tmp_end;
-  
-  /* if there is not enough room left for the bytes_requested,
-     allocate larger tospace and fromspace */
-  
-  if (sizeof(char) * (fromspace_end - free_ptr) < bytes_requested) {
-    long int old_len = fromspace_end - fromspace_begin;
-    long int old_bytes = 8 * old_len;
-
-    free(tospace_begin);
-    tospace_begin = malloc(2 * old_bytes);
-    tospace_end = tospace_begin + 2 * old_len;
-
-    ptr from = malloc(2 * old_bytes);
-    ptr new_free_ptr = from;
-    for (ptr p = fromspace_begin; p != free_ptr; ++p) {
-      *new_free_ptr = *p;
-      ++new_free_ptr;
-    }
-    free(fromspace_begin);
-    fromspace_begin = from;
-    fromspace_end = fromspace_begin + 2 * old_len;
-    free_ptr = new_free_ptr;
-  } /* end if */
-
-  return free_ptr;
 }
 
-static inline int is_forwarding(long int tag) {
-  return (tag & 1) == 0;
-}
 
-static inline long int six_ones() {
-  long int all_ones = ~0;
-  long int six_zeroes = all_ones << 6;
-  return ~six_zeroes;
-}
+/* 
+ copy_vector takes a pointer, (`location`) to a vector pointer,
+ copies the vector data from fromspace into tospace, and updates the
+ vector pointer so that it points to the the data's new address in
+ tospace.
 
-/* Copy vector from fromspace into the tospace */
-void copy_vector(ptr* vec, ptr* free_ptr)
+  Precondition:
+    *  original vector pointer location
+    |
+    V
+   [*] old vector pointer
+    |
+    +-> [tag or forwarding pointer | ? | ? | ? | ...] old vector data
+        
+ Postcondition:
+    * original vector pointer location
+    |
+    V
+   [*] new vector pointer
+    |
+    |   [ * forwarding pointer | ? | ? | ? | ...] old vector data
+    |     |     
+    |     V
+    +---->[tag | ? | ? | ? | ...] new vector data
+ 
+ Since multiple pointers to the same vector can exist within the
+ memory of the program this may or may not be the first time
+ we called `copy_vector` on a location that contains this old vector
+ pointer. In order to tell if we have copied the old vector data previously we
+ check the vector information tag (`tag = old_vector_pointer[0]`).
+
+ If the forwarding bit is set, then is_forwarding(tag) will return
+ false and we know we haven't already copied the data. In order to
+ figure out how much data to copy we can inspect the tag's length
+ field. The length field indicates the number of 64-bit words the
+ array is storing for the user, so we need to copy `length + 1` words
+ in total, including the tag. After performing the
+ copy we need to leave a forwarding pointer in old data's tag field
+ to indicate the new address to subsequent copy_vector calls for this
+ vector pointer. Furthermore, we need to store the new vector's pointer
+ at the location where where we found the old vector pointer.
+ 
+ If the tag is a forwarding pointer, the `is_forwarding(tag) will return
+ true and we need to update the location storing the old vector pointer to
+ point to the new data instead).
+ 
+ As a side note any time you are allocating new data you must maintain
+ the invariant that the free_ptr points to the next free memory address.
+
+*/
+void copy_vector(int64_t** vector_ptr_loc)
 {
-  long int tag = **vec;
-  if (is_forwarding(tag)) {
-    /* update vec to the forwarded address */
-    *vec = (ptr)**vec;
-  } else {
-    tag = tag >> 1;
-    int len = (tag & six_ones());
-    ptr current = *vec;
-    ptr new_vec = *free_ptr;
+  
+  int64_t* old_vector_ptr = *vector_ptr_loc;
+  int64_t tag = old_vector_ptr[0];
+   
+  // If our search has already moved the vector then we
+  //  would have left a forwarding pointer.
 
-    /* copy the tag into the new vector */
-    **free_ptr = *current;
-    current = current + 1;
-    *free_ptr = *free_ptr + 1;
-    /* copy the rest of the vector */
-    for (int i = 0; i != len; ++i) {
-      current = current + 1;
-      *free_ptr = *free_ptr + 1;      
+  if (is_forwarding(tag)) {
+    // Since we left a forwarding pointer the we have already
+    // moved this vector. All we need to do is update the pointer
+    // that was pointing to the old vector. To point we the
+    // forwarding pointer says the new copy is.
+    *vector_ptr_loc = (int64_t*) tag;
+    
+  } else {
+    // This is the first time we have followed this pointer.
+    
+    // Since we are about to jumble all the pointers around lets
+    // set up some structure to the world.
+
+    // The tag we grabbed earlier contains some usefull info for
+    // forwarding copying the vector.
+    int length = get_length(tag);
+    
+    // The new vector is going to be where the free int64_t pointer
+    // currently points.
+    int64_t* new_vector_ptr = free_ptr;
+
+    // Just perform a straight-forward copy from old to new.
+    // The length is a bit of a lie because including the
+    // meta information the actual length is len + 1;
+    for (int i = 0; i < length + 1; i++){
+      new_vector_ptr[i] = old_vector_ptr[i];
     }
-    /* set the forwarding pointer */
-    **vec = (long int)new_vec;
-    /* update vec to the new location in tospace */
-    *vec = (ptr)**vec;
+        
+    // the free ptr can be updated to point to the next free ptr.
+    free_ptr = free_ptr + length + 1;    
+
+    // We need to set the forwarding pointer in the old_vector
+    old_vector_ptr[0] = (int64_t) new_vector_ptr;
+
+    // And where we found the old vector we need to update the
+    // pointer to point to the new vector
+    *vector_ptr_loc = new_vector_ptr;
+    
   }
 }
 
-void process_vector(ptr* scan_ptr, ptr* free_ptr)
-{
-  long int tag = **scan_ptr;
-  tag = tag >> 1;
-  int len = (tag & six_ones());
-  tag = tag >> 6;
-  
-  /* advance past the tag */
-  *scan_ptr = *scan_ptr + 1;
-  
-  for (int i = 0; i != len; ++i) {
-    if ((tag & 1) == 1) {
-      copy_vector(scan_ptr, free_ptr);
-    }
-    tag = tag >> 1;
-    *scan_ptr = *scan_ptr + 1;
+
+
+// Read an integer from stdin
+int64_t read_int() {
+  int64_t i;
+  scanf("%lld", &i);
+  return i;
+}
+
+// print an integer to stdout
+void print_int(int64_t x) {
+  printf("%lld", x);
+}
+
+// print a bool to stdout
+void print_bool(int64_t x) {
+  if (x){
+    printf("#t");
+  } else {
+    printf("#f");
   }
 }
