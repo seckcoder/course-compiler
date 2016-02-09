@@ -527,7 +527,6 @@
     
     (define/override (interp-C env)
       (lambda (ast)
-        (vomit "R2/interp-C" ast env)
         (match ast
           ;; I should do better than make these noops - andre
           [`(initialize ,s ,h)
@@ -556,14 +555,15 @@
                         (exact-nonnegative-integer? ((interp-C env) size)))
              (error 'interp-C "invalid argument(s) to collect in ~a" ast)) 
            env]
-          ;; Referece a global value (should I put these in the environment?)
-          [`(global-value ,l) (fetch-global l)]
-          ;; TODO: Highly expiramental semantics
-          [`(movq ,src ,dst) ((interp-x86 env) (list ast))]
           ;; allocate a vector of length l and type t that is initialized.
           [`(allocate ,l ,t) (build-vector l (lambda a uninitialized))]
           ;; Analysis information making introduce rootstack easier
-          [`(call-live-roots (,xs ...) ,ss ...) ((send this seq-C env) ss)]
+          [`(call-live-roots (,xs ...) ,ss ...)
+           (for ([x (in-list xs)])
+             (unless (vector? (lookup x env))
+               (error 'interp-C
+                      "call-live-roots stores non-root ~a in ~a" x ast)))
+           ((send this seq-C env) ss)]
           [otherwise ((super interp-C env) ast)])))
     
     (define/override (interp-x86-exp env)     

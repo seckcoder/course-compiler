@@ -2,7 +2,8 @@
 (require "conditionals.rkt"
          "interp.rkt"
          "utilities.rkt"
-         "runtime-config.rkt")
+         "runtime-config.rkt"
+         "uncover-types.rkt")
 
 (provide compile-R2 vectors-passes vectors-typechecker)
 
@@ -58,6 +59,9 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; expose allocation : 
+
+
+
     
     (define/public (expose-allocation env)
       (define (recur x) ((expose-allocation) x))
@@ -71,6 +75,11 @@
              (for ([x xs])
                (unless (hash-ref env^ x #f)
                  (error 'expose-allocation "var not in env ~a" x)))
+             (let ([env^^ (make-immutable-hash (uncover-types x))])
+               (for ([(k v) (in-hash env^)])
+                 (or (eq? 'Void v)
+                     (let ([v? (hash-ref env^^ k #f)])
+                       (and v? (eq? v v?))))))
              (let ([xs (hash->list env^)])
                `(program ,xs (type ,ty)
                          (initialize ,(rootstack-size) ,(heap-size))

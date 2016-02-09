@@ -25,8 +25,10 @@
     ("reg_int_exp"  #f                        ,reg-int-exp-passes  (0))
     ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
-    ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
-    ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))))
+    ;; Commenting out these two compilers until we update them -andre
+    ;;("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
+    ;;("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
+    ))
 
 (define compiler-table (make-immutable-hash compiler-list))
 

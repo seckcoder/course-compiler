@@ -235,75 +235,7 @@ static void copy_vector(int64_t** vector_ptr_loc);
 
 void cheney(int64_t** rootstack_ptr)
 {
-  int64_t* scan_ptr = tospace_begin;
-  free_ptr = tospace_begin;
   
-  /* traverse the root set to create the initial queue */
-  for (int64_t** root_loc = rootstack_begin;
-       root_loc != rootstack_ptr;
-       ++root_loc) {
-    /*
-      We pass copy vector the pointer to the pointer to the vector.
-      This is because we need to be able to rewrite the pointer after
-      the object has been moved.
-    */
-    copy_vector(root_loc);
-  }
-  
-  /* 
-     Here we need to scan tospace until we reach the free_ptr pointer.
-     This will end up being a breadth first search of the pointers in
-     from space.
-  */
-  while (scan_ptr != free_ptr) {
-    /* 
-       I inlined this to leave maniuplation of scan_ptr to a single
-       function. This can be accomplished by passing the location
-       of the pointer into helper, but let's not make reasoning
-       through the algorithm any harder.
-    
-       The invarient of the outer loop is that scan_ptr is either
-       at the front of a vector, or == to free_ptr.
-    */
-    
-    // Since this tag is already in tospace we know that it isn't
-    // a forwarding pointer.
-    int64_t tag = *scan_ptr;
-    
-    // the length of the vector is contained in bits [1,6]
-    int len = get_length(tag);
-
-    // Find the next vector or the next free_ptr;
-    // with is len + 1 away from the current;
-    int64_t* next_ptr = scan_ptr + len + 1;
-    
-    // each bit low to high says if the next index is a ptr
-    int64_t isPointerBits = get_ptr_bitfield(tag);
-
-    // Advance the scan_ptr then check to
-    // see if we have arrived at the beginning of the next array.
-    scan_ptr += 1;
-    while(scan_ptr != next_ptr){
-      if ((isPointerBits & 1) == 1) {
-        // since the tag says that the scan ptr in question is a
-        // ptr* we known that scan_ptr currently points to a ptr*
-        // and must be a ptr** itself.
-        copy_vector((int64_t**)scan_ptr);
-      }
-      // Advance the tag so the next check is for the next scan ptr
-      isPointerBits = isPointerBits >> 1;
-      scan_ptr += 1;
-    }
-
-  }
-
-  /* swap the tospace and fromspace */
-  int64_t* tmp_begin = tospace_begin; 
-  int64_t* tmp_end = tospace_end;
-  tospace_begin = fromspace_begin;
-  tospace_end = fromspace_end;
-  fromspace_begin = tmp_begin;
-  fromspace_end = tmp_end;
 }
 
 
@@ -360,51 +292,6 @@ void cheney(int64_t** rootstack_ptr)
 void copy_vector(int64_t** vector_ptr_loc)
 {
   
-  int64_t* old_vector_ptr = *vector_ptr_loc;
-  int64_t tag = old_vector_ptr[0];
-   
-  // If our search has already moved the vector then we
-  //  would have left a forwarding pointer.
-
-  if (is_forwarding(tag)) {
-    // Since we left a forwarding pointer the we have already
-    // moved this vector. All we need to do is update the pointer
-    // that was pointing to the old vector. To point we the
-    // forwarding pointer says the new copy is.
-    *vector_ptr_loc = (int64_t*) tag;
-    
-  } else {
-    // This is the first time we have followed this pointer.
-    
-    // Since we are about to jumble all the pointers around lets
-    // set up some structure to the world.
-
-    // The tag we grabbed earlier contains some usefull info for
-    // forwarding copying the vector.
-    int length = get_length(tag);
-    
-    // The new vector is going to be where the free int64_t pointer
-    // currently points.
-    int64_t* new_vector_ptr = free_ptr;
-
-    // Just perform a straight-forward copy from old to new.
-    // The length is a bit of a lie because including the
-    // meta information the actual length is len + 1;
-    for (int i = 0; i < length + 1; i++){
-      new_vector_ptr[i] = old_vector_ptr[i];
-    }
-        
-    // the free ptr can be updated to point to the next free ptr.
-    free_ptr = free_ptr + length + 1;    
-
-    // We need to set the forwarding pointer in the old_vector
-    old_vector_ptr[0] = (int64_t) new_vector_ptr;
-
-    // And where we found the old vector we need to update the
-    // pointer to point to the new vector
-    *vector_ptr_loc = new_vector_ptr;
-    
-  }
 }
 
 
