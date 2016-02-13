@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "runtime.h"
@@ -13,12 +14,11 @@ static int64_t* tospace_end;
 // checked in order to ensure that initialization has occurred.
 static int initialized = 0;
 
-
 /*
   Object Tag (64 bits)
-  #b|- 7 bit unused -|- 50 bit field [50, 0] -| 6 bits lenght -| 1 bit isForwarding Pointer  
+  #b|- 7 bit unused -|- 50 bit field [50, 0] -| 6 bits length -| 1 bit isNotForwarding Pointer  
   * If the bottom-most bit is zero, the tag is really a forwarding pointer.
-  * Otherwise, its an object. In that case, the next 
+  * Otherwise, its an object tag. In that case, the next 
     6 bits give the length of the object (max of 50 64-bit words).
     The next 50 bits say where there are pointers.
     A '1' is a pointer, a '0' is not a pointer.
@@ -53,38 +53,38 @@ void initialize(int64_t rootstack_size, int64_t heap_size)
       exit(-1);
     }
     
-    if ((heap_size % 8) != 0){
-      printf("invalid heap size %lld\n", heap_size);
+    if ((heap_size % sizeof(int64_t)) != 0){
+      printf("invalid heap size %" PRId64 "\n", heap_size);
       exit(-1);
     }
     
-    if ((rootstack_size % 8) != 0) {
-      printf("invalid rootstack size %lld\n", rootstack_size);
+    if ((rootstack_size % sizeof(int64_t)) != 0) {
+      printf("invalid rootstack size %" PRId64 "\n", rootstack_size);
       exit(-1);
     }
   }
   
   // 2. Allocate memory (You should always check if malloc gave you memory)
   if (!(fromspace_begin = malloc(heap_size))) {
-      printf("Failed to malloc %lld byte fromspace\n", heap_size);
-      exit(-1);
+    printf("Failed to malloc %" PRId64 " byte fromspace\n", heap_size);
+    exit(-1);
   }
 
   if (!(tospace_begin = malloc(heap_size))) {
-      printf("Failed to malloc %lld byte tospace\n", heap_size);
-      exit(-1);
+    printf("Failed to malloc %" PRId64 " byte tospace\n", heap_size);
+    exit(-1);
   }
 
   if (!(rootstack_begin = malloc(rootstack_size))) {
-    printf("Failed to malloc %lld byte rootstack", rootstack_size);
+    printf("Failed to malloc %" PRId64 " byte rootstack", rootstack_size);
     exit(-1);
   }
   
   // 2.5 Calculate the ends memory we are using.
   // Note: the pointers are for a half open interval [begin, end)
-  fromspace_end = fromspace_begin + (heap_size / 8);
-  tospace_end = tospace_begin + (heap_size / 8);
-  rootstack_end = rootstack_begin + (rootstack_size / 8);
+  fromspace_end = fromspace_begin + (heap_size / sizeof(int64_t));
+  tospace_end = tospace_begin + (heap_size / sizeof(int64_t));
+  rootstack_end = rootstack_begin + (rootstack_size / sizeof(int64_t));
 
   // 3 Initialize the global free pointer 
   free_ptr = fromspace_begin;
@@ -103,7 +103,7 @@ void collect(int64_t** rootstack_ptr, int64_t bytes_requested)
   // 1. Check our assumptions about the world
   if (DEBUG_MODE) {
     if (!initialized){
-      printf("Collection tried with uninitialized runtime\n");
+      printf("Collection attempted without initialization\n");
       exit(-1);
     }
   
@@ -412,13 +412,13 @@ void copy_vector(int64_t** vector_ptr_loc)
 // Read an integer from stdin
 int64_t read_int() {
   int64_t i;
-  scanf("%lld", &i);
+  scanf("%" SCNd64, &i);
   return i;
 }
 
 // print an integer to stdout
 void print_int(int64_t x) {
-  printf("%lld", x);
+  printf("%" PRId64, x);
 }
 
 // print a bool to stdout
