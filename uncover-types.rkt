@@ -1,70 +1,67 @@
 #lang racket
 
 (provide uncover-types)
+;; This file provides the uncover-types function which can be used to
+;; recover type information for variables in the program body. This
+;; function can be used to help simplify the complexity of
+;; expose-allocation and uncover-call-live-roots.  Expose-allocation
+;; needs the type of each allocated vector in order to correctly tag
+;; the vector, uncover-call-live-roots needs the type information to
+;; identify roots at each collection call site.
+;;
+;; During the program level match for expose-allocation the uncover
+;; types function can be called in order to get an association list
+;; mapping variables to types. This type environment can then be
+;; passed through the recursive steps of this pass as a whole. With
+;; this configuration it is now possible determine the type of a
+;; vector at allocation by looking up the type of the variable to
+;; which that vector is assigned.  After processing the entire program
+;; the type environment can be saved for the next pass is the locals
+;; slot of the program form.
+;;
+;; During the program level form of uncover-call-live-roots this
+;; environment can then be retrieved from the locals slot and again
+;; passed without change throughout the processing of the entire
+;; program. When a variable is found in expression position the
+;; variable is considered live. By looking up the variable in the type
+;; environment we can figure out if that variable is a vector, and as
+;; such should be considered considered a root. After this pass the
+;; original locals form can be restored by taking the car of all
+;; pairs in the association list.
 
-;; Given a program return a type environment for all variables
+;; Here is a minimal example of its use.
+(module+ test
+  (require "utilities.rkt")
+  
+  (define test-prog
+    '(program (foo bar baz bam)
+              (type Integer)
+              (assign foo (vector 777))
+              (assign bar (vector foo foo))
+              (assing _   (vector-set! foo 0 42))
+              (assign baz (vector-ref bar 1))
+              (assign bam (vector-ref baz 0))
+              (return bam)))
+
+  (lookup 'foo (uncover-types test-prog)) ;; => 'Integer
+  (lookup 'baz (uncover-types test-prog)) ;; => '(Vector Integer)
+  (lookup 'bam (uncover-types test-prog)) ;; => 'Integer
+)
+
+
+
+
+;; uncover-types infers the type environment containing all variables in prog.
+;; This code assumes that variables have explicitly one type, but
+;; may be assigned multiple times. Any attempt to assign the
+;; same variable multiple times will result in a runtime error
+;; with a message about the type conflict.
+;; uncover-types : prog -> (listof (pairof id type))
 (define (uncover-types prog)
-  ;; Associate var with type in env but ensure it doesn't
-  ;; conflict with any other type that we uncovered previously.
-  (define (env-set env var type)
-    (let ([ty? (hash-ref env var #f)])
-      (cond
-        [(not ty?) (hash-set env var type)]
-        [(equal? type ty?) env]
-        [else
-         (error 'env-set
-                "conflicting types for ~a, ~a and ~a" var type ty?)])))
-  (define (primitive? x)
-    (set-member? '(+ - * read and or not eq?) x))
-  ;; look up a variable in the environment
-  (define (env-ref env var)
-    (define (err) (error 'env-ref "unbound ~a in ~a" var env))
-    (hash-ref env var err))
-  ;; Recur with the flow of execution is stmts accumulating an
-  ;; environment the enviroment that is present at the end of ss.
-  (define ((ut-seq env) ss) (foldl ut-stmt env ss))
-  ;; Build an environment extended the given env with any
-  ;; variables assigned in x.
-  (define (ut-stmt stmt env)
-    ;; return the type of an expression
-    (define (ut-expr expr)
-      (match expr
-        [(? symbol? x)  (env-ref env x)]
-        [`(allocate ,l ,t) t]
-        [`(vector ,(app ut-expr t*) ...) `(Vector ,@t*)] 
-        [`(vector-ref ,(app ut-expr `(Vector ,t* ...)) ,i)
-         (list-ref t* i)]
-        [`(vector-set! ,v ,i ,e) 'Void]
-        [(? integer?)  'Integer]
-        [(? boolean?)  'Boolean]
-        [`(,(? primitive? op) ,_ ...)
-         (case op
-           [(+ - * read) 'Integer]
-           [(and or not eq?) 'Boolean])]
-        [else (error 'uncover-types-expr "unmatched ~v" expr)]))
-    ;; Body of uncover-type-stmt
-    (match stmt
-      [`(assign ,(? symbol? lhs) ,(app ut-expr t))
-       (match t
-         ;; This line is expiremental.
-         ;; by not adding void types to the environment we ensure
-         ;; that any attempt to reference them will result in an
-         ;; internal compiler error, a further advantage is that the
-         ;; environment locals form for your ASTs will be smaller
-         ;; Feel free to uncomment
-         ;; ['Void env]
-         [other (env-set env lhs t)])]
-      [`(if ,t ,(app (ut-seq env) c-env) ,(app (ut-seq env) a-env))
-       ;; merge resulting environments making sure that they agree
-       ;; any error here would be the result of a incorrect transformation
-       ;; in an earlier pass.
-       (for/fold ([env c-env]) ([(k v) (in-hash a-env)])
-         (env-set env k v))]
-      [otherwise env]))
   ;; Body of uncover-type
   (match prog
     [`(program (,xs ...) (type ,ty) . ,ss)
-     (let ([env ((ut-seq (hash)) ss)])
+     (let ([env ((uncover-types-seq (hash)) ss)])
        (for ([x (in-list xs)])
          (let ([err (lambda ()
                       (error 'uncover-type "failed to find ~a" x))])
@@ -73,3 +70,74 @@
        ;; with hashtable instead.
        (hash->list env))]
     [else (error 'uncover-type "unmatched ~a" prog)]))
+
+
+
+;; Build an type environment for all the variables assigned in the
+;; sequence of statements.
+;; uncover-types-seq :
+;;      (hashtable id type) -> (listof stmt) -> (hashtable id type)
+(define ((uncover-types-seq env) ss) (foldl uncover-types-stmt env ss))
+
+;; Build an environment extending the given env with any
+;; variables assigned in stmt.
+;; uncover-types-stmt : stmt (hashtable id type) -> (hashtable id type)
+(define (uncover-types-stmt stmt env)
+  ;; Associate var with type in env but ensure it doesn't
+  ;; conflict with any other type that we uncovered previously.
+  (define (env-set env var type)
+    (let ([ty? (hash-ref env var #f)])
+      (cond
+        [(not ty?) (hash-set env var type)]
+        [(equal? type ty?) env]
+        [else
+         (error 'uncover-types
+                "conflicting types for ~a, ~a and ~a"
+                var type ty?)])))
+  (match stmt
+    [`(assign ,(? symbol? lhs) ,(app (uncover-type-exp env) t))
+     (match t
+       ;; This line is expiremental.
+       ;; By not adding Void types to the environment we ensure
+       ;; that any attempt to reference them will result in an
+       ;; internal compiler error, a further advantage is that the
+       ;; environment locals form for your ASTs will be smaller
+       ;; Feel free to uncomment if you want these properties.
+       ;; ['Void env]
+       [other (env-set env lhs t)])]
+    [`(if ,t
+          ,(app (uncover-types-seq env) c-env)
+          ,(app (uncover-types-seq env) a-env))
+     ;; Merge resulting environments making sure that they agree
+     ;; any error here would be the result of assinging a variable
+     ;; with different types in each branch. 
+     (for/fold ([env c-env]) ([(k v) (in-hash a-env)])
+       (env-set env k v))]
+    [otherwise env]))
+
+;; Reconstruct the type of expr given the current type environment
+;; uncover-type-exp : (hashtable id type) -> expr -> type
+(define ((uncover-type-exp env) expr)
+  ;; Find the type of var in env
+  (define (env-ref env var)
+    (let ([err (thunk (error 'uncover-types "unbound ~a in ~a" var env))])
+      (hash-ref env var err)))
+  ;; Is x a primitive in the compiler?
+  ;; This should be probabaly be replaced by some global helper
+  ;; with an extensible list.
+  (define (primitive? x)
+    (set-member? '(+ - * read and or not eq?) x))
+  (match expr
+    [(? symbol? x)  (env-ref env x)]
+    [`(allocate ,l ,t) t]
+    [`(vector ,(app (uncover-type-exp env) t*) ...) `(Vector ,@t*)] 
+    [`(vector-ref ,(app (uncover-type-exp env) `(Vector ,t* ...)) ,i)
+     (list-ref t* i)]
+    [`(vector-set! ,v ,i ,e) 'Void]
+    [(? integer?)  'Integer]
+    [(? boolean?)  'Boolean]
+    [`(,(? primitive? op) ,_ ...)
+     (case op
+       [(+ - * read) 'Integer]
+       [(and or not eq?) 'Boolean])]
+    [else (error 'uncover-types-expr "unmatched ~v" expr)]))
