@@ -6,27 +6,26 @@
 ;; function can be used to help simplify the complexity of
 ;; expose-allocation and uncover-call-live-roots.  Expose-allocation
 ;; needs the type of each allocated vector in order to correctly tag
-;; the vector, uncover-call-live-roots needs the type information to
-;; identify roots at each collection call site.
+;; the vector, and uncover-call-live-roots needs the type information
+;; to identify roots at each collection call site.
 ;;
-;; During the program level match for expose-allocation the uncover
+;; During the program level match for expose-allocation, the uncover
 ;; types function can be called in order to get an association list
-;; mapping variables to types. This type environment can then be
-;; passed through the recursive steps of this pass as a whole. With
-;; this configuration it is now possible determine the type of a
-;; vector at allocation by looking up the type of the variable to
-;; which that vector is assigned.  After processing the entire program
-;; the type environment can be saved for the next pass is the locals
-;; slot of the program form.
+;; mapping variables to types. This map can then be passed through the
+;; recursive steps of the expose-allocation pass. It is now possible
+;; determine the type of a vector at allocation by looking up the type
+;; of the variable to which that vector is assigned.  After processing
+;; the entire program the type environment can be saved for the next
+;; pass is the locals slot of the program form.
 ;;
-;; During the program level form of uncover-call-live-roots this
-;; environment can then be retrieved from the locals slot and again
-;; passed without change throughout the processing of the entire
-;; program. When a variable is found in expression position the
-;; variable is considered live. By looking up the variable in the type
-;; environment we can figure out if that variable is a vector, and as
-;; such should be considered considered a root. After this pass the
-;; original locals form can be restored by taking the car of all
+;; While processing the program form of uncover-call-live-roots, this
+;; environment can be retrieved from the locals slot and again passed
+;; without change throughout the processing of the body of the
+;; program.  When we find a variable in expression possition and the
+;; type in of the variable is a Vector type then we consider this
+;; variable to be a live root.  All such live roots are collected at
+;; calls to the collector and stored in the live set. After this pass
+;; the original locals form can be restored by taking the car of all
 ;; pairs in the association list.
 
 ;; Here is a minimal example of its use.
@@ -47,7 +46,6 @@
   (lookup 'baz (uncover-types test-prog)) ;; => '(Vector Integer)
   (lookup 'bam (uncover-types test-prog)) ;; => 'Integer
 )
-
 
 
 
