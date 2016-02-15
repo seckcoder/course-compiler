@@ -9,20 +9,20 @@
 ;; the vector, and uncover-call-live-roots needs the type information
 ;; to identify roots at each collection call site.
 ;;
-;; During the program level match for expose-allocation, the uncover
-;; types function can be called in order to get an association list
-;; mapping variables to types. This map can then be passed through the
-;; recursive steps of the expose-allocation pass. It is now possible
-;; determine the type of a vector at allocation by looking up the type
-;; of the variable to which that vector is assigned.  After processing
-;; the entire program the type environment can be saved for the next
-;; pass is the locals slot of the program form.
+;; In the match clause for 'program' in expose-allocation, the uncover
+;; types function can be called to get an association list mapping
+;; variables to types. This map can then be passed as a parameter into
+;; expose-allocation so that you can determine the type of a vector
+;; needed for 'allocate' by looking up the type of the variable to
+;; which that vector is assigned.  After processing the entire program
+;; the type environment can be saved for the next pass in the locals
+;; slot of the program form.
 ;;
 ;; While processing the program form of uncover-call-live-roots, this
 ;; environment can be retrieved from the locals slot and again passed
 ;; without change throughout the processing of the body of the
 ;; program.  When we find a variable in expression possition and the
-;; type in of the variable is a Vector type then we consider this
+;; type of the variable is a Vector type then we consider this
 ;; variable to be a live root.  All such live roots are collected at
 ;; calls to the collector and stored in the live set. After this pass
 ;; the original locals form can be restored by taking the car of all

@@ -496,4 +496,20 @@ Tracing GC's
    * Copied objects have forwarding pointers.
 
 
+Lecture: GC Q&A and Functions
+================================================================================
+
+
+Question:
+
+This code is at the end of the garbage collection code in racket:
+
+(movq (global-value free_ptr) (var t.2))
+(addq (int 16) (global-value free_ptr))
+(movq (int 131) (offset (var t.2) 0))
+
+At the point where 131 is, I believe this is the tag at the front of
+the array.  I've seen examples of it having 3, 131, and 160.  Is there
+an explanation somewhere that I missed that tells us how to calculate
+the tag in-context?
 
