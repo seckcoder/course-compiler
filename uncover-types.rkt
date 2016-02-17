@@ -56,7 +56,6 @@
 ;; with a message about the type conflict.
 ;; uncover-types : prog -> (listof (pairof id type))
 (define (uncover-types prog)
-  ;; Body of uncover-type
   (match prog
     [`(program (,xs ...) (type ,ty) . ,ss)
      (let ([env ((uncover-types-seq (hash)) ss)])
@@ -67,9 +66,30 @@
        ;; Feel free to remove this if you prefer working
        ;; with hashtable instead.
        (hash->list env))]
+    [`(program (,xs ...) (type ,ty) (defines ,ds) ,ss)
+     ;; first collect all the defines into a flat global environment
+     (let* ([g-env (for/hash ([d ds])
+                     (match d
+                       [`(define (,f [,x* : ,t*] ...) : ,t . ,r)
+                        (values f `(,@t* -> ,t))]
+                       [else (error 'uncover-type "unmatched ~a" d)]))]
+            ;; Then proccess each define
+            [l-env* (for/list ([d ds])
+                      (match d
+                        [`(define (,f [,x* : ,t*] ...) : ,t
+                            ,(l* ...) ,s* ...)
+                         (let* ([x.t* (map cons x* t*)]
+                                [f.t  `(,f . (,@t* -> ,t))]
+                                [env  (make-immutable-hash (cons f.t x.t*))]
+                                [env^ ((ut-seq env) s*)])
+                           (when (at-debug-level? 1)
+                             (for ([l (in-list l*)])
+                               (env-ref env^  l)))
+                           (hash->list env^))]
+                        [else (error 'uncover-type "unmatched ~a" d)]))]
+            [l-env ()])
+        (g-env l-env*)) (for ([d ds]))]
     [else (error 'uncover-type "unmatched ~a" prog)]))
-
-
 
 ;; Build an type environment for all the variables assigned in the
 ;; sequence of statements.

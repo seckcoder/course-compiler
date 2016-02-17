@@ -4,8 +4,8 @@
 (require "register_allocator.rkt")
 (require "conditionals.rkt")
 (require "vectors.rkt")
-(require "functions.rkt")
-(require "lambda.rkt")
+;;(require "functions.rkt")
+;;(require "lambda.rkt")
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
@@ -37,7 +37,7 @@
 (define suite-list
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32)) 
-    (2 . ,(range 1 14))   
+    (2 . ,(range 1 15))   
     (3 . ,(range 1 11))
     (4 . ,(range 0 5)))) 
 

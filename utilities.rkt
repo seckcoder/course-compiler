@@ -1,7 +1,7 @@
 #lang racket
 (require racket/pretty)
 (require (for-syntax racket))
-(provide debug-level debug verbose vomit
+(provide debug-level at-debug-level? debug verbose vomit
          map2 b2i i2b
          fix while 
          label-name lookup  make-dispatcher assert
@@ -16,23 +16,27 @@
 ;; The easiest way to increment it is passing the -d option
 ;; to run-tests.rkt
 ;; 0 none 
-;; 1 trace passes in run-test (-d)
-;; 2 debug macros (-dd)
-;; 3 verbose debugging (-ddd)
-;; 4 (vomit) absolutely everything (-dddd)
+;; 1 trace passes in run-test
+;; 2 debug macros
+;; 3 verbose debugging
+;; 4 (vomit) absolutely everything
 ;; The higher the setting the more information is reported.
+;; If you want the same functionality as previous incarnation
+;; of utilities then uncomment the line after this definition
+;; and change the number there.
 (define debug-level
   (make-parameter
-   0    ;; If you have to hard code me change 0 to 1-4
+   0 
    (lambda (d)
      (unless (exact-nonnegative-integer? d) 
        (error 'debug-state "expected nonnegative-integer in ~a" d))
      d)))
+;; (debug-level 2)
 
 ;; Check to see if debug state is at least some level
-(define (at-debug-level n)
+(define (at-debug-level? n)
   (unless (exact-nonnegative-integer? n)
-    (error 'at-debug-state "expected non-negative integer ~a" n))
+    (error 'at-debug-level? "expected non-negative integer ~a" n))
   (>= (debug-level) n))
 
 ;; print-label-and-values prints out the label followed the values
@@ -65,9 +69,17 @@
      (define-syntax (name stx)
       (syntax-case stx ()
         [(_ label value ...)
-         #`(when (at-debug-level level)
+         #`(when (at-debug-level? level)
              #,(syntax/loc stx
                  (print-label-and-values label value ...)))]))))
+
+;; Print out debugging info in a somewhat organized manner
+;; (debug "foo" (car '(1 2)) 'foo) should print
+;; foo @ utilities.rkt:77
+;; (car '(1 2)):
+;; 1
+;; 'foo:
+;; foo
 (define-debug-level trace 1)
 (define-debug-level debug 2)
 (define-debug-level verbose 3)
@@ -492,7 +504,7 @@
   (hash-keys graph))
 
 (define (print-dot graph file-name)
-  (if (at-debug-level 1)
+  (if (at-debug-level? 1)
       (call-with-output-file file-name #:exists 'replace
 	(lambda (out-file)
 	  (write-string "strict graph {" out-file) (newline out-file)

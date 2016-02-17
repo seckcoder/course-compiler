@@ -2,6 +2,7 @@
 (require "vectors.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
+(require "uncover-types.rkt")
 (provide compile-R3 functions-passes functions-typechecker)
 
 (define compile-R3
@@ -125,30 +126,214 @@
     (define/override (flatten need-atomic)
       (lambda (ast)
 	(match ast
-	   [`(program (type ,ty) ,ds ... ,body)
-	    (define-values (locals new-body) (flatten-body body))
-	    (define new-ds (map (send this flatten #f) ds))
-	    `(program ,locals (type ,ty) (defines ,new-ds) ,@new-body)]
-	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
-	    (define-values (locals new-body) (flatten-body body))
-	    `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
-			 ,@new-body)]
-	   [`(function-ref ,f)
-	    (define tmp (gensym 'tmp))
-	    (values tmp (list `(assign ,tmp (function-ref ,f))))]
-	   [`(app ,f ,es ...) 
-	    (define-values (new-f f-ss) ((send this flatten #t) f))
-	    (define-values (new-es sss) (map2 (send this flatten #t) es))
-	    (define ss (append f-ss (append* sss)))
-	    (define fun-apply `(app ,new-f ,@new-es))
-	    (cond [need-atomic
-		   (define tmp (gensym 'tmp))
-		   (values tmp (append ss `((assign ,tmp ,fun-apply))))]
-		  [else
-		   (values fun-apply ss)])]
-	   [else ((super flatten need-atomic) ast)]
-	   )))
+          [`(program (type ,ty) ,ds ... ,body)
+           (define-values (locals new-body) (flatten-body body))
+           (define new-ds (map (send this flatten #f) ds))
+           `(program ,locals (type ,ty) (defines ,new-ds) ,@new-body)]
+          [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
+           (define-values (locals new-body) (flatten-body body))
+           `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
+              ,@new-body)]
+          [`(function-ref ,f)
+           (define tmp (gensym 'tmp))
+           (values tmp (list `(assign ,tmp (function-ref ,f))))]
+          [`(app ,f ,es ...) 
+           (define-values (new-f f-ss) ((send this flatten #t) f))
+           (define-values (new-es sss) (map2 (send this flatten #t) es))
+           (define ss (append f-ss (append* sss)))
+           (define fun-apply `(app ,new-f ,@new-es))
+           (cond [need-atomic
+                  (define tmp (gensym 'tmp))
+                  (values tmp (append ss `((assign ,tmp ,fun-apply))))]
+                 [else
+                  (values fun-apply ss)])]
+          [else ((super flatten need-atomic) ast)])))
 
+    (inherit get-vars reset-vars unique-var env-merge env-ref env-set)
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; expose allocation : C1 -> ?
+    ;; This pass has to thread a new environment through that isn't extended
+    ;; This could be overcome with pointers or we could use 
+    (define/override (expose-allocation)
+      (lambda (p)
+        (match p
+          [`(program (,xs ...) (type ,ty) (defines ,ds) ,ss ...)
+           (let-values
+               ([(new-ds global) (expose-allocation-defs ds)]
+                [(new-ss local)  ((expose-allocation-seq global) (hash) ss)])
+             (let ([xs (append xs (reset-vars))])
+               (when (at-debug-level? 1)
+                 ;; check that the entire local environment has types
+                 (for ([x xs])
+                   (unless (hash-ref local x #f)
+                     (error 'expose-allocation "var not in env ~a" x)))
+                 ;; check that uncover-types (distributed student code)
+                 ;; is compatible with this pass.
+                 (let ([env^^ (make-immutable-hash (uncover-types x))])
+                   (for ([(k v) (in-hash env^)])
+                     (or (eq? 'Void v)
+                         (let ([v? (hash-ref env^^ k #f)])
+                           (and v? (eq? v v?)))))))
+               `(program ,(hash->list local)
+                         (type ,ty)
+                         (define ,new-ds)
+                         (initialize ,(rootstack-size) ,(heap-size))
+                         ,@ss)))]
+          [else (error 'expose-allocation "unmatched ~a" p)])))
+  
+    (define/public (expose-allocation-defs defs)
+      (define g-env
+        (for/hash ([d (in-list defs)])
+          (match d
+            [`(define (,f [,_ : ,t*] ...) ,t . ,_)
+             (values f `(,@t* -> ,t))]
+            [else (error 'expose-allocation-defs)])))
+      (for/list ([def (in-list defs)])
+          (match def
+            [`(define (,f ,(and p:t* `[,p* : ,t*]) ...) : ,t (,x* ...) ,s* ...)
+             (let*-values
+                 ([(p.t*)  (map cons p* t*)]
+                  [(l-env) (make-immutable-hash p.t*)]
+                  [(s* l-env^) ((expose-allocation-seq g-env) l-env s*)]
+                  [(x*^) (append x* (reset-vars))])
+               (when (at-debug-level? 1)
+                 ;; check that the entire local environment has types
+                 (for ([x (in-list x*)]) (env-ref l-env^ x))
+                 ;; check that uncover-types (distributed student code)
+                 ;; is compatible with this pass.
+                 (let ([s-env (make-immutable-hash (uncover-types def))])
+                   (env-merge s-env l-env)))
+               `(define (,f ,@p:t*) ,t ,(hash->list l-env) ,@ss))]
+            [else (error 'expose-allocation-define "unmatched ~a" def)])))
+    
+    ;; Follow the control flow, build the environment, and return
+    ;; expression rebuilt using types from environment.
+    (define/public (expose-allocation-seq g-env)
+      (define (recur l-env seq)
+        (cond
+          [(null? seq) (values '() l-env)]
+          [(pair? seq)
+           (let*-values
+               ([(s ss)      (values (car seq) (cdr seq))]
+                [(s^  l-env^)  (expose-allocation-stmt s g-env l-env)]
+                [(ss^ l-env^^) (recur l-env^ ss)])
+             (values (append s^ ss^) l-env^^))]
+          [else (error 'expose-allocation-seq "unmatched ~a" seq)]))
+      recur)
+    
+    ;; This is repeated in order to thread the global-envirionment
+    ;; through. There are alternatives to this but this seems the cleanest.
+    (define/overide (expose-allocation-stmt stmt g-env l-env)
+      (match stmt
+        [`(assign ,lhs (vector ,e* ...))
+         (let* (;; get the types of the arguments 
+                [t* (map (uncover-type-expr g-env l-env) e*)]
+                ;; build the type of lhs
+                [t  `(Vector ,@t*)] 
+                [l-env^ (env-set l-env lhs t)]
+                [len (length e*)]
+                ;; calculate the actual size of the data allocated
+                [size (* (+ len 1) 8)]
+                ;; get as many fresh variables as e's 
+                [v* (map (lambda (e) (unique-var '_)) e*)]
+                ;; build the initializations of the allocation
+                [s* (for/list ([e (in-list e*)] [v (in-list v*)] [n (in-naturals)])
+                      (values `(assign ,v (vector-set! ,lhs ,n ,e)) v))]
+                ;; extend the environment(we could skip this step)
+                [l-env^^ (for/fold ([e l-env^]) ([v (in-list vars)])
+                           (env-set e v 'Void))])
+           ;; Build the collection check and initialization stmts
+           (values
+            `((if (collection-needed? ,size)
+                  ((collect ,size))
+                  ())
+              (assign ,lhs (allocate ,len ,t))
+              ,@inits)
+            l-env^^))]
+        ;; Otherwise just extend the environment
+        [`(assign ,lhs ,(and e (app (uncover-type-exp* g-env l-env) t)))
+         (values `(,stmt) (env-set l-env lhs t))]
+        ;; If need to merge the resulting environments
+        [`(if ,t ,c ,a)
+         (let-values ([(c c-env) ((expose-allocation-seq g-env) l-env c)]
+                      [(a a-env) ((expose-allocation-seq g-env) l-env a)])
+           (values `((if ,t ,c ,a)) (env-merge c-env a-env)))]
+        [`(return ,e) (values stmt l-env)]
+        [else (error 'expose-allocation-stmt "unmatched ~a" stmt)]))
+    
+    ;; Return the type of an expression given a type environment
+    (define/override (uncover-type-expr g-env l-env)
+      (lambda (expr)
+        (match expr
+          [`(function-ref ,(? symbol? f)) (env-ref g-env f)]
+          [`(app ,(? symbol? f) . ,es)
+           (let ([ft (env-ref g-env ft)])
+             (match ft
+               [`(,ps ... -> ,rt) ,rt]
+               [else (error 'uncover-type-expr "unmatched type ~a" ft)]))]
+          [other ((super uncover-type-expr l-env) expr)])))
+    
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
+
+    (define/public (uncover-call-live-roots env clr*)
+      (lambda (x)
+        (define (recur x) ((uncover-call-live-roots env clr*) x))
+        (define (recur/mt-clt) ((uncover-call-live-roots env clr*) x))
+        (match x
+          [`(program ,x.ts ,ty (defines ,ds),ss ...)
+           (let*-values ([(new-env) (make-immutable-hash x.ts)]
+                         [(ss clr*) ((uncover-call-live-seq new-env clr*) ss)]
+                         [(xs)  (map car x.ts)]
+                         [(xs^) (get-vars)])
+             (unless (set-empty? clr*)
+               (error 'uncover-call-live-roots 
+                    "empty program call live roots invariant ~a" clr*))
+             `(program ,(append xs xs^) ,ty ,@ss))]
+          ;; Remove variables when they are assigned
+
+          ;; Exp Cases
+        [(? symbol? x)
+         (values x (if (root? env x) (set-add clr* x) clr*))]
+        [(or (? integer? x) (? boolean? x)) (values x clr*)]
+        [(and x `(allocate ,l ,t)) (values x clr*)]
+        [(and x `(collect ,size))
+         (define call-live-roots (set->list clr*))
+         (values `(call-live-roots ,call-live-roots
+                                   (collect ,size))
+                 clr*)]
+        [`(initialize ,stack ,heap)
+         (unless (set-empty? clr*)
+           (error 'uncover-call-live-roots
+                  "call live roots exist during initialization of rootstack"))
+         (values `(initialize ,stack ,heap) (set))]
+        [`(collection-needed? ,size) (values x clr*)]
+        [`(,(? primitive? op) ,(app (uncover-call-live-roots env (set)) e* clr**) ...)
+         (values `(,op ,@e*) (set-union clr* (set-union* clr**)))]     
+        [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
+    
+    (define/public (uncover-call-live-seq env clr*)
+      ;; This is a mix of map over seq with foldr style accumulation of of clr*.
+      (define (recur seq)
+        (cond
+          [(null? seq) (values '() clr*)]
+          [(pair? seq)
+           (let*-values ([(s ss) (values (car seq) (cdr seq))]
+                         [(ss^ clr*^) (recur ss)]
+                         [(s^  clr*^^) (uncover-call-live-stmt s env clr*^)])
+             (values (cons s^ ss^) clr*))]
+          [else (error 'uncover-call-live-seq "unmatched ~a" seq)]))
+      recur)
+
+    (define/public (uncover-call-live-stmt stmt clr* env)
+      (match stmt
+        [`(assign ,v ,(and e `(app . ,rest)))
+         (let ([clr*^ (set-remove clr* v)])
+           (values `(call-live ,(set->list clr*^) (assign ,v ,e))
+                   ((uncover-call-live-expr env clr*^) e)))]
+        [else (uncover-call-live-stmt stmt clr* env)]))
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S3 -> S3
 
@@ -438,14 +623,19 @@
 	[interp (new interp-R3)])
     `(
       ;("type-check" ,(send compiler type-check '())
-;       ,(send interp interp-scheme '()))
+      ;,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
-      
+      ("expose allocation"
+       ,(send compiler expose-allocation)
+       ,(send interp interp-C '()))
+      ("uncover call live roots"
+       ,(send compiler uncover-call-live-roots (hash) (set))
+       ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
       ("liveness analysis" ,(send compiler uncover-live (void))
