@@ -427,3 +427,23 @@ void print_bool(int64_t x) {
     printf("#f");
   }
 }
+
+void print_void() {
+  printf("#<void>");
+}
+
+void print_vecbegin() {
+  printf("(vector ");
+}
+
+void print_space() {
+  printf(" ");
+}
+
+void print_vecend() {
+  printf(")");
+}
+
+void print_ellipsis() {
+  printf("(vector ...)");
+}

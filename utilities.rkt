@@ -475,6 +475,30 @@
 	[else
 	 (+ n (- alignment (modulo n alignment)))]))
 
+(define (print-by-type ty [depth 12])
+  (define (mov-and-print depth) 
+    (lambda (ty index)
+      (format "\tmovq\t~a(%r~a), %rax\n~a" (* 8 (+ 1 index)) depth (print-by-type ty (+ 1 depth)))))
+  (match ty
+    ['Void (format "\tcallq\t~a\n" (label-name "print_void"))]
+    ['Integer 
+     (format "\tmovq\t%rax, %rdi\n\tcallq\t~a\n" (label-name "print_int"))]
+    ['Boolean 
+     (format "\tmovq\t%rax, %rdi\n\tcallq\t~a\n" (label-name "print_bool"))]
+    [`(Vector ,tys ...)
+     (if (> depth 15)
+         (format "\tmovq\t%rax, %rdi\n\tcallq\t~a\n" (label-name "print_ellipsis"))
+         (string-join (map (mov-and-print depth) tys (range (length tys)))
+                      (format "\tcallq\t~a\n" (label-name "print_space"))
+                      #:before-first (format "\tmovq\t%rax, %r~a\n\tcallq\t~a\n" depth (label-name "print_vecbegin"))
+                      #:after-last (format "\tcallq\t~a\n" (label-name "print_vecend"))))]))
+
+
+(display (print-by-type 'Integer)) (newline) (newline)
+(display (print-by-type 'Void)) (newline) (newline)
+(display (print-by-type '(Vector (Vector Integer) Integer))) (newline) (newline)
+(display (print-by-type '(Vector (Vector (Vector (Vector (Vector (Vector Integer)))))))) (newline) (newline)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Graph ADT
 
