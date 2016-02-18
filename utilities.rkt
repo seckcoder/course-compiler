@@ -2,7 +2,7 @@
 (require racket/pretty)
 (require (for-syntax racket))
 (provide debug-level at-debug-level? debug verbose vomit
-         map2 b2i i2b
+         map2 b2i i2b set-union*
          fix while 
          label-name lookup  make-dispatcher assert
          read-fixnum read-program 
@@ -137,6 +137,11 @@
          (let-values ([(x1 x2) (f (car ls))]
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
+
+;; set-union* takes a list of sets and unions them all together.
+(define (set-union* ls)
+  (foldl set-union (set) ls))
+
 
 ;; label-name prepends an underscore to a label (symbol or string)
 ;; if the current system is Mac OS and leaves it alone otherwise.
@@ -415,17 +420,20 @@
 ;; (error) function when it encounters a type error, or that it
 ;; returns #f when it encounters a type error. This function then
 ;; returns whether a type error was encountered.
-(define test-typecheck 
-  (lambda (tcer exp)
-    (if (eq? tcer #f) exp
-        (let ([res 
-               (with-handlers ([exn:fail?
-                                (lambda (e) #f)])
-                 (tcer exp))])
-          (match res
-           [#f #f]
-           [`(program ,elts ...) res]
-           [else exp])))))
+(define (test-typecheck tcer exp)
+  (define (handler e)
+    (vomit "test-typecheck" tcer exp e)
+    (when (at-debug-level? 1)
+      (display (exn-message e)))
+    #f)
+  (if (eq? tcer #f)
+      exp
+      (let ([res (with-handlers ([exn:fail? handler])
+                   (tcer exp))])
+        (match res
+          [#f #f]
+          [`(program ,elts ...) res]
+          [else exp]))))
 
 (define assert
   (lambda (msg b)

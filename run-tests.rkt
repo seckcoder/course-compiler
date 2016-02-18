@@ -4,7 +4,7 @@
 (require "register_allocator.rkt")
 (require "conditionals.rkt")
 (require "vectors.rkt")
-;;(require "functions.rkt")
+(require "functions.rkt")
 ;;(require "lambda.rkt")
 (require "interp.rkt")
 (require "runtime-config.rkt")
@@ -25,8 +25,7 @@
     ("reg_int_exp"  #f                        ,reg-int-exp-passes  (0))
     ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
-    ;; Commenting out these two compilers until we update them -andre
-    ;;("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
+    ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
     ;;("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
     ))
 
@@ -38,7 +37,7 @@
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32)) 
     (2 . ,(range 1 15))   
-    (3 . ,(range 1 11))
+    (3 . ,(range 1 14))
     (4 . ,(range 0 5)))) 
 
 (define (suite-range x)

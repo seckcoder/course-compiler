@@ -132,13 +132,14 @@
       (define (recur e)
         (match e
           [(? symbol? x)  (env-ref env x)]
+          [(? integer?)  'Integer]
+          [(? boolean?)  'Boolean]
           [`(allocate ,l ,t) t]
           [`(vector ,(app recur t*) ...) `(Vector ,@t*)]
           ;; I has to be a literal integer
           [`(vector-ref ,(app recur `(Vector ,t* ...)) ,i)
            (list-ref t* i)]
-          [(? integer?)  'Integer]
-          [(? boolean?)  'Boolean]
+          [`(vector-set! . ,r) 'Void]
           [(list (? primitive? op) _ ...)
            (case op
              [(+ - * read) 'Integer]
@@ -180,7 +181,7 @@
       ;; Recursion where the call live root set is left empty.
       ;; This is usually done because it is known that multiple sets derived
       ;; through the recursive case will be combined.
-      (define (recur/mt-clt) ((uncover-call-live-roots env clr*) x))
+      (define (recur/mt-clr) (uncover-call-live-roots env (set)))
       (vomit "uncover call live roots" x env clr*)
       (match x
         ;; Base Case for list recusion -- the starting root set is the live root set
@@ -200,7 +201,7 @@
            (values `(assign ,v ,e) clr*))]
         ;; The union of both branches are still alive
         [`(if ,t ,c* ,a*)
-         (vomit "uncover call live if")
+         (vomit "uncover call live if" t c* a*)
          (let-values ([(c* c-clr*) ((uncover-call-live-seq env clr*) c*)]
                       [(a* a-clr*) ((uncover-call-live-seq env clr*) a*)])
            (let*-values ([(b-clr*) (set-union c-clr* a-clr*)]
@@ -223,7 +224,7 @@
                   "call live roots exist during initialization of rootstack"))
          (values `(initialize ,stack ,heap) (set))]
         [`(collection-needed? ,size) (values x clr*)]
-        [`(,(? primitive? op) ,(app (uncover-call-live-roots env (set)) e* clr**) ...)
+        [`(,(? primitive? op) ,(app (recur/mt-clr) e* clr**) ...)
          (values `(,op ,@e*) (set-union clr* (set-union* clr**)))]     
         [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
 
@@ -284,9 +285,6 @@
       (set-box! vars '())
       tmp))
   
-  (define (set-union* ls)
-    (foldr set-union (set) ls))
-
   (define (primitive? x)
     (set-member? (send this primitives) x))
   
@@ -373,9 +371,9 @@
                [els-ss (append* (map (select-instructions rs-var) els-ss))])
            `((if ,cnd ,thn-ss ,els-ss)))]
         [`(program ,xs (type ,ty) . ,ss)
-         (define rs-var (unique-var 'rootstack))
+         (define rs-var (gensym 'rootstack))
          (define ss^ (append* (map (select-instructions rs-var) ss)))
-         `(program ,(append xs (reset-vars)) (type ,ty) ,@ss^)]
+         `(program ,(cons rs-var (append (reset-vars) xs)) (type ,ty) ,@ss^)]
         [otherwise ((super select-instructions) otherwise)])))
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
