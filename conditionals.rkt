@@ -423,11 +423,6 @@
 	   [`(jmp ,label) (format "\tjmp ~a\n" label)]
 	   [`(label ,l) (format "~a:\n" l)]
 	   [`(program ,spill-space (type ,ty) ,ss ...)
-            (define print-fun
-              (match ty
-                ['Boolean "print_bool"]
-                ['Integer "print_int"]
-                [else (error (format "unknown type ~a" ty))]))
 	    (define callee-reg (set->list callee-save))
 	    (define save-callee-reg
 	      (for/list ([r callee-reg])
@@ -449,8 +444,7 @@
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
-             (format "\tmovq\t%rax, %rdi\n")
-             (format "\tcallq\t~a\n" (label-name print-fun))
+             (print-by-type ty)
 	     (format "\tmovq\t$0, %rax\n")
 	     (format "\taddq\t$~a, %rsp\n" stack-adj)
 	     (string-append* restore-callee-reg)

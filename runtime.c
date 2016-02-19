@@ -433,7 +433,7 @@ void print_void() {
 }
 
 void print_vecbegin() {
-  printf("(vector ");
+  printf("#(");
 }
 
 void print_space() {
@@ -445,5 +445,5 @@ void print_vecend() {
 }
 
 void print_ellipsis() {
-  printf("(vector ...)");
+  printf("#(...)");
 }

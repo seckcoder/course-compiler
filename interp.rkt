@@ -358,17 +358,20 @@
 		    [else ((send this interp-x86 env) ss)]))]
            |#
 	   [`(program ,xs (type ,ty) ,ss ...)
-            (send this display-by-type ty ((send this interp-x86 env) `(program ,xs ,@ss)))]
+            (send this display-by-type ty ((send this interp-x86 env) `(program ,xs ,@ss)) env)]
 	   [`(program ,xs ,ss ...)
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]
 	   [else ((super interp-x86 env) ast)]
 	   )))
 
-    (define/public (display-by-type ty val)
+    (define/public (display-by-type ty val env)
       (match ty
         ['Boolean (if val #t #f)]
         ['Integer val]
+        ['Void (void)]
+        [`(Vector ,tys ...)
+         (list->vector (map (lambda (ty index) (display-by-type ty ((send this memory-read) (+ val 8 (* 8 index))) env)) tys (range (length tys))))]
         [else (error (format "don't know how to display type ~a" ty))]))
 
     ));; class interp-R1
@@ -826,7 +829,7 @@
 	    (call-function (lookup f env) ss env)]
            [`(program ,extra (type ,ty) (defines ,ds) ,ss ...)
             (send this display-by-type ty ((send this interp-x86 env)
-                                                 `(program ,extra (defines ,ds) ,@ss)))]
+                                                 `(program ,extra (defines ,ds) ,@ss)) env)]
 	   [`(program ,extra (defines ,ds) ,ss ...)
 	    (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))

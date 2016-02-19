@@ -38,5 +38,11 @@ void print_int(int64_t x);
 // Print a boolean to stdout.
 void print_bool(int64_t x);
 
+void print_vecbegin();
+
+void print_vecend();
+void print_space();
+
+void print_ellipsis();
 
 
