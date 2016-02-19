@@ -385,8 +385,8 @@
            [output (if (file-exists? (format "tests/~a.res" test-name))
                        (call-with-input-file
                          (format "tests/~a.res" test-name)
-                         (lambda (f) (string->number (read-line f))))
-                       42)]
+                         (lambda (f) (read-line f)))
+                       "42")]
            [progout (if typechecks (process (format "./a.out~a" input)) 'type-error)]
            )
       ;; process returns a list, it's first element is stdout
@@ -397,11 +397,11 @@
              (error (format "test ~a passed typechecking but should not have." test-name)) '())
          (control-fun 'wait)
          (cond [(eq? (control-fun 'status) 'done-ok)
-                (let ([result (string->number (read-line (car progout)))])
-                  (if (eq? result output)
+                (let ([result (read-line (car progout))])
+                  (if (eq? (string->symbol result) (string->symbol output))
                       (begin (display test-name)(display " ")(flush-output))
-                      (error (format "test ~a failed, output: ~a" 
-                                     test-name result))))]
+                      (error (format "test ~a failed, output: ~a, expected ~a" 
+                                     test-name result output))))]
                [else
                 (error
                  (format "test ~a error in x86 execution, exit code: ~a" 
