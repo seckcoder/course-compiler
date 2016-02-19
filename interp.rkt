@@ -734,9 +734,9 @@
 		(define result-env ((send this seq-C new-env) ss))
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
-           [`(program ,locals (type ,ty) (defines ,ds) ,ss ...)
-            ((send this interp-C env) `(program ,locals (defines ,ds) ,@ss))]
-	   [`(program ,locals (defines ,ds) ,ss ...)
+           [`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
+            ((send this interp-C env) `(program ,locals (defines ,@ds) ,@ss))]
+	   [`(program ,locals (defines ,ds ...) ,ss ...)
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
 	    (lookup result result-env)]
@@ -827,11 +827,12 @@
 	    (call-function f-val ss env)]
 	   [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
-           [`(program ,extra (type ,ty) (defines ,ds) ,ss ...)
+           [`(program ,extra (type ,ty) (defines ,ds ...) ,ss ...)
             (send this display-by-type ty ((send this interp-x86 env)
-                                                 `(program ,extra (defines ,ds) ,@ss)) env)]
-	   [`(program ,extra (defines ,ds) ,ss ...)
-	    (parameterize ([program ss])
+                                           `(program ,extra (defines ,@ds) ,@ss)) env)]
+	   [`(program ,extra (defines ,ds ...) ,ss ...)
+            (vomit "program" ast)
+            (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
 	       (lookup 'rax result-env))]

@@ -1,6 +1,5 @@
 #lang racket
-
-(provide uncover-types)
+(provide uncover-types uncover-types-define)
 ;; This file provides the uncover-types function which can be used to
 ;; recover type information for variables in the program body. This
 ;; function can be used to help simplify the complexity of
@@ -32,7 +31,7 @@
 (module+ test
   (require "utilities.rkt")
   
-  (define test-prog
+  (define test-prog1
     '(program (foo bar baz bam)
               (type Integer)
               (assign foo (vector 777))
@@ -42,10 +41,30 @@
               (assign bam (vector-ref baz 0))
               (return bam)))
 
-  (lookup 'foo (uncover-types test-prog)) ;; => 'Integer
-  (lookup 'baz (uncover-types test-prog)) ;; => '(Vector Integer)
-  (lookup 'bam (uncover-types test-prog)) ;; => 'Integer
-)
+  (lookup 'foo (uncover-types test-prog1)) ;; => 'Integer
+  (lookup 'baz (uncover-types test-prog1)) ;; => '(Vector Integer)
+  (lookup 'bam (uncover-types test-prog1)) ;; => 'Integer
+
+  (define test-prog2
+    '(program (v.1 f.1 r.1)
+              (type Integer)
+              (defines
+                (define (foo [bar : Integer]) : Integer
+                  (r.2)
+                  (assign r.2 (+ bar 2))
+                  (return r.2)))
+              (assign v.1 (vector (function-ref foo)))
+              (assign f.1 (vector-ref v.1 0))
+              (assign r.1 (app f.1 40))
+              (return r.1)))
+
+  (match-define `(,global-env (,foo-local-env) ,prog-local-env)
+    (uncover-types test-prog2))
+
+  (lookup 'foo global-env)     ;; => '(Integer -> Integer)
+  (lookup 'r.1 prog-local-env) ;; => 'Integer
+  (lookup 'r.2 foo-local-env)  ;; => 'Integer
+  )
 
 
 
@@ -56,10 +75,21 @@
 ;; with a message about the type conflict.
 ;; uncover-types : prog -> (listof (pairof id type))
 (define (uncover-types prog)
-  ;; Body of uncover-type
   (match prog
+    [`(program (,xs ...) (type ,ty) (defines ,ds ...) ,ss ...)
+     ;; first collect all the defines into a flat global environment
+     (let* ([g-env (for/hash ([d ds])
+                     (match d
+                       [`(define (,f [,x* : ,t*] ...) : ,t . ,r)
+                        (values f `(,@t* -> ,t))]
+                       [else (error 'uncover-type "unmatched ~a" d)]))]
+            ;; Then proccess each define
+            [l-env* (for/list ([d ds])
+                      (hash->list (uncover-types-define d g-env)))]
+            [l-env ((uncover-types-seq (hash) g-env) ss)])
+        (list (hash->list g-env) l-env* (hash->list l-env)))]
     [`(program (,xs ...) (type ,ty) . ,ss)
-     (let ([env ((uncover-types-seq (hash)) ss)])
+     (let ([env ((uncover-types-seq (hash) 'no-global-env) ss)])
        (for ([x (in-list xs)])
          (let ([err (lambda ()
                       (error 'uncover-type "failed to find ~a" x))])
@@ -69,18 +99,31 @@
        (hash->list env))]
     [else (error 'uncover-type "unmatched ~a" prog)]))
 
-
+;; Return the local environment for a define
+(define (uncover-types-define def g-env)
+  (match def
+    [`(define (,f [,x* : ,t*] ...) : ,t
+        (,l* ...) ,s* ...)
+     (let* ([x.t* (map cons x* t*)]
+            [f.t  `(,f . (,@t* -> ,t))]
+            [l-env  (make-immutable-hash (cons f.t x.t*))]
+            [l-env^ ((uncover-types-seq l-env g-env) s*)])
+       (for ([l (in-list l*)])
+         (hash-ref l-env^ l (thunk (error 'unbound "~a" l))))
+       l-env^)]
+    [else (error 'uncover-type "unmatched ~a" def)]))
 
 ;; Build an type environment for all the variables assigned in the
 ;; sequence of statements.
 ;; uncover-types-seq :
 ;;      (hashtable id type) -> (listof stmt) -> (hashtable id type)
-(define ((uncover-types-seq env) ss) (foldl uncover-types-stmt env ss))
+(define ((uncover-types-seq l-env g-env) ss)
+  (foldl (uncover-types-stmt g-env) l-env ss))
 
 ;; Build an environment extending the given env with any
 ;; variables assigned in stmt.
 ;; uncover-types-stmt : stmt (hashtable id type) -> (hashtable id type)
-(define (uncover-types-stmt stmt env)
+(define ((uncover-types-stmt g-env) stmt l-env)
   ;; Associate var with type in env but ensure it doesn't
   ;; conflict with any other type that we uncovered previously.
   (define (env-set env var type)
@@ -93,7 +136,7 @@
                 "conflicting types for ~a, ~a and ~a"
                 var type ty?)])))
   (match stmt
-    [`(assign ,(? symbol? lhs) ,(app (uncover-type-exp env) t))
+    [`(assign ,(? symbol? lhs) ,(app (uncover-type-exp l-env g-env) t))
      (match t
        ;; This line is expiremental.
        ;; By not adding Void types to the environment we ensure
@@ -102,20 +145,20 @@
        ;; environment locals form for your ASTs will be smaller
        ;; Feel free to uncomment if you want these properties.
        ;; ['Void env]
-       [other (env-set env lhs t)])]
+       [other (env-set l-env lhs t)])]
     [`(if ,t
-          ,(app (uncover-types-seq env) c-env)
-          ,(app (uncover-types-seq env) a-env))
+          ,(app (uncover-types-seq l-env g-env) c-env)
+          ,(app (uncover-types-seq l-env g-env) a-env))
      ;; Merge resulting environments making sure that they agree
      ;; any error here would be the result of assinging a variable
      ;; with different types in each branch. 
-     (for/fold ([env c-env]) ([(k v) (in-hash a-env)])
-       (env-set env k v))]
-    [otherwise env]))
+     (for/fold ([l-env c-env]) ([(k v) (in-hash a-env)])
+       (env-set l-env k v))]
+    [otherwise l-env]))
 
 ;; Reconstruct the type of expr given the current type environment
 ;; uncover-type-exp : (hashtable id type) -> expr -> type
-(define ((uncover-type-exp env) expr)
+(define ((uncover-type-exp l-env g-env) expr)
   ;; Find the type of var in env
   (define (env-ref env var)
     (let ([err (thunk (error 'uncover-types "unbound ~a in ~a" var env))])
@@ -126,10 +169,15 @@
   (define (primitive? x)
     (set-member? '(+ - * read and or not eq?) x))
   (match expr
-    [(? symbol? x)  (env-ref env x)]
+    [(? symbol? x)  (env-ref l-env x)]
+    [`(function-ref ,f) (env-ref g-env f)]
+    [`(app ,(app (uncover-type-exp l-env g-env) t) ,_ ...)
+     (match t
+       [`(,_ ... -> ,g) g]
+       [else (error 'uncover-type-exp "unmatched funtion type ~a" t)])]
     [`(allocate ,l ,t) t]
-    [`(vector ,(app (uncover-type-exp env) t*) ...) `(Vector ,@t*)] 
-    [`(vector-ref ,(app (uncover-type-exp env) `(Vector ,t* ...)) ,i)
+    [`(vector ,(app (uncover-type-exp l-env g-env) t*) ...) `(Vector ,@t*)] 
+    [`(vector-ref ,(app (uncover-type-exp l-env g-env) `(Vector ,t* ...)) ,i)
      (list-ref t* i)]
     [`(vector-set! ,v ,i ,e) 'Void]
     [(? integer?)  'Integer]

@@ -58,34 +58,45 @@
     ;; flatten : S1 -> C1-expr x (C1-stmt list)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; expose allocation : 
+    ;; expose allocation : C1 -> ?
 
-
-
-    
-    (define/public (expose-allocation env)
-      (define (recur x) ((expose-allocation) x))
+    (define/public (expose-allocation)
       (lambda (x)
-        (vomit "expose allocation" x env)
         (match x
-          [`(program (,xs ...) (type ,ty)
-                     . ,(app (expose-allocation-seq env) ss env^))
+          [`(program (,xs ...) (type ,ty) . ,ss)
            ;;(define-values (ss^ env^) ((expose-allocation-seq env) ss))
-           (let ([xs (append xs (get-vars))])
-             (for ([x xs])
-               (unless (hash-ref env^ x #f)
-                 (error 'expose-allocation "var not in env ~a" x)))
-             (let ([env^^ (make-immutable-hash (uncover-types x))])
-               (for ([(k v) (in-hash env^)])
-                 (or (eq? 'Void v)
-                     (let ([v? (hash-ref env^^ k #f)])
-                       (and v? (eq? v v?))))))
+           (let*-values ([(ss^ env^) (expose-allocation-seq ss (hash))]
+                         [(xs) (append xs (reset-vars))])
+             (when (at-debug-level? 1)
+               (for ([x xs])
+                 (unless (hash-ref env^ x #f)
+                   (error 'expose-allocation "var not in env ~a" x)))
+               (let ([env^^ (make-immutable-hash (uncover-types x))])
+                 (for ([(k v) (in-hash env^)])
+                   (or (eq? 'Void v)
+                       (let ([v? (hash-ref env^^ k #f)])
+                         (and v? (eq? v v?)))))))
              (let ([xs (hash->list env^)])
                `(program ,xs (type ,ty)
                          (initialize ,(rootstack-size) ,(heap-size))
-                         ,@ss)))]
-          [`(assign ,lhs ,e)
-           (define t ((uncover-type-exp env) e))
+                         ,@ss^)))]
+          [else (error 'expose-allocation "umatched ~a" x)])))
+    
+    ;; Follow the control flow, build the environment, and return
+    ;; expression rebuilt using types from environment.
+    (define/public (expose-allocation-seq ss env)
+      (match ss
+          ['() (values '() env)]
+          [(cons s ss) 
+           (let*-values ([(s^  env^)  (expose-allocation-stmt s env)]
+                         [(ss^ env^^) (expose-allocation-seq  ss env^)])
+             (values (append s^ ss^) env^^))]
+          [else (error 'expose-allocation-seq)]))
+    
+    (define/public (expose-allocation-stmt stmt env)
+      (match stmt
+            [`(assign ,lhs ,e)
+           (define t ((uncover-type-expr env) e))
            (define env^ (env-set env lhs t))
            (match* (e t)
              [(`(vector ,e* ...) `(Vector ,t* ...))
@@ -107,47 +118,34 @@
                  (assign ,lhs (allocate ,len ,t))
                  ,@inits)
                env^^)]
-             [(e t) (values (list x) env^)])]
-          [`(if ,t ,c ,a)
-           (vomit "expose allocation if" t c a)
-           (let-values ([(c c-env) ((expose-allocation-seq env) c)]
-                        [(a a-env) ((expose-allocation-seq env) a)])
-             (vomit "expose allocation if" c a c-env a-env)
-             (values `((if ,t ,c ,a)) (env-merge c-env a-env)))]
-          [otherwise (values `(,x) env)])))
+             [(e t) (values `(,stmt) env^)])]
+            [`(if ,t ,c ,a)
+             (let-values ([(c c-env) (expose-allocation-seq c env)]
+                          [(a a-env) (expose-allocation-seq a env)])
+               (values `((if ,t ,c ,a)) (env-merge c-env a-env)))]
+            [`(return ,e) (values `(,stmt) env)]
+            [else (error 'expose-allocation-stmt "unmatched ~a" stmt)]))
+      
     
-    ;; Follow the control flow, build the environment, and return
-    ;; expression rebuilt using types from environment.
-    (define/public (expose-allocation-seq env)
-      (lambda (ss)
-        (vomit "expose allocation sequence" ss env)
-        (match ss
-          ['() (values '() env)]
-          [(cons s ss) 
-           (let*-values ([(s^  env^)  ((expose-allocation env) s)]
-                         [(ss^ env^^) ((expose-allocation-seq env^) ss)])
-             (values (append s^ ss^) env^^))]
-          [else (error 'expose-allocation-seq)])))
-
     ;; Return the type of an expression given a type environment
-    (define/public (uncover-type-exp env)
-      (define (recur x) ((uncover-type-exp env) x))
-      (lambda (e)
-        (vomit "uncover-type-exp" e env)
+    (define/public (uncover-type-expr env)
+      (define (recur e)
         (match e
           [(? symbol? x)  (env-ref env x)]
+          [(? integer?)  'Integer]
+          [(? boolean?)  'Boolean]
           [`(allocate ,l ,t) t]
           [`(vector ,(app recur t*) ...) `(Vector ,@t*)]
           ;; I has to be a literal integer
           [`(vector-ref ,(app recur `(Vector ,t* ...)) ,i)
            (list-ref t* i)]
-          [(? integer?)  'Integer]
-          [(? boolean?)  'Boolean]
+          [`(vector-set! . ,r) 'Void]
           [(list (? primitive? op) _ ...)
            (case op
              [(+ - * read) 'Integer]
              [(and or not eq?) 'Boolean])]
-          [other (error 'uncover-type-exp "unmatched ~v" other)])))
+          [other (error 'uncover-type-expr "unmatched ~v" other)]))
+      recur)
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
@@ -183,7 +181,7 @@
       ;; Recursion where the call live root set is left empty.
       ;; This is usually done because it is known that multiple sets derived
       ;; through the recursive case will be combined.
-      (define (recur/mt-clt) ((uncover-call-live-roots env clr*) x))
+      (define (recur/mt-clr) (uncover-call-live-roots env (set)))
       (vomit "uncover call live roots" x env clr*)
       (match x
         ;; Base Case for list recusion -- the starting root set is the live root set
@@ -191,7 +189,7 @@
          (let*-values ([(new-env) (make-immutable-hash x.ts)]
                        [(ss clr*) ((uncover-call-live-seq new-env clr*) ss)]
                        [(xs)  (map car x.ts)]
-                       [(xs^) (get-vars)])
+                       [(xs^) (reset-vars)])
            (unless (set-empty? clr*)
              (error 'uncover-call-live-roots 
                     "empty program call live roots invariant ~a" clr*))
@@ -203,7 +201,7 @@
            (values `(assign ,v ,e) clr*))]
         ;; The union of both branches are still alive
         [`(if ,t ,c* ,a*)
-         (vomit "uncover call live if")
+         (vomit "uncover call live if" t c* a*)
          (let-values ([(c* c-clr*) ((uncover-call-live-seq env clr*) c*)]
                       [(a* a-clr*) ((uncover-call-live-seq env clr*) a*)])
            (let*-values ([(b-clr*) (set-union c-clr* a-clr*)]
@@ -226,7 +224,7 @@
                   "call live roots exist during initialization of rootstack"))
          (values `(initialize ,stack ,heap) (set))]
         [`(collection-needed? ,size) (values x clr*)]
-        [`(,(? primitive? op) ,(app (uncover-call-live-roots env (set)) e* clr**) ...)
+        [`(,(? primitive? op) ,(app (recur/mt-clr) e* clr**) ...)
          (values `(,op ,@e*) (set-union clr* (set-union* clr**)))]     
         [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
 
@@ -241,7 +239,7 @@
     (and (pair? t) (eq? (car t) 'Vector)))
 
   ;; Merge two hash tables that do not have contradictory key/value pairs
-  (define (env-merge e1 e2)
+  (define/public (env-merge e1 e2)
     ;; add each of the keys in e2 to e1
     (for/fold ([e1 e1]) ([(k v) (in-hash e2)])
       ;; but first check to see if the key already exists in e1
@@ -254,31 +252,39 @@
           [else
            (error 'env-merge "inconsistent environments ~a ~a" e1 e2)]))))
 
-  (define (env-ref env x)
+  (define/public (env-ref env x)
     (hash-ref env x (lambda () (error 'env-ref "unmatched ~a" x))))
   
-  (define (env-set env k v)
+  (define/public (env-set env k v)
     (let ([v? (hash-ref env k #f)])
       (if (and v? (not (equal? v v?)))
           (error 'env-set "~a : ~a is inconsistent with ~a" k v env)
           (hash-set env k v))))
 
-  ;; A mutable value for allocating and accumulating variables
+
+  ;; vars is a private field holding freshly allocated variables that
+  ;; can be accessed throught the reset-vars, reset-vars, and unique-var
+  ;; methods.
   (define vars (box '()))
-  
-  (define (get-vars)
+
+  ;; create and remember a new unique variable
+  (define/public (unique-var [x 'u] [t? #f])
+    (let ((x (gensym x))
+          (old-vars (unbox vars)))
+      (if t?
+          (set-box! vars `((,x . ,t?) ,old-vars))
+          (set-box! vars `(,x . ,old-vars)))
+      x))
+
+  ;; look at the current state of vars
+  (define/public (get-new-vars) (unbox vars))
+
+  ;; reset and retrieve the current state of vars
+  (define/public (reset-vars)
     (let ((tmp (unbox vars)))
       (set-box! vars '())
       tmp))
-
-  (define (unique-var [x 'u])
-    (let ((tmp (gensym x)))
-      (set-box! vars (cons tmp (unbox vars)))
-      tmp))
-
-  (define (set-union* ls)
-    (foldr set-union (set) ls))
-
+  
   (define (primitive? x)
     (set-member? (send this primitives) x))
   
@@ -365,9 +371,9 @@
                [els-ss (append* (map (select-instructions rs-var) els-ss))])
            `((if ,cnd ,thn-ss ,els-ss)))]
         [`(program ,xs (type ,ty) . ,ss)
-         (define rs-var (unique-var 'rootstack))
+         (define rs-var (gensym 'rootstack))
          (define ss^ (append* (map (select-instructions rs-var) ss)))
-         `(program ,(append xs (get-vars)) (type ,ty) ,@ss^)]
+         `(program ,(cons rs-var (append (reset-vars) xs)) (type ,ty) ,@ss^)]
         [otherwise ((super select-instructions) otherwise)])))
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -450,7 +456,7 @@
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("expose allocation"
-       ,(send compiler expose-allocation (hash))
+       ,(send compiler expose-allocation)
        ,(send interp interp-C '()))
       ("uncover call live roots"
        ,(send compiler uncover-call-live-roots (hash) (set))

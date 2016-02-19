@@ -1,8 +1,8 @@
 #lang racket
 (require racket/pretty)
 (require (for-syntax racket))
-(provide debug-level debug verbose vomit
-         map2 b2i i2b
+(provide debug-level at-debug-level? debug verbose vomit
+         map2 b2i i2b set-union*
          fix while 
          label-name lookup  make-dispatcher assert
          read-fixnum read-program 
@@ -16,23 +16,27 @@
 ;; The easiest way to increment it is passing the -d option
 ;; to run-tests.rkt
 ;; 0 none 
-;; 1 trace passes in run-test (-d)
-;; 2 debug macros (-dd)
-;; 3 verbose debugging (-ddd)
-;; 4 (vomit) absolutely everything (-dddd)
+;; 1 trace passes in run-test
+;; 2 debug macros
+;; 3 verbose debugging
+;; 4 (vomit) absolutely everything
 ;; The higher the setting the more information is reported.
+;; If you want the same functionality as previous incarnation
+;; of utilities then uncomment the line after this definition
+;; and change the number there.
 (define debug-level
   (make-parameter
-   0    ;; If you have to hard code me change 0 to 1-4
+   0 
    (lambda (d)
      (unless (exact-nonnegative-integer? d) 
        (error 'debug-state "expected nonnegative-integer in ~a" d))
      d)))
+;; (debug-level 2)
 
 ;; Check to see if debug state is at least some level
-(define (at-debug-level n)
+(define (at-debug-level? n)
   (unless (exact-nonnegative-integer? n)
-    (error 'at-debug-state "expected non-negative integer ~a" n))
+    (error 'at-debug-level? "expected non-negative integer ~a" n))
   (>= (debug-level) n))
 
 ;; print-label-and-values prints out the label followed the values
@@ -65,9 +69,17 @@
      (define-syntax (name stx)
       (syntax-case stx ()
         [(_ label value ...)
-         #`(when (at-debug-level level)
+         #`(when (at-debug-level? level)
              #,(syntax/loc stx
                  (print-label-and-values label value ...)))]))))
+
+;; Print out debugging info in a somewhat organized manner
+;; (debug "foo" (car '(1 2)) 'foo) should print
+;; foo @ utilities.rkt:77
+;; (car '(1 2)):
+;; 1
+;; 'foo:
+;; foo
 (define-debug-level trace 1)
 (define-debug-level debug 2)
 (define-debug-level verbose 3)
@@ -125,6 +137,11 @@
          (let-values ([(x1 x2) (f (car ls))]
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
+
+;; set-union* takes a list of sets and unions them all together.
+(define (set-union* ls)
+  (foldl set-union (set) ls))
+
 
 ;; label-name prepends an underscore to a label (symbol or string)
 ;; if the current system is Mac OS and leaves it alone otherwise.
@@ -403,17 +420,20 @@
 ;; (error) function when it encounters a type error, or that it
 ;; returns #f when it encounters a type error. This function then
 ;; returns whether a type error was encountered.
-(define test-typecheck 
-  (lambda (tcer exp)
-    (if (eq? tcer #f) exp
-        (let ([res 
-               (with-handlers ([exn:fail?
-                                (lambda (e) #f)])
-                 (tcer exp))])
-          (match res
-           [#f #f]
-           [`(program ,elts ...) res]
-           [else exp])))))
+(define (test-typecheck tcer exp)
+  (define (handler e)
+    (vomit "test-typecheck" tcer exp e)
+    (when (at-debug-level? 1)
+      (display (exn-message e)))
+    #f)
+  (if (eq? tcer #f)
+      exp
+      (let ([res (with-handlers ([exn:fail? handler])
+                   (tcer exp))])
+        (match res
+          [#f #f]
+          [`(program ,elts ...) res]
+          [else exp]))))
 
 (define assert
   (lambda (msg b)
@@ -520,7 +540,7 @@
   (hash-keys graph))
 
 (define (print-dot graph file-name)
-  (if (at-debug-level 1)
+  (if (at-debug-level? 1)
       (call-with-output-file file-name #:exists 'replace
 	(lambda (out-file)
 	  (write-string "strict graph {" out-file) (newline out-file)

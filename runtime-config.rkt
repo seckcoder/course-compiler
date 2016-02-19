@@ -13,4 +13,4 @@
 
 ;; Parameter that determines what the initial heap size of the program is.
 (define heap-size 
-  (make-parameter (expt 2 16)))
+  (make-parameter (expt 2 4)))
