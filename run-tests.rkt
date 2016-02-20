@@ -9,16 +9,15 @@
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
-;; I have made the original run-tests more programmatic so that we don't
-;; have to edit it in order to change which test are run or change paramerter
-;; to the compiler. To get the defualt behavior simply type "racket run-tests.rkt"
-;; at the command line. To get a description of what can be manipulated pass "-h"
-;; for the help message.
-;; I will add the abilility to run student tests shortly.
+;; I have made the original run-tests more programmatic so that we
+;; don't have to edit it in order to change which test are run or
+;; change parameters to the compiler. To get the default behavior
+;; simply type "racket run-tests.rkt" at the command line. To get a
+;; description of what can be manipulated pass "-h" for the help
+;; message.  I will add the abilility to run student tests shortly.
 
-
-;; Table associating names of compilers with the information for running
-;; and testing them.
+;; Table associating names of compilers with the information for
+;; running and testing them.
 (define compiler-list
   ;; Name           Typechecker               Compiler-Passes      Valid suites
   `(("int_exp"      #f                        ,int-exp-passes      (0))
@@ -36,7 +35,7 @@
 (define suite-list
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32))
-    (2 . ,(range 1 18))
+    (2 . ,(range 1 17))
     (3 . ,(range 1 14))
     (4 . ,(range 0 5))))
 
