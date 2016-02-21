@@ -317,7 +317,10 @@
                                [else
                                 (match (car passes)
                                   [`(,name ,pass ,interp)
-                                   (let* ([new-p (pass p)])
+                                   (let ([new-p (pass p)])
+				     (trace (string-append "running pass: "
+							   name)
+					    new-p)
                                      (loop (cdr passes) new-p)
                                      )])]))])
               (cond [(string? x86)
@@ -450,18 +453,35 @@
 ;; Edited by Jan Hubicˇka, Andreas Jaeger, Mark Mitchell
 ;; December 2, 2003
 
-(define arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
-
-(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11 ))
-(define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
-
-;; there are 13 general registers:
+;; We reserve rax and r11 for patching instructions.
+;; There are 12 other general registers:
 (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
-    				  'r8 'r9 'r10 'r11 'r12 
+    				  'r8 'r9 'r10 'r12 
 				  'r13 'r14 'r15))
 
+;; We have a bug in --suite 3 --test 4 
+;; that shows up when we use the small register set. -Jeremy
+(define small-register-set #f)
+(define arg-registers '())
+(define registers-for-alloc '())
+
 ;; registers-for-alloc should always inlcude the arg-registers. -Jeremy 
-(define registers-for-alloc general-registers)
+
+(if small-register-set
+    (begin
+      (set! arg-registers (vector 'rcx))      
+      (set! registers-for-alloc (vector 'rbx 'rcx))
+      )
+    (begin
+      (set! arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+      (set! registers-for-alloc general-registers)
+      )
+    )
+
+(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11))
+(define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
+
+
 
 (define byte-register-table
   (make-immutable-hash
@@ -476,18 +496,19 @@
       (error 'byte-reg->full-reg "invalid byte register ~a" x))
     r?))
 
-
+;; The numbers here correspond to indices in the general-registers
+;; and registers-for-alloc.
 (define reg-colors
-  '((rax . -1) (__flag . -1)
+  '((rax . -1) (r11 . -2) (__flag . -1)
     (rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
-    (r8 . 5) (r9 . 6) (r10 . 7) (r11 . 8) (r12 . 9) (r13 . 10)
-    (r14 . 11) (r15 . 12)))
+    (r8 . 5) (r9 . 6) (r10 . 7) (r12 . 8) (r13 . 9)
+    (r14 . 10) (r15 . 11)))
 
 (define (register->color r)
   (cdr (assq r reg-colors)))
 
 (define registers (set-union (list->set (vector->list general-registers))
-			     (set 'rax 'rsp 'rbp '__flag)))
+			     (set 'rax 'r11 'rsp 'rbp '__flag)))
 
 (define (align n alignment)
   (cond [(eq? 0 (modulo n alignment))

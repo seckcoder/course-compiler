@@ -342,7 +342,8 @@
          (define tag (bitwise-ior ptr-tag length-tag is-not-forward-tag))
          `((movq (global-value free_ptr) ,lhs^)
            (addq (int ,size) (global-value free_ptr))
-           (movq (int ,tag) (offset ,lhs^ 0)))]
+	   (movq ,lhs^ (reg r11))
+           (movq (int ,tag) (offset (reg r11) 0)))]
         [`(if (collection-needed? ,size) ,cs ,as)
          (define cs^  (append* (map (select-instructions rs-var) cs)))
          (define as^  (append* (map (select-instructions rs-var) as)))
@@ -358,12 +359,14 @@
         [`(assign ,lhs (vector-ref ,e-vec ,i))
          (define lhs^ ((select-instructions rs-var) lhs))
          (define e-vec^ ((select-instructions rs-var) e-vec))
-         `((movq (offset ,e-vec^ ,(* (add1 i) 8)) ,lhs^))]
+         `((movq ,e-vec^ (reg r11))
+	   (movq (offset (reg r11) ,(* (add1 i) 8)) ,lhs^))]
         [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
          (define new-lhs ((select-instructions rs-var) lhs))
          (define new-e-vec ((select-instructions rs-var) e-vec))
          (define new-e-arg ((select-instructions rs-var) e-arg))
-         `((movq ,new-e-arg (offset ,new-e-vec ,(* (add1 i) 8))))]
+         `((movq ,new-e-vec (reg r11))
+	   (movq ,new-e-arg (offset (reg r11) ,(* (add1 i) 8))))]
         ;; If has to be overridden because it needs to propagate
         [`(if ,cnd ,thn-ss ,els-ss)
          (let ([cnd ((select-instructions rs-var) cnd)]
@@ -411,7 +414,7 @@
            `(setl ,new-e)]
           [else ((super assign-homes homes) e)])))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; patch-instructions : psuedo-x86 -> x86
 
 (define/override (on-stack? a)
@@ -420,17 +423,17 @@
     [`(global-value ,l) #t]
     [else (super on-stack? a)]))
 
-
 (define/override (instructions)
   (set-add (super instructions) 'setl))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; print-x86 : x86 -> string
 
 (define/override (print-x86)
   (lambda (e)
     (match e
       [`(offset (stack ,n) ,i)
+       ;(error "offset, stack case " n)
        (format "~a(%rbp)" (- i n))]
       [`(offset ,e ,i)
        (format "~a(~a)" i ((send this print-x86) e))]
