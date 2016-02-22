@@ -381,9 +381,9 @@
         [`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
          (define rootstack (gensym 'rootstack))
          (define new-ds (map (select-instructions #f) ds))
+         (set! max-stack 0)
          (define new-ss
            (append* (map (select-instructions rootstack) ss)))
-         (set! max-stack 0)
          `(program
            (,(cons rootstack (append (reset-vars) locals)) ,max-stack)
            (type ,ty)
@@ -404,7 +404,10 @@
     (define/override (read-vars instr)
       (match instr
          [`(leaq ,s ,d) (send this free-vars s)]
-	 [`(indirect-callq ,f) (send this free-vars f)]
+	 [`(indirect-callq ,f) 
+	  (set-union (send this free-vars f)
+		     (list->set (vector->list arg-registers)))]
+	 [`(callq ,f) (list->set (vector->list arg-registers))]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
@@ -505,7 +508,8 @@
 	      (send this allocate-homes IG MG xs ss))
 	    (define new-ss (map (send this assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-           [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...) ,ss ...)
+           [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
+		      ,ss ...)
 	    (define new-ds (map (send this allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
 	      (send this allocate-homes IG MG locals ss))
@@ -520,6 +524,7 @@
     (define/override (on-stack? a)
       (match a
 	 [`(function-ref ,f) #t]
+	 [`(stack-arg ,i) #t]
 	 [else (super on-stack? a)]))
 
     (define/override (patch-instructions)
