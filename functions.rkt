@@ -404,10 +404,9 @@
     (define/override (read-vars instr)
       (match instr
          [`(leaq ,s ,d) (send this free-vars s)]
-	 [`(indirect-callq ,f) 
-	  (set-union (send this free-vars f)
-		     (list->set (vector->list arg-registers)))]
-	 [`(callq ,f) (list->set (vector->list arg-registers))]
+	 [`(indirect-callq ,arg) 
+	   (send this free-vars arg)]
+	 [`(callq ,f) (set)]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
