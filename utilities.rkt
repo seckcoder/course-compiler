@@ -461,7 +461,7 @@
 
 ;; We have a bug in --suite 3 --test 4 
 ;; that shows up when we use the small register set. -Jeremy
-(define small-register-set #f)
+(define small-register-set #t)
 (define arg-registers '())
 (define registers-for-alloc '())
 

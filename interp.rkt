@@ -200,6 +200,7 @@
       (lambda (ast)
         (vomit "R1/interp-scheme" env)
 	(match ast
+          [`(has-type ,e ,t) ((interp-scheme env) e)]
           [#t #t]
           [#f #f]
           [`(and ,e1 ,e2)
@@ -219,16 +220,17 @@
       (lambda (ast)
 	(vomit "R1/interp-C" ast)
 	(match ast
-           [#t #t]
-           [#f #f]
-	   [`(if ,cnd ,thn ,els)
-	    (if ((send this interp-C env) cnd)
-		((send this seq-C env) thn)
-		((send this seq-C env) els))]
-	   [`(program ,xs (type ,ty) ,ss ...)
-            ((super interp-C env) `(program ,xs ,@ss))]
-	   [else ((super interp-C env) ast)]
-	   )))
+          [`(has-type ,e ,t) ((interp-C env) e)]
+          [#t #t]
+          [#f #f]
+          [`(if ,cnd ,thn ,els)
+           (if ((send this interp-C env) cnd)
+               ((send this seq-C env) thn)
+               ((send this seq-C env) els))]
+          [`(program ,xs (type ,ty) ,ss ...)
+           ((super interp-C env) `(program ,xs ,@ss))]
+          [else ((super interp-C env) ast)]
+          )))
 
 
     (define (goto-label label ss)
@@ -566,7 +568,7 @@
              (unless (vector? (lookup x env))
                (error 'interp-C
                       "call-live-roots stores non-root ~a in ~a" x ast)))
-           ((send this seq-C env) ss)]
+           ((send this seq-C env) ss)] 
           [otherwise ((super interp-C env) ast)])))
     
     (define/override (interp-x86-exp env)     
@@ -687,35 +689,28 @@
       (lambda (ast)
         (vomit "R3/interp-scheme" ast env)
         (match ast
-	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	    (cons f `(lambda ,xs ,body))]
-	   [`(function-ref ,f)
-	    (lookup f env)]
-	   [`(app ,f ,args ...)
+          [`(has-type ,e ,t) ((interp-scheme env) e)]
+          [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+           (cons f `(lambda ,xs ,body))]
+          [`(function-ref ,f)
+           (lookup f env)]
+          [`(app ,f ,args ...)
 	    (define new-args (map (send this interp-scheme env) args))
-	    (let ([f-val ((send this interp-scheme env) f)])
-	      (match f-val
-	         [`(lambda (,xs ...) ,body)
-		  (define new-env (append (map cons xs new-args) env))
+           (let ([f-val ((send this interp-scheme env) f)])
+             (match f-val
+               [`(lambda (,xs ...) ,body)
+                (define new-env (append (map cons xs new-args) env))
 		  ((send this interp-scheme new-env) body)]
-		 [else (error "interp-scheme, expected function, not" f-val)]))]
-	   [`(program (type ,ty) ,ds ... ,body)
+               [else (error "interp-scheme, expected function, not" f-val)]))]
+          [`(program (type ,ty) ,ds ... ,body)
 	    ((send this interp-scheme env) `(program ,@ds ,body))]
-	   [`(program ,ds ... ,body)
-	    (let ([top-level (map  (send this interp-scheme '()) ds)])
+          [`(program ,ds ... ,body)
+           (let ([top-level (map  (send this interp-scheme '()) ds)])
 	      ((send this interp-scheme top-level) body))]
-	    #;(let loop ([ds ds] [new-env '()])
-	      (cond [(null? ds)
-		     ((send this interp-scheme new-env) body)]
-		    [else
-		     (loop (cdr ds)
-			   (cons ((send this interp-scheme new-env) (car ds))
-				 new-env))]))
-	   [`(,f ,args ...) #:when (not (set-member?
-					 (send this non-apply-ast) f))
-	    ((send this interp-scheme env) `(app ,f ,@args))]
-	   [else ((super interp-scheme env) ast)]
-	   )))
+          [`(,f ,args ...) #:when (not (set-member?
+                                        (send this non-apply-ast) f))
+           ((send this interp-scheme env) `(app ,f ,@args))]
+          [else ((super interp-scheme env) ast)])))
 
     (define/override (interp-C env)
       (lambda (ast)
@@ -853,7 +848,7 @@
       (lambda (ast)
         (debug "R4/interp-scheme" ast env)
 	(match ast
-	   [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
+          [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
 	    `(lambda ,xs ,body ,env)]
 	   [`(app ,f ,args ...)
 	    (define new-args (map (send this interp-scheme env) args))
