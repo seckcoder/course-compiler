@@ -528,7 +528,6 @@
                  "global value, ~a, used before initialization"
                  label))
         value))
-
     
     (define/override (interp-C env)
       (lambda (ast)
@@ -561,7 +560,7 @@
              (error 'interp-C "invalid argument(s) to collect in ~a" ast)) 
            env]
           ;; allocate a vector of length l and type t that is initialized.
-          [`(allocate ,l ,t) (build-vector l (lambda a uninitialized))]
+          [`(allocate ,l) (build-vector l (lambda a uninitialized))]
           ;; Analysis information making introduce rootstack easier
           [`(call-live-roots (,xs ...) ,ss ...)
            (for ([x (in-list xs)])

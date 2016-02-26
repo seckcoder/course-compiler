@@ -36,7 +36,7 @@
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32))
     (2 . ,(range 1 18))
-    (3 . ,(range 1 14))
+    (3 . ,(range 1 16))
     (4 . ,(range 0 5))))
 
 (define (suite-range x)

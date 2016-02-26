@@ -21,35 +21,43 @@
       (lambda (e)
         (vomit "vectors/type-check" e env)
 	(match e
-          [`(vector ,es ...)
-           `(Vector ,@(map (send this type-check env) es))]
-          [`(vector-ref ,e-vec ,i)
-           (define t ((send this type-check env) e-vec))
+          [`(vector ,(app (type-check env) e* t*) ...)
+           (let ([t `(Vector ,@t*)])
+             (values `(has-type (vector ,@e*) ,t) t))]
+          [`(vector-ref ,(app (type-check env) e t) ,i)
            (match t
              [`(Vector ,ts ...)
-              (unless (i . < . (length ts))
-                (error "index too large for vector-ref:" i))
-              (list-ref ts i)]
+              (unless (and (exact-nonnegative-integer? i)
+                           (i . < . (length ts)))
+                (error 'type-check "invalid index ~a" i))
+              (let ([t (list-ref ts i)])
+                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t))]
              [else (error "expected a vector in vector-ref, not" t)])]
-          [`(vector-set! ,e-vec ,i ,e-arg)
-           (define t ((send this type-check env) e-vec))
-           (define t-arg ((send this type-check env) e-arg))
-           (match t
+          [`(vector-set! ,e-vec ,i ,e-arg) 
+           (define-values (e-vec^ t-vec) ((send this type-check env) e-vec))
+           (define-values (e-arg^ t-arg) ((send this type-check env) e-arg))
+           (match t-vec
              [`(Vector ,ts ...)
-              (unless (i . < . (length ts))
-                (error "index too large for vector-set!:" i))
+              (unless (and (exact-nonnegative-integer? i)
+                           (i . < . (length ts)))
+                (error 'type-check "invalid index ~a" i))
               (unless (equal? (list-ref ts i) t-arg)
-                (error "type mismatch in vector-set!" 
-                       (list-ref ts i) t-arg)) ]
-             [else (error "expected a vector in vector-set!, not" t)])]
+                (error 'type-check "type mismatch in vector-set! ~a ~a" 
+                       (list-ref ts i) t-arg))
+              (values `(has-type (vector-set! ,e-vec^
+                                              (has-type ,i Integer)
+                                              ,e-arg^) Void) 'Void)]
+             [else (error 'type-check
+                          "expected a vector in vector-set!, not ~a"
+                          t-vec)])]
           [`(eq? ,e1 ,e2)
-           (match `(,((send this type-check env) e1)
-                    ,((send this type-check env) e2))
-             [`((Vector ,ts1 ...) (Vector ,ts2 ...))
-              'Boolean]
-             [else ((super type-check env) e)])]
-          [else ((super type-check env) e)]
-          )))
+           (let-values ([(e1 t1) ((type-check env) e1)]
+                        [(e2 t2) ((type-check env) e2)])
+             (match* (t1 t2)
+               [(`(Vector ,ts1 ...) `(Vector ,ts2 ...))
+                (values `(has-type (eq? ,e1 ,e2) Boolean) 'Boolean)]
+               [(other wise) ((super type-check env) e)]))]
+          [else ((super type-check env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniqueify : S1 -> C1-expr x (C1-stmt list)
@@ -63,184 +71,121 @@
     (define/public (expose-allocation)
       (lambda (x)
         (match x
-          [`(program (,xs ...) (type ,ty) . ,ss)
-           ;;(define-values (ss^ env^) ((expose-allocation-seq env) ss))
-           (let*-values ([(ss^ env^) (expose-allocation-seq ss (hash))]
-                         [(xs) (append xs (reset-vars))])
-             (when (at-debug-level? 1)
-               (for ([x xs])
-                 (unless (hash-ref env^ x #f)
-                   (error 'expose-allocation "var not in env ~a" x)))
-               (let ([env^^ (make-immutable-hash (uncover-types x))])
-                 (for ([(k v) (in-hash env^)])
-                   (or (eq? 'Void v)
-                       (let ([v? (hash-ref env^^ k #f)])
-                         (and v? (eq? v v?)))))))
-             (let ([xs (hash->list env^)])
-               `(program ,xs (type ,ty)
-                         (initialize ,(rootstack-size) ,(heap-size))
-                         ,@ss^)))]
+          [`(program (,xs ...) (type ,ty) . ,(app expose-allocation-seq ss))
+           `(program ,(append xs (reset-vars)) (type ,ty)
+                     (initialize ,(rootstack-size) ,(heap-size))
+                     ,@ss)]
           [else (error 'expose-allocation "umatched ~a" x)])))
     
     ;; Follow the control flow, build the environment, and return
     ;; expression rebuilt using types from environment.
-    (define/public (expose-allocation-seq ss env)
-      (match ss
-          ['() (values '() env)]
-          [(cons s ss) 
-           (let*-values ([(s^  env^)  (expose-allocation-stmt s env)]
-                         [(ss^ env^^) (expose-allocation-seq  ss env^)])
-             (values (append s^ ss^) env^^))]
-          [else (error 'expose-allocation-seq)]))
+    (define/public (expose-allocation-seq ss)
+      (append* (map (expose-allocation-stmt) ss)))
     
-    (define/public (expose-allocation-stmt stmt env)
+    (define/public ((expose-allocation-stmt) stmt)
       (match stmt
-            [`(assign ,lhs ,e)
-           (define t ((uncover-type-expr env) e))
-           (define env^ (env-set env lhs t))
-           (match* (e t)
-             [(`(vector ,e* ...) `(Vector ,t* ...))
-              (define len  (length e*))
-              (define size (* (+ len 1) 8))
-              (define-values (inits vars)
-                (for/lists (i* v*)
-                           ([e (in-list e*)]
-                            [n (in-naturals)])
-                  (let ([v (unique-var 'void)])
-                    (values `(assign ,v (vector-set! ,lhs ,n ,e)) v))))
-              (define env^^
-                (for/fold ([env^ env^]) ([v (in-list vars)])
-                  (hash-set env^ v 'Void)))
-              (values
-               `((if (collection-needed? ,size)
-                     ((collect ,size))
-                     ())
-                 (assign ,lhs (allocate ,len ,t))
-                 ,@inits)
-               env^^)]
-             [(e t) (values `(,stmt) env^)])]
-            [`(if ,t ,c ,a)
-             (let-values ([(c c-env) (expose-allocation-seq c env)]
-                          [(a a-env) (expose-allocation-seq a env)])
-               (values `((if ,t ,c ,a)) (env-merge c-env a-env)))]
-            [`(return ,e) (values `(,stmt) env)]
-            [else (error 'expose-allocation-stmt "unmatched ~a" stmt)]))
-      
-    
-    ;; Return the type of an expression given a type environment
-    (define/public (uncover-type-expr env)
-      (define (recur e)
-        (match e
-          [(? symbol? x)  (env-ref env x)]
-          [(? integer?)  'Integer]
-          [(? boolean?)  'Boolean]
-          [`(allocate ,l ,t) t]
-          [`(vector ,(app recur t*) ...) `(Vector ,@t*)]
-          ;; I has to be a literal integer
-          [`(vector-ref ,(app recur `(Vector ,t* ...)) ,i)
-           (list-ref t* i)]
-          [`(vector-set! . ,r) 'Void]
-          [(list (? primitive? op) _ ...)
-           (case op
-             [(+ - * read) 'Integer]
-             [(and or not eq?) 'Boolean])]
-          [other (error 'uncover-type-expr "unmatched ~v" other)]))
-      recur)
+        [`(assign ,lhs (has-type ,e ,t))
+         (match* (e t)
+           [(`(vector ,e* ...) `(Vector ,t* ...))
+            (define len  (length e*))
+            (define size (* (+ len 1) 8))
+            (define vec `(has-type ,lhs ,t))
+            (define-values (inits)
+              (for/list ([e (in-list e*)]
+                         [n (in-naturals)])
+                (let ([v (unique-var 'void)])
+                  `(assign ,v (has-type
+                               (vector-set! ,vec (has-type ,n Integer) ,e)
+                               Void)))))
+            `((if (has-type (collection-needed? ,size) Boolean)
+                  ((collect ,size))
+                  ())
+              (assign ,lhs (has-type (allocate ,len) ,t))
+              ,@inits)]
+           [(e t) (list stmt)])]
+        [`(if ,t ,(app expose-allocation-seq c) ,(app expose-allocation-seq a))
+         `((if ,t ,c ,a))]
+        [`(return ,e) (list stmt)]
+        [else (error 'expose-allocation-stmt "unmatched ~a" stmt)]))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
-    ;; This is a reimplementation of type check which could be fixed if we ellaborated
-    ;; the types at every previous step in the compiler.
-   
-    (define/public (uncover-call-live-seq env clr*)
-      ;; This pass could do better if it had most of the type information precomputed
+    ;; uncover-call-live-roots : C1-Expr  -> C1-Expr x (set id)
+
+        
+    (define/public (uncover-call-live-roots)
       (lambda (x)
-        (vomit "uncover call live sequence" x env clr*)
+        (vomit "uncover call live roots" x)
         (match x
-          ;; Base Case for list recusion -- the starting root set is the live root set
-          ['() (values '() clr*)]
-          ;; env is collected and forward threaded through the recursion
-          ;; then lives are collected through each return and used to
-          ;; rebuild the ast at each step
-          [(cons s ss)           
-           (let*-values ([(ss clr*) ((uncover-call-live-seq env clr*) ss)]
-                         [(s  clr*) ((uncover-call-live-roots env clr*) s)])
-             (vomit "let body" env ss s clr*)
-             (values `(,s . ,ss) clr*))
-           #;
-           (let ([env^ ((uncover-env-stmt env) s)])
-           (vomit "in let" env env^) (flush-output)
-           )]          
-        [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)])))
-  
-  (define/public (uncover-call-live-roots env clr*)
-    ;; This pass could do better if it had most of the type information precomputed
-    (lambda (x)
-      ;; Recursion case were the call live root set is threaded through
-      (define (recur x) ((uncover-call-live-roots env clr*) x))
-      ;; Recursion where the call live root set is left empty.
-      ;; This is usually done because it is known that multiple sets derived
-      ;; through the recursive case will be combined.
-      (define (recur/mt-clr) (uncover-call-live-roots env (set)))
-      (vomit "uncover call live roots" x env clr*)
-      (match x
-        ;; Base Case for list recusion -- the starting root set is the live root set
-        [`(program ,x.ts ,ty ,ss ...)
-         (let*-values ([(new-env) (make-immutable-hash x.ts)]
-                       [(ss clr*) ((uncover-call-live-seq new-env clr*) ss)]
-                       [(xs)  (map car x.ts)]
-                       [(xs^) (reset-vars)])
+          [`(program ,xs ,ty
+                     . ,(app (uncover-call-live-roots-seq (set)) ss clr*))
            (unless (set-empty? clr*)
              (error 'uncover-call-live-roots 
                     "empty program call live roots invariant ~a" clr*))
-           `(program ,(append xs xs^) ,ty ,@ss))]
-        ;; Remove variables when they are assigned
-        [`(assign ,v ,e) ;; v is not live in e
-         (let*-values ([(clr*)   (set-remove clr* v)]
-                       [(e clr*) ((uncover-call-live-roots env clr*) e)])
-           (values `(assign ,v ,e) clr*))]
-        ;; The union of both branches are still alive
-        [`(if ,t ,c* ,a*)
-         (vomit "uncover call live if" t c* a*)
-         (let-values ([(c* c-clr*) ((uncover-call-live-seq env clr*) c*)]
-                      [(a* a-clr*) ((uncover-call-live-seq env clr*) a*)])
-           (let*-values ([(b-clr*) (set-union c-clr* a-clr*)]
-                         [(t clr*) ((uncover-call-live-roots env b-clr*) t)])
-             (values `(if ,t ,c* ,a*) clr*)))]
-        [`(return ,(app recur e lr*)) (values `(return ,e) lr*)]
-        ;; Exp Cases
-        [(? symbol? x)
-         (values x (if (root? env x) (set-add clr* x) clr*))]
-        [(or (? integer? x) (? boolean? x)) (values x clr*)]
-        [(and x `(allocate ,l ,t)) (values x clr*)]
+           `(program ,(append xs (reset-vars)) ,ty ,@ss)]
+          [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
+    
+    ;; This is a foldr with two accumulator values, curried for ease of use with
+    ;; pattern matching
+    ;; uclr-seq : (set id) -> (listof stmt) -> (values (listof stmt) (set id))
+    (define/public (uncover-call-live-roots-seq clr*)
+      (lambda (x)
+        (vomit "uncover call live sequence" x clr*)
+        (cond
+          [(null? x) (values '() clr*)]
+          [(pair? x)           
+           (let*-values ([(ss clr*) ((uncover-call-live-roots-seq clr*) (cdr x))]
+                         [(s  clr*) (uncover-call-live-roots-stmt (car x) clr*)])
+             (values `(,s . ,ss) clr*))]
+          [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)])))
+  
+    ;; uclr-stmt : stmt (set id) -> (values stmt (set id))
+    (define/public (uncover-call-live-roots-stmt stmt clr*)
+      (vomit "uncover-call-live-roots-stmt" stmt clr*)
+      (match stmt
         [(and x `(collect ,size))
-         (define call-live-roots (set->list clr*))
-         (values `(call-live-roots ,call-live-roots
-                                   (collect ,size))
-                 clr*)]
+         (values `(call-live-roots ,(set->list clr*) (collect ,size)) clr*)]
+        [`(assign ,v ,(app uncover-call-live-roots-exp e-clr*))
+         (values stmt (set-union (set-remove clr* v) e-clr*))]
+        [`(if ,(and t (app uncover-call-live-roots-exp t-clr*))
+              ,(app (uncover-call-live-roots-seq clr*) c* c-clr*)
+              ,(app (uncover-call-live-roots-seq clr*) a* a-clr*))
+         ;; I am not sure what the grammar says ,t should be. -Andre
+         (values `(if ,t ,c* ,a*) (set-union c-clr* a-clr* t-clr*))]
+        [`(return ,(app uncover-call-live-roots-exp e-clr*))
+         ;; Applying some meta reasoning here there shouldn't be any call-live roots
+         ;; after a return therefore just e-clr* and not (set-union clr* e-clr*)
+         (values stmt e-clr*)]
         [`(initialize ,stack ,heap)
          (unless (set-empty? clr*)
            (error 'uncover-call-live-roots
                   "call live roots exist during initialization of rootstack"))
-         (values `(initialize ,stack ,heap) (set))]
-        [`(collection-needed? ,size) (values x clr*)]
-        [`(,(? primitive? op) ,(app (recur/mt-clr) e* clr**) ...)
-         (values `(,op ,@e*) (set-union clr* (set-union* clr**)))]     
-        [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
+         (values `(initialize ,stack ,heap) clr*)]
+        [else (error 'uncover-call-live-roots-stmt "unmatched ~a" stmt)]))
 
-  ;; root? returns true if x is a root or false otherwise.
-  ;; root? : (Hashtable id type) id -> boolean
-  (define/public (root? env x)
-    (let* ([e (lambda () (error 'root? "unbound ~a" x))]
-           [t (hash-ref env x e)])
-      (root-type? t)))
-
-  (define/public (root-type? t)
-    (and (pair? t) (eq? (car t) 'Vector)))
-
-  ;; Merge two hash tables that do not have contradictory key/value pairs
-  (define/public (env-merge e1 e2)
-    ;; add each of the keys in e2 to e1
+    ;; uclr-exp : expr -> (set id)
+    (define/public (uncover-call-live-roots-exp e)
+      (vomit "uncover-call-live-roots-exp" e)
+      (match e
+        [`(has-type ,(? symbol? x) ,t)
+         (if (root-type? t)
+             (set x)
+             (set))]
+        [`(has-type ,e ,t)
+         (uncover-call-live-roots-exp e)]
+        [(or (? integer?) (? boolean?)
+             `(allocate ,_)
+             `(collection-needed? ,_))
+         (set)]
+        [`(,(? primitive? op) ,(app uncover-call-live-roots-exp clr**) ...)
+         (set-union* clr**)]
+        [else (error 'vectors/uncover-call-live-roots-exp "unmatched ~a" e)]))
+  
+    (define/public (root-type? t)
+      (and (pair? t) (eq? (car t) 'Vector)))
+    
+    ;; Merge two hash tables that do not have contradictory key/value pairs
+    (define/public (env-merge e1 e2)
+      ;; add each of the keys in e2 to e1
     (for/fold ([e1 e1]) ([(k v) (in-hash e2)])
       ;; but first check to see if the key already exists in e1
       (let ([v? (hash-ref e1 k #f)])
@@ -251,7 +196,7 @@
           [(equal? v? v) e1]
           [else
            (error 'env-merge "inconsistent environments ~a ~a" e1 e2)]))))
-
+  
   (define/public (env-ref env x)
     (hash-ref env x (lambda () (error 'env-ref "unmatched ~a" x))))
   
@@ -298,6 +243,25 @@
     (lambda (x)
       (vomit "select instructions" x vars)
       (match x
+        [`(assign ,lhs (has-type (allocate ,length) (Vector ,ts ...)))
+         (define lhs^ ((select-instructions rs-var) lhs))
+         ;; Add one quad word for the meta info tag
+         (define size (* (add1 length) 8))
+         ;;highest 7 bits are unused
+         ;;lowest 1 bit is 0 saying this is not a forwarding pointer
+         (define is-not-forward-tag 1)
+         ;;next 6 lowest bits are the length
+         (define length-tag (arithmetic-shift length 1))
+         ;;bits [6,56] are a bitmask indicating if [0,50] are pointers
+         (define ptr-tag
+           (for/fold ([tag 0]) ([t (in-list ts)] [i (in-naturals 7)])
+             (bitwise-ior tag (arithmetic-shift (b2i (root-type? t)) i))))
+         ;; Combine the tags into a single quad word
+         (define tag (bitwise-ior ptr-tag length-tag is-not-forward-tag))
+         `((movq (global-value free_ptr) ,lhs^)
+           (addq (int ,size) (global-value free_ptr))
+	   (movq ,lhs^ (reg r11))
+           (movq (int ,tag) (offset (reg r11) 0)))]        
         [`(call-live-roots (,clr* ...) . ,ss)
          (if (null? clr*)
              (append* (map (select-instructions rs-var) ss))
@@ -325,26 +289,7 @@
          `((movq (var ,rs-var) (reg rdi))
            (movq ,((select-instructions rs-var) size) (reg rsi))
            (callq collect))]
-        [`(assign ,lhs (allocate ,length (Vector ,ts ...)))
-         (define lhs^ ((select-instructions rs-var) lhs))
-         ;; Add one quad word for the meta info tag
-         (define size (* (add1 length) 8))
-         ;;highest 7 bits are unused
-         ;;lowest 1 bit is 0 saying this is not a forwarding pointer
-         (define is-not-forward-tag 1)
-         ;;next 6 lowest bits are the length
-         (define length-tag (arithmetic-shift length 1))
-         ;;bits [6,56] are a bitmask indicating if [0,50] are pointers
-         (define ptr-tag
-           (for/fold ([tag 0]) ([t (in-list ts)] [i (in-naturals 7)])
-             (bitwise-ior tag (arithmetic-shift (b2i (root-type? t)) i))))
-         ;; Combine the tags into a single quad word
-         (define tag (bitwise-ior ptr-tag length-tag is-not-forward-tag))
-         `((movq (global-value free_ptr) ,lhs^)
-           (addq (int ,size) (global-value free_ptr))
-	   (movq ,lhs^ (reg r11))
-           (movq (int ,tag) (offset (reg r11) 0)))]
-        [`(if (collection-needed? ,size) ,cs ,as)
+        [`(if (has-type (collection-needed? ,size) Boolean) ,cs ,as)
          (define cs^  (append* (map (select-instructions rs-var) cs)))
          (define as^  (append* (map (select-instructions rs-var) as)))
          (define data (unique-var 'end-data))
@@ -356,12 +301,12 @@
            (movzbq (byte-reg al) (var ,lt))
            #| purposefully fliped clauses because we want (not lt)|#
            (if (eq? (int 0) (var ,lt)) ,as^ ,cs^))]
-        [`(assign ,lhs (vector-ref ,e-vec ,i))
+        [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer)))
          (define lhs^ ((select-instructions rs-var) lhs))
          (define e-vec^ ((select-instructions rs-var) e-vec))
          `((movq ,e-vec^ (reg r11))
 	   (movq (offset (reg r11) ,(* (add1 i) 8)) ,lhs^))]
-        [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
+        [`(assign ,lhs (vector-set! ,e-vec (has-type ,i ,Integer) ,e-arg))
          (define new-lhs ((select-instructions rs-var) lhs))
          (define new-e-vec ((select-instructions rs-var) e-vec))
          (define new-e-arg ((select-instructions rs-var) e-arg))
@@ -462,7 +407,7 @@
        ,(send compiler expose-allocation)
        ,(send interp interp-C '()))
       ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots (hash) (set))
+       ,(send compiler uncover-call-live-roots)
        ,(send interp interp-C '()))
       ("instruction selection"
        ,(send compiler select-instructions 'rootstack)
