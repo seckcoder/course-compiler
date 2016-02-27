@@ -14,55 +14,53 @@
       (set-union (send this primitives)
 		 (set 'if 'let 'define 'program)))
 
-    (define (fun-def-name d)
-      (match d
-	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	  f]
-	 [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
-      
-    (define (fun-def-type d)
-      (match d
-	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	  `(,@ps -> ,rt)]
-	 [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
-      
-
-
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S3 -> S3 (for programs)
     ;; type-check : env -> S3 -> type (for expressions)
+    (define/public (fun-def-name d)
+      (match d
+        [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+         f]
+        [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
+      
+    (define/public (fun-def-type d)
+      (match d
+        [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+         `(,@ps -> ,rt)]
+        [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
+    
     (define/override (type-check env)
       (lambda (e)
         (vomit "type-check" e)
         (match e
-	   [`(,e ,es ...) #:when (not (set-member? (send this non-apply-ast) e))
-	    (define-values (e* ty*)
-              (for/lists (e* ty*) ([e (in-list es)])
-                ((type-check env) e)))
-	    (define-values (e^ ty)
-              ((send this type-check env) e))
-	    (match ty
-              [`(,ty^* ... -> ,rt)
-               (unless (equal? ty* ty^*)
-                 (error "parameter and argument type mismatch for function" e))
-               (vomit "app" e^ e* rt)
-               (values `(has-type (,e^ ,@e*) ,rt) rt)]
-              [else (error "expected a function, not" ty)])]
-	   [`(define (,f ,(and p:t* `[,xs : ,ps]) ...) : ,rt ,body)
-            (let-values ([(body^ ty^) ((type-check (append (map cons xs ps) env)) body)])
-              `(define (,f ,@p:t*) : ,rt ,body^))]
-	   [`(program ,ds ... ,body)
-	    (define new-env
-              (for/list ([d ds]) 
-                (cons (fun-def-name d) (fun-def-type d))))
-	    (define ds^
-              (for/list ([d ds])
-                ((send this type-check new-env) d)))
-	    (define-values (body^ ty)
-              ((send this type-check new-env) body))
-            (vomit "prog" ty ds^ body^)
-	    `(program (type ,ty) ,@ds^ ,body^)]
-	   [else ((super type-check env) e)])))
+          [`(,e ,es ...) #:when (not (set-member? (send this non-apply-ast) e))
+           (define-values (e* ty*)
+             (for/lists (e* ty*) ([e (in-list es)])
+               ((type-check env) e)))
+           (define-values (e^ ty)
+             ((send this type-check env) e))
+           (match ty
+             [`(,ty^* ... -> ,rt)
+              (unless (equal? ty* ty^*)
+                (error "parameter and argument type mismatch for function" e))
+              (vomit "app" e^ e* rt)
+              (values `(has-type (,e^ ,@e*) ,rt) rt)]
+             [else (error "expected a function, not" ty)])]
+          [`(define (,f ,(and p:t* `[,xs : ,ps]) ...) : ,rt ,body)
+           (let-values ([(body^ ty^) ((type-check (append (map cons xs ps) env)) body)])
+             `(define (,f ,@p:t*) : ,rt ,body^))]
+          [`(program ,ds ... ,body)
+           (define new-env
+             (for/list ([d ds]) 
+               (cons (fun-def-name d) (fun-def-type d))))
+           (define ds^
+             (for/list ([d ds])
+               ((send this type-check new-env) d)))
+           (define-values (body^ ty)
+             ((send this type-check new-env) body))
+           (vomit "prog" ty ds^ body^)
+           `(program (type ,ty) ,@ds^ ,body^)]
+          [else ((super type-check env) e)])))
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S3 -> S3
 
@@ -76,7 +74,7 @@
            (define new-f ((send this uniquify env) f))
            `(,new-f ,@new-es)]
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-           (define new-xs (map gensym xs))
+           (define new-xs (for/list ([x xs]) (gensym (racket-id->c-id x))))
            (define new-env (append (map cons xs new-xs) env))
            `(define (,(cdr (assq f env)) 
                      ,@(map (lambda (x t) `[,x : ,t]) new-xs ps)) : ,rt 
@@ -86,7 +84,7 @@
              (for/list ([d ds])
                (match d
                  [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-                  (define new-f (gensym f))
+                  (define new-f (gensym (racket-id->c-id f)))
                   `(,f . ,new-f)]
                  [else (error "type-check, ill-formed function def")])))
            `(program (type ,ty) ,@(map (send this uniquify new-env) ds)
@@ -162,7 +160,7 @@
               (values `(has-type ,tmp ,t)
                       (append ss `((assign ,tmp (has-type ,fun-apply ,t)))))]
              [else
-              (values fun-apply ss)])]
+              (values `(has-type ,fun-apply ,t) ss)])]
           [else ((super flatten need-atomic) ast)])))
     
     (inherit reset-vars unique-var root-type?)
@@ -229,14 +227,18 @@
         [`(app ,(app uncover-call-live-roots-exp clr**) ...)
          (values `(call-live-roots ,(set->list clr*) ,stmt)
                  (set-union clr* (set-union* clr**)))]
+        [`(assign ,lhs (has-type (app ,e* ...) ,t))
+         (let* ([clr* (set-remove clr* lhs)]
+                [stmt `(call-live-roots ,(set->list clr*) ,stmt)]
+                [clr** (for/list ([e e*]) (uncover-call-live-roots-exp e))]
+                [clr* (set-union clr* (set-union* clr**))])
+           (values stmt clr*))]
         [else (super uncover-call-live-roots-stmt stmt clr*)]))
 
     ;;uncover-call-live-roots-exp : expr -> (set id)
     (define/override (uncover-call-live-roots-exp e)
       (vomit "functions/uncover-call-live-roots-exp" e)
-      (match e
-        [`(app ,(app uncover-call-live-roots-exp clr**) ...)
-         (set-union* clr**)]
+      (match e 
         [`(function-ref ,f) (set)]
         [else (super uncover-call-live-roots-exp e)]))
     

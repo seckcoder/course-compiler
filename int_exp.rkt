@@ -21,7 +21,7 @@
 	   [(? symbol?) (cdr (assq e env))]
 	   [(? integer?) e]
 	   [`(let ([,x ,e]) ,body)
-	    (define new-x (gensym x))
+	    (define new-x (gensym (racket-id->c-id x)))
 	    (define new-e (recur e))
 	    `(let ([,new-x ,new-e])
 	       ,((send this uniquify (cons (cons x new-x) env)) body))]
