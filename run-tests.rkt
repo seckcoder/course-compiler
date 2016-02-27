@@ -5,7 +5,7 @@
 (require "conditionals.rkt")
 (require "vectors.rkt")
 (require "functions.rkt")
-;;(require "lambda.rkt")
+(require "lambda.rkt")
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
@@ -25,7 +25,7 @@
     ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
     ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
-    ;;("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
+    ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))
@@ -36,6 +36,7 @@
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32))
     (2 . ,(range 1 18))
+    ;; There is a problem with interp that needs sorted in problem 16
     (3 . ,(range 1 16))
     (4 . ,(range 0 5))))
 

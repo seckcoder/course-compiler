@@ -2,7 +2,9 @@
 (require racket/pretty)
 (require (for-syntax racket))
 (provide debug-level at-debug-level? debug verbose vomit
-         map2 b2i i2b set-union*
+         map2 b2i i2b
+         racket-id->c-id
+         hash-union set-union*
          fix while 
          label-name lookup  make-dispatcher assert
          read-fixnum read-program 
@@ -85,30 +87,6 @@
 (define-debug-level verbose 3)
 (define-debug-level vomit 4)
 
-#|
-(define-syntax (trace stx)
-  (syntax-case stx ()
-    [(_ label value ...) 
-     #`(when (at-debug-level 1)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-
-(define-syntax (debug stx)
-  (syntax-case stx ()
-    [(_ label value ...) 
-     #`(when (at-debug-level 2)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-
-
-(define-syntax (vomit stx)
-  (syntax-case stx ()
-    [(_ label value ...)
-     #`(when (at-debug-level 4)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-|#
-
 (define-syntax-rule (while condition body ...)
   (let loop ()
     (when condition
@@ -142,6 +120,14 @@
 (define (set-union* ls)
   (foldl set-union (set) ls))
 
+(define (hash-union h . hs)
+  (cond
+    [(null? hs) h]
+    [else
+     (hash-union
+      (for/fold ([h h]) ([(k v) (in-hash (car hs))])
+        (hash-set h k v))
+      (cdr hs))]))
 
 ;; label-name prepends an underscore to a label (symbol or string)
 ;; if the current system is Mac OS and leaves it alone otherwise.
@@ -446,6 +432,19 @@
 	  (display msg)
 	  (newline))
 	(void))))
+
+;; (case-> (symbol . -> . symbol) (string . -> . string))
+(define (racket-id->c-id x)
+  (define (->c-id-char c)
+    (if (or (char<=? #\A c #\Z)
+            (char<=? #\a c #\z)
+            (char<=? #\0 c #\9))
+        c
+        #\_))
+  (cond
+    [(symbol? x) (string->symbol (racket-id->c-id (symbol->string x)))]
+    [(string? x) (list->string (map ->c-id-char (string->list x)))]
+    [else (error 'racket-id->c-id "expected string or symbol: ~v" x)]))
 
 
 ;; System V Application Binary Interface

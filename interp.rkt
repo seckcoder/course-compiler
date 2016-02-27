@@ -474,7 +474,7 @@
          string-append
          (cons (format "address ~a out of bounds\n\tcurrent memory regions:\n"
                        addr)
-               (for/list ([page (in-list memory)])
+               (for/list ([page (in-list (unbox memory))])
                  (match-let ([`(page ,start ,stop ,name ,_) page])
                    (format "\t\t~a\t\t[~a,~a)\n" name start stop))))))
       (unless (and (fixnum? addr)

@@ -8,21 +8,28 @@
 (define compile-R4
   (class compile-R3
     (super-new)
-    
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S4 -> S4
+    
     (define/override (type-check env)
       (lambda (e)
         (match e
-          [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-           (define bodyT
-	     ((send this type-check (append (map cons xs Ts) env)) body))
-	   (cond [(equal? rT bodyT)
-		  `(,@Ts -> ,rT)]
-		 [else (error "function body's type does not match return type"
-			      bodyT rT)])]
-          [else ((super type-check env) e)]
-          )))
+          ;; [(? symbol? x)
+          ;;  (let ([ty (lookup x env)])
+          ;;  (match ty
+          ;;    [`(,xT ... ~> ,rT)
+          ;;     (values `(has-type ,x ,ty) `(,xT ... -> ,rT))]
+          ;;    [else (values `(has-type ,x ,ty) ty)]))]
+          [`(lambda: ,(and bnd `([,xs : ,Ts] ...)) : ,rT ,body)
+           (let-values ([(body bodyT) ((type-check (append (map cons xs Ts) env)) body)]
+                        [(ty) `(,@Ts -> ,rT)])
+             (cond
+               [(equal? rT bodyT)
+                (values `(has-type (lambda: ,bnd : ,rT ,body) ,ty) ty)]
+               [else
+                (error "function body's type does not match return type" bodyT rT)]))]
+          [else ((super type-check env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S0 -> S0
@@ -30,12 +37,12 @@
       (lambda (e)
 	(match e
           [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-	   (define new-xs (map gensym xs))
+	   (define new-xs (for ([x xs]) (gensym (racket-id->c-id x))))
 	   (define new-env (append (map cons xs new-xs) env))
-	   `(lambda: ,(map (lambda (x T) `[,x : ,T]) new-xs Ts) : ,rT 
-		     ,((send this uniquify new-env) body))]
-	  [else ((super uniquify env) e)]
-	  )))
+           (define (annotate x t) `[,x : ,t])
+           `(lambda: ,(map annotate new-xs Ts) : ,rT 
+                     ,((send this uniquify new-env) body))]
+	  [else ((super uniquify env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; reveal-functions
@@ -43,102 +50,125 @@
       (lambda (e)
 	(define recur (send this reveal-functions funs))
 	(match e
-           [`(lambda: ,params : ,rT ,body)
-	    `(lambda: ,params : ,rT ,(recur body))]
-	   [else ((super reveal-functions funs) e)]
-	   )))
+          [`(lambda: ,params : ,rT ,body)
+           `(lambda: ,params : ,rT ,(recur body))]
+          [else ((super reveal-functions funs) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; convert-to-closures : env -> S4 -> S3
 
+    ;; free-variable : expr -> (immutable-hash id expr)
     (define/public (free-variables e)
       (define (recur e) (send this free-variables e))
       (match e
-	 [(? symbol?) (list e)]
-	 [(? integer?) '()]
-	 [`(function-ref ,f) '()]
-	 [`(let ([,x ,e]) ,body)
-	  (set-subtract (recur body) (list x))]
-	 [#t 'Boolean]
-	 [#f 'Boolean]
-	 [`(if ,cnd ,thn, els)
-	  (set-union (recur cnd) (recur thn) (recur els))]
+        [`(has-type ,x? ,t)
+         (if (symbol? x?)
+             (hash x? e)
+             (recur x?))]	
+        [(or (? integer?) (? boolean?)) (hash)]
+        [`(function-ref ,f) (hash)]
+        [`(let ([,x ,e]) ,body)
+         (hash-remove (recur body) x)]
+        [`(if ,cnd ,thn, els)
+         (hash-union (recur cnd) (recur thn) (recur els))]
 	[`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-	 (set-subtract (recur body) xs)]
+         (define (rm x h) (hash-remove h x))
+         (foldl rm (recur body) xs)]
 	[`(app ,es ...)
-	 (apply set-union (map recur es))]
+	 (apply hash-union (map recur es))]
 	[`(,op ,es ...)
-	 (apply set-union (map recur es))]
-	))
+	 (apply hash-union (map recur es))]
+        [else (error 'free-vars "unmatched ~a" e)]))
 
-    (define (convert-fun-body free-vars body)
+    (define (convert-fun-body free-vars body rt)
       (let loop ([xs free-vars] [i 1] [new-body body])
 	(cond [(null? xs) new-body]
 	      [else
-	       (let ([new-body `(let ([,(car xs) (vector-ref fvs ,i)])
-				  ,new-body)])
+	       (let ([new-body
+                      `(has-type (let ([,(car xs) (vector-ref fvs (has-type ,i Integer))])
+                                   ,new-body)
+                                 ,rt)])
 		 (loop (cdr xs) (+ i 1) new-body))])))
-      
+
     (define/public (convert-to-closures)
       (lambda (e)
         (define (recur e) ((send this convert-to-closures) e))
         (match e
-	   [(? symbol?) (values e '())]
-	   [(? integer?) (values e '())]
-	   [`(function-ref ,f)
-	    (values `(vector (function-ref ,f)) '())] ;; create closure
-	   [`(let ([,x ,e]) ,body)
-	    (define-values (new-e e-fs) (recur e))
-	    (define-values (new-body body-fs) (recur body))
-	    (values `(let ([,x ,new-e]) ,new-body)
-		    (append e-fs body-fs))]
-	   [#t (values #t '())]
-	   [#f (values #f '())]
-	   [`(if ,cnd ,thn, els)
-	    (define-values (new-cnd cnd-fs) (recur cnd))
-	    (define-values (new-thn thn-fs) (recur thn))
-	    (define-values (new-els els-fs) (recur els))
-	    (values `(if ,new-cnd ,new-thn ,new-els)
-		    (append cnd-fs thn-fs els-fs))]
-	   [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-	    (define-values (new-body body-fs) (recur body))
-	    (let ([fun-name (gensym 'lambda)]
-		  [params (map (lambda (x T) `[,x : ,T]) xs Ts)]
-		  [free-vars (set-subtract (send this free-variables new-body)
-					   xs)])
-	      (values
-	       `(vector (function-ref ,fun-name) ,@free-vars) ;; create closure
-	       (cons `(define (,fun-name ,@(cons `[fvs : _] params)) : ,rT
-			,(convert-fun-body free-vars new-body))
-		     body-fs)))]
-	   [`(app ,e ,es ...)
-	    (define-values (new-e e-fs) (recur e))
-	    (define tmp (gensym 'app))
-	    (define-values (new-es es-fss) (map2 recur es))
-	    (values
-	     `(let ([,tmp ,new-e])
-		(app (vector-ref ,tmp 0) ,tmp ,@new-es))
-	     (append e-fs (apply append es-fss)))]
-	   [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
-	    (define-values (new-body body-fs) (recur body))
-	    (let ([params (map (lambda (x T) `[,x : ,T]) xs Ts)])
-	      (cons
-	       `(define (,f ,@(cons `[fvs : _] params)) : ,rt 
-		  ,(convert-fun-body '() new-body))
-	       body-fs))]
-	   [`(program (type ,ty) ,ds ... ,body)
-	    (define new-ds (apply append (map recur ds)))
-	    (define-values (new-body body-fs) (recur body))
-	    `(program (type ,ty) ,@(append new-ds body-fs)
-		      ,new-body)]
-	   ;; Keep the below case last -Jeremy
-	   [`(,op ,es ...)
-	    (define-values (new-es es-fss) (map2 recur es))
-	    (values `(,op ,@new-es) 
-		    (apply append es-fss))]
-	  )))
+          [`(has-type (app ,e ,es ...) ,t)
+           (define-values (new-e e-fs) (recur e))
+           (define tmp (gensym 'app))
+           (define-values (new-es es-fss) (map2 recur es))
+           (match new-e
+             [`(has-type ,e^ ,t^)
+              (values
+               `(has-type
+                 (let ([,tmp ,new-e])
+                   (has-type (app (has-type (vector-ref (has-type ,tmp ,t^) (has-type 0 Integer)) _)
+                                  (has-type ,tmp ,t^) ,@new-es) ,t))
+                 ,t)
+               (append e-fs (apply append es-fss)))]
+             [else (error 'convert-to-closures "I assume this shouldn't happen")])]
+          [`(has-type (lambda: ([,xs : ,Ts] ...) : ,rT ,body) ,t)
+           (define-values (new-body body-fs) (recur body))
+           (let* ([fun-name (gensym 'lambda)]
+                  [params (map (lambda (x T) `[,x : ,T]) xs Ts)]
+                  [ty      `(,@Ts ... -> ,rT)]
+                  [free-vars (set-subtract (send this free-variables new-body)
+                                           xs)]
+                  [fvT (for ([fv free-vars]) (caddr fv))])
+             (values
+              `(has-type (vector (has-type (function-ref ,fun-name) _) ,@free-vars)
+                         (Vector _ ,@fvT))
+              ;; create closure
+              (cons `(define (,fun-name ,@(cons `[fvs : _] params)) : ,rT
+                       ,(convert-fun-body free-vars new-body rT))
+                    body-fs)))]
+          [`(has-type (function-ref ,f) ,t)
+           (values `(has-type (vector (has-type (function-ref ,f) _)) (Vector _)) '())]
+          [`(has-type ,e ,t)
+           (let-values ([(e b*) (recur e)])
+             (values `(has-type ,e ,t) b*))]
+          ;; create closure          
+          
+          [(or (? symbol?) (? integer?) (? boolean?))
+           (values e '())]
+          [`(let ([,x ,e]) ,body)
+           (define-values (new-e e-fs) (recur e))
+           (define-values (new-body body-fs) (recur body))
+           (values `(let ([,x ,new-e]) ,new-body)
+                   (append e-fs body-fs))]
+          [`(if ,cnd ,thn, els)
+           (define-values (new-cnd cnd-fs) (recur cnd))
+           (define-values (new-thn thn-fs) (recur thn))
+           (define-values (new-els els-fs) (recur els))
+           (values `(if ,new-cnd ,new-thn ,new-els)
+                   (append cnd-fs thn-fs els-fs))]
+          [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
+           (define-values (new-body body-fs) (recur body))
+           (let ([params (map (lambda (x T) `[,x : ,T]) xs Ts)])
+             (cons
+              `(define (,f ,@(cons `[fvs : _] params)) : ,rt 
+                 ,(convert-fun-body '() new-body rt))
+              body-fs))]
+          [`(program (type ,ty) ,ds ... ,body)
+           (let-values ([(dss) (map recur ds)]
+                        [(body body-fs) (recur body)])
+             `(program (type ,ty)
+                       ,@(append* dss)
+                       ,@body-fs
+                       ,body))]
+          ;; Keep the below case last -Jeremy
+          [`(,op ,(app recur new-es es-fss) ...)
+           (values `(,op ,@new-es) (append* es-fss))])))
 
-    ))
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-call-live-roots
+
+    (define/override (root-type? x)
+      (or (and (list? x) (set-member? x '->))
+          (super root-type? x)))))
+
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -159,6 +189,12 @@
       ("convert-to-closures" ,(send compiler convert-to-closures)
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("expose allocation"
+       ,(send compiler expose-allocation)
+       ,(send interp interp-C '()))
+      ("uncover call live roots"
+       ,(send compiler uncover-call-live-roots)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))

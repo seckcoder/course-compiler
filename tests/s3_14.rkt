@@ -1,57 +1,37 @@
-(define (minus [m : Integer] [n : Integer]) : Integer
-  (+ m (- n)))
 
-(define (z [i : Integer]) : (Vector Integer)
-  (if (eq? i 0)
-      (vector 42)
-      (let ([junk (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5))])
-        (let ([garbage (vector -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)])
-          (let ([more (vector junk garbage junk garbage junk garbage junk garbage)])
-            (z (minus i 1)))))))
+(define (minus [n : Integer] [m : Integer]) : Integer
+  (+ n (- m)))
 
-(define (o [i : Integer] [v : (Vector Integer)]) : (Vector (Vector Integer))
-  (if (eq? i 0)
-      (vector v)
-      (let ([junk (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5))])
-        (let ([garbage (vector -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)])
-          (let ([more (vector junk garbage junk garbage junk garbage junk garbage)])
-            (o (minus i 1) v))))))
+(define (zero [x : Integer]) : (Vector)
+  (if (eq? x 0)
+      (vector)
+      (zero (minus (vector-ref (vector x) 0) 1))))
 
-(define (t [i : Integer] [v : (Vector (Vector Integer))])
-  : (Vector (Vector (Vector Integer)))
-  (if (eq? i 0)
-      (vector v)
-      (let ([junk (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5))])
-        (let ([garbage (vector -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)])
-          (let ([more (vector junk garbage junk garbage junk garbage junk garbage)])
-            (t (minus i 1) v))))))
+(define (one [x : Integer]) : (Vector (Vector) Integer)
+  (if (eq? x 0)
+      (vector (zero 20) 42)
+      (one (minus (vector-ref (vector x) 0) 1))))
 
-(define (h [i : Integer] [v : (Vector (Vector (Vector Integer)))])
-  : (Vector (Vector (Vector (Vector Integer))))
-  (if (eq? i 0)
-      (vector v)
-      (let ([junk (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5))])
-        (let ([garbage (vector -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)])
-          (let ([more (vector junk garbage junk garbage junk garbage junk garbage)])
-            (h (minus i 1) v))))))
+(define (two [x : Integer]) : (Vector (Vector) Integer (Vector (Vector) Integer))
+  (if (eq? x 0)
+      (vector (zero 20) 42 (one 20))
+      (two (minus (vector-ref (vector x) 0) 1))))
 
-(define (f [i : Integer] [v : (Vector (Vector (Vector (Vector Integer))))])
-  : (Vector (Vector (Vector (Vector (Vector Integer)))))
-  (if (eq? i 0)
-      (vector v)
-      (let ([junk (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5))])
-        (let ([garbage (vector -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)])
-          (let ([more (vector junk garbage junk garbage junk garbage junk garbage)])
-            (f (minus i 1) v))))))
+(define (three [x : Integer]) : (Vector (Vector) Integer (Vector (Vector) Integer) (Vector (Vector) Integer (Vector (Vector) Integer)))
+  (if (eq? x 0)
+      (vector (zero 20) 42 (one 20) (two 20))
+      (three (minus (vector-ref (vector x) 0) 1))))
 
-(define (e [i : Integer] [v : (Vector (Vector (Vector (Vector (Vector Integer)))))])
-  : (Vector (Vector (Vector (Vector (Vector (Vector Integer))))))
-  (if (eq? i 0)
-      (vector v)
-      (let ([junk (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5))])
-        (let ([garbage (vector -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1)])
-          (let ([more (vector junk garbage junk garbage junk garbage junk garbage)])
-            (e (minus i 1) v))))))
+(vector-ref
+ (vector-ref
+  (vector-ref
+   (vector-ref
+    (vector (zero 20) 42 (one 20) (two 20) (three 20))
+    4)
+   3)
+  2)
+ 1)
 
 
-(e 20 (f 20 (h 20 (t 20 (o 20 (z 20))))))
+
+

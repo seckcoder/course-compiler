@@ -85,24 +85,27 @@
     (define/public ((expose-allocation-stmt) stmt)
       (match stmt
         [`(assign ,lhs (has-type ,e ,t))
-         (match* (e t)
-           [(`(vector ,e* ...) `(Vector ,t* ...))
-            (define len  (length e*))
-            (define size (* (+ len 1) 8))
-            (define vec `(has-type ,lhs ,t))
-            (define-values (inits)
-              (for/list ([e (in-list e*)]
-                         [n (in-naturals)])
-                (let ([v (unique-var 'void)])
-                  `(assign ,v (has-type
-                               (vector-set! ,vec (has-type ,n Integer) ,e)
-                               Void)))))
-            `((if (has-type (collection-needed? ,size) Boolean)
-                  ((collect ,size))
-                  ())
-              (assign ,lhs (has-type (allocate ,len) ,t))
-              ,@inits)]
-           [(e t) (list stmt)])]
+         (match e
+           [`(vector ,e* ...)
+            (match t
+              [`(Vector ,t* ...)
+               (define len  (length e*))
+               (define size (* (+ len 1) 8))
+               (define vec `(has-type ,lhs ,t))
+               (define-values (inits)
+                 (for/list ([e (in-list e*)]
+                            [n (in-naturals)])
+                   (let ([v (unique-var 'void)])
+                     `(assign ,v (has-type
+                                  (vector-set! ,vec (has-type ,n Integer) ,e)
+                                  Void)))))
+               `((if (has-type (collection-needed? ,size) Boolean)
+                     ((collect ,size))
+                     ())
+                 (assign ,lhs (has-type (allocate ,len) ,t))
+                 ,@inits)]
+              [otherwise (error 'expose-allocation "vector type invarient ~a" t)])]
+           [e (list stmt)])]
         [`(if ,t ,(app expose-allocation-seq c) ,(app expose-allocation-seq a))
          `((if ,t ,c ,a))]
         [`(return ,e) (list stmt)]
