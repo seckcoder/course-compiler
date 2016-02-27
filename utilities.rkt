@@ -120,14 +120,10 @@
 (define (set-union* ls)
   (foldl set-union (set) ls))
 
-(define (hash-union h . hs)
-  (cond
-    [(null? hs) h]
-    [else
-     (hash-union
-      (for/fold ([h h]) ([(k v) (in-hash (car hs))])
-        (hash-set h k v))
-      (cdr hs))]))
+(define (hash-union . hs)
+  (for*/hash ([h (in-list hs)]
+              [(k v) (in-hash h)])
+    (values k v)))
 
 ;; label-name prepends an underscore to a label (symbol or string)
 ;; if the current system is Mac OS and leaves it alone otherwise.

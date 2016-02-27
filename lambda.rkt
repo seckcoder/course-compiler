@@ -37,7 +37,7 @@
       (lambda (e)
 	(match e
           [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-	   (define new-xs (for ([x xs]) (gensym (racket-id->c-id x))))
+	   (define new-xs (for/list ([x xs]) (gensym (racket-id->c-id x))))
 	   (define new-env (append (map cons xs new-xs) env))
            (define (annotate x t) `[,x : ,t])
            `(lambda: ,(map annotate new-xs Ts) : ,rT 
@@ -80,15 +80,18 @@
 	 (apply hash-union (map recur es))]
         [else (error 'free-vars "unmatched ~a" e)]))
 
-    (define (convert-fun-body free-vars body rt)
-      (let loop ([xs free-vars] [i 1] [new-body body])
-	(cond [(null? xs) new-body]
-	      [else
-	       (let ([new-body
-                      `(has-type (let ([,(car xs) (vector-ref fvs (has-type ,i Integer))])
-                                   ,new-body)
-                                 ,rt)])
-		 (loop (cdr xs) (+ i 1) new-body))])))
+    (define (convert-fun-body fvs-id free-vars body rt)
+      (let loop ([xs free-vars] [i 1])
+        (match xs
+          ['() body]
+          [`((has-type ,x ,t) . ,xs^)
+           `(has-type
+             (let ([,x (has-type (vector-ref (has-type ,fvs-id _)
+                                             (has-type ,i Integer))
+                                 ,t)])
+               ,(loop xs^ (add1 i)))
+             ,rt)]
+          [else (error 'convert-fun-body "unmatched ~a" xs)])))
 
     (define/public (convert-to-closures)
       (lambda (e)
@@ -113,23 +116,23 @@
            (let* ([fun-name (gensym 'lambda)]
                   [params (map (lambda (x T) `[,x : ,T]) xs Ts)]
                   [ty      `(,@Ts ... -> ,rT)]
-                  [free-vars (set-subtract (send this free-variables new-body)
-                                           xs)]
-                  [fvT (for ([fv free-vars]) (caddr fv))])
+                  [rm (lambda (x h) (hash-remove h x))]
+                  [fvs-table (hash->list (foldl rm (free-variables new-body) xs))]
+                  [fvs-expr  (map cdr fvs-table)]                  
+                  [fvT       (map caddr fvs-expr)]
+                  [fvs-tmp   (gensym 'fvs)])
              (values
-              `(has-type (vector (has-type (function-ref ,fun-name) _) ,@free-vars)
+              `(has-type (vector (has-type (function-ref ,fun-name) _) ,@fvs-expr)
                          (Vector _ ,@fvT))
               ;; create closure
-              (cons `(define (,fun-name ,@(cons `[fvs : _] params)) : ,rT
-                       ,(convert-fun-body free-vars new-body rT))
+              (cons `(define (,fun-name ,@(cons `[,fvs-tmp : _] params)) : ,rT
+                       ,(convert-fun-body fvs-tmp fvs-expr new-body rT))
                     body-fs)))]
           [`(has-type (function-ref ,f) ,t)
            (values `(has-type (vector (has-type (function-ref ,f) _)) (Vector _)) '())]
           [`(has-type ,e ,t)
            (let-values ([(e b*) (recur e)])
              (values `(has-type ,e ,t) b*))]
-          ;; create closure          
-          
           [(or (? symbol?) (? integer?) (? boolean?))
            (values e '())]
           [`(let ([,x ,e]) ,body)
@@ -145,10 +148,11 @@
                    (append cnd-fs thn-fs els-fs))]
           [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
            (define-values (new-body body-fs) (recur body))
+           (define fvs-tmp (gensym 'fvs))
            (let ([params (map (lambda (x T) `[,x : ,T]) xs Ts)])
              (cons
-              `(define (,f ,@(cons `[fvs : _] params)) : ,rt 
-                 ,(convert-fun-body '() new-body rt))
+              `(define (,f ,@(cons `[,fvs-tmp : _] params)) : ,rt 
+                 ,(convert-fun-body fvs-tmp '() new-body rt))
               body-fs))]
           [`(program (type ,ty) ,ds ... ,body)
            (let-values ([(dss) (map recur ds)]

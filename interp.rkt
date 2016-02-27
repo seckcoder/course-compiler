@@ -1,6 +1,6 @@
 #lang racket
 (require racket/fixnum)
-(require "utilities.rkt")
+(require "utilities.rkt" (prefix-in runtime-config: "runtime-config.rkt"))
 (provide interp-scheme interp-C interp-x86 interp-R0 interp-R1 interp-R2 interp-R3 interp-R4 )
 
 (define interp-scheme
@@ -394,8 +394,8 @@
     (define rootstack_begin (box uninitialized))
     (define rootstack_end   (box uninitialized))
     ;; field is like define but public
-    (field [stack-size 8000 #;Bytes]
-           [heap-size  10000   #;Bytes]
+    (field [stack-size (runtime-config:rootstack-size)]
+           [heap-size  (runtime-config:heap-size)]
            [global-label-table
             (make-immutable-hash
              `((free_ptr         . ,free_ptr)
@@ -420,8 +420,17 @@
           (vector-set! vect (arithmetic-shift (- addr start) -3) value))))
     
     (define/public (collect!)
-      (lambda (bytes_requested rootset)
-        (error 'interp-R2/collect! "not yet implemented")))
+      (lambda (rootset bytes-requested)
+        ;; after a call to collect we must guarantee there is enough
+        ;; memory to allocate the requested block of memory
+        (let double-heap ([hs heap-size])
+          (if (< hs bytes-requested)
+              (double-heap (* 2 hs))
+              (let ((h-begin (allocate! 'fromspace hs)))
+                ;; I am only advancing the end of the heap because we
+                ;; are not reclaiming memory
+                (set-box! fromspace_end   (+ h-begin hs))
+                (set-box! free_ptr        h-begin))))))
 
     (define/public (initialize!)
       (lambda (stack-length heap_length)
@@ -445,11 +454,11 @@
                   ([page (in-list (unbox memory))])
           (match-let ([`(page ,_ ,stop ,_ ,_) page])
             (max next stop))))
-      ;; Allocate with a small pad (10 - 1000) words so that it isn't likely to
+      ;; Allocate with a small pad 100 words so that it isn't likely to
       ;; accidentally use another region.
       ;; The randomness is to dispell any reliance on interp always allocating the
       ;; same way. -Andre
-      (define start-addr (+ max-addr (* (+ (random 990) 10) 8)))
+      (define start-addr (+ max-addr 800))
       ;; The range is of valid addresses in memory are [start, stop)
       (define stop-addr (+ start-addr size))
       (define vect (make-vector (arithmetic-shift size -3) uninitialized))
@@ -458,14 +467,14 @@
       start-addr)
 
     (define (free! addr)
-      (set! memory
-        (let loop ([memory memory])
+      (set-box! memory
+        (let loop ([memory (unbox memory)])
           (match memory
             [`() (error 'free "address ~a isn't currently allocated")]
             [`(,(and page `(page ,ptr ,_ ,_ ,_)) . ,pages)
              (if (= addr ptr)
                  pages
-                (cons page (loop pages)))]))))
+                 (cons page (loop pages)))]))))
     
     (define (fetch-page addr)
       ;; Create a string containing
@@ -486,11 +495,12 @@
         (match m
           [`() (error 'fetch-page (fmt-err addr memory))]
           [`((page ,min ,max ,name ,vect) . ,rest-memory)
+           (debug "page" addr min max name vect)
            (if (and (<= min addr) (< addr max))
                (values min max name vect)
                (search rest-memory))]
           [other (error 'fetch-page "unmatched ~a" m)])))
-             
+    
     (define/override (primitives)
       (set-union (super primitives) 
 		 (set 'vector 'vector-ref 'vector-set!)))
@@ -547,7 +557,7 @@
           [`(collection-needed? ,size)
            (when (or (eq? (unbox free_ptr) uninitialized)
                      (eq? (unbox fromspace_end) uninitialized))
-             (error 'interp-x86 "uninitialized state in ~a" ast))
+             (error 'interp-C "uninitialized state in ~a" ast))
            #t]
           ;; Collection isn't needed or possible in this representation
           [`(collect ,size)
@@ -650,7 +660,9 @@
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
            ((send this interp-x86 `((rax . ,(allocate! 'alloc num-bytes)) . ,env)) ss)]
           [`((callq collect) . ,ss)
-           ;; TODO move some pointers around
+           (define rootstack ((interp-x86-exp env) '(reg rdi)))
+           (define bytes-requested ((interp-x86-exp env) '(reg rsi))) 
+           ((collect!) rootstack bytes-requested)
            ((send this interp-x86 env) ss)]
           [`((movq ,s ,d) . ,ss)
            (define value   ((send this interp-x86-exp env) s))
@@ -713,7 +725,7 @@
 
     (define/override (interp-C env)
       (lambda (ast)
-	(debug "R3/interp-C" ast)
+	;;(debug "R3/interp-C" ast)
 	(match ast
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
 	    (cons f `(lambda ,xs ,@ss))]
@@ -785,8 +797,9 @@
 
     (define/override (interp-x86 env)
       (lambda (ast)
-        (when (pair? ast)
-          (debug "R3/interp-x86" (car ast) env))
+        ;; (when (pair? ast)
+        ;;   (debug "R3/interp-x86" (car ast) env)
+        ;;   )
 	(match ast
 #|
           [`(define (,f) ,n ,extra ,ss ...)
@@ -845,7 +858,7 @@
 
     (define/override (interp-scheme env)
       (lambda (ast)
-        (debug "R4/interp-scheme" ast env)
+        ;;(debug "R4/interp-scheme" ast env)
 	(match ast
           [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
 	    `(lambda ,xs ,body ,env)]

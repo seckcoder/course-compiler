@@ -302,8 +302,7 @@
            (cmpq (var ,data) (global-value fromspace_end))
            (setl (byte-reg al))
            (movzbq (byte-reg al) (var ,lt))
-           #| purposefully fliped clauses because we want (not lt)|#
-           (if (eq? (int 0) (var ,lt)) ,as^ ,cs^))]
+           (if (eq? (int 0) (var ,lt)) ,cs^ ,as^))]
         [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer)))
          (define lhs^ ((select-instructions rs-var) lhs))
          (define e-vec^ ((select-instructions rs-var) e-vec))

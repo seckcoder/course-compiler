@@ -37,8 +37,8 @@
     (1 . ,(range 1 32))
     (2 . ,(range 1 18))
     ;; There is a problem with interp that needs sorted in problem 16
-    (3 . ,(range 1 16))
-    (4 . ,(range 0 5))))
+    (3 . ,(range 1 17))
+    (4 . ,(range 0 6))))
 
 (define (suite-range x)
   (let ([r? (assoc x suite-list)])

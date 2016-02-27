@@ -54,4 +54,16 @@
             (e (minus i 1) v))))))
 
 
-(e 20 (f 20 (h 20 (t 20 (o 20 (z 20))))))
+(vector-ref
+ (vector-ref
+  (vector-ref
+   (vector-ref
+    (vector-ref
+     (vector-ref
+      (e 20 (f 20 (h 20 (t 20 (o 20 (z 20))))))
+      0)
+     0)
+    0)
+   0)
+  0)
+ 0)
