@@ -302,6 +302,7 @@
            (cmpq (var ,data) (global-value fromspace_end))
            (setl (byte-reg al))
            (movzbq (byte-reg al) (var ,lt))
+           ;; (not (< end-data fromspace_end)) implies collection-need? 
            (if (eq? (int 0) (var ,lt)) ,cs^ ,as^))]
         [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer)))
          (define lhs^ ((select-instructions rs-var) lhs))

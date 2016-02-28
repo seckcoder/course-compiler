@@ -320,45 +320,6 @@
                     ((send this interp-x86 env) (goto-label label (program)))]
                    [else ((send this interp-x86 env) ss)]))]
 
-          #|[`(program ,xs ,ss ...)
-             (parameterize ([program ss])
-               ((super interp-x86 '()) ast))]
-            [else ((super interp-x86 env) ast)]
-          )))|#
-	    
-;; TODO Fix this once all the tests pass
-	
-#|[`((sete ,d) . ,ss)
-	    (let ([v ((send this interp-x86-exp env) '(reg __flag))]
-		  [x (send this get-name d)])
-	      ((send this interp-x86 (cons (cons x v) env)) ss))]
-	   ;; if's are present before patch-instructions
-          [(or `((if ,cnd ,thn ,els) . ,ss)
-               `((if ,cnd ,thn ,_ ,els ,_) . ,ss))
-           (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))
-               ((send this interp-x86 env) (append thn ss))
-               ((send this interp-x86 env) (append els ss)))]
-	   [`((label ,l) . ,ss)
-	    ((send this interp-x86 env) ss)]
-	   [`((cmpq ,s1 ,s2) . ,ss)
-	    (let ([v1 ((send this interp-x86-exp env) s1)] 
-		  [v2 ((send this interp-x86-exp env) s2)])
-	      ((send this interp-x86 (cons (cons '__flag 
-						 (b2i (eq? v1 v2))) 
-					   env))
-	       ss))]
-	   [`((movzbq ,s ,d) . ,ss)
-	    (define x (send this get-name d))
-	    (define v ((send this interp-x86-exp env) s))
-	    ((send this interp-x86 (cons (cons x v) env)) ss)]
-	   [`((jmp ,label) . ,ss)
-	    ((send this interp-x86 env) (goto-label label (program)))]
-	   [`((je ,label) . ,ss)
-	    (let ([flag (lookup '__flag env)])
-	      (cond [(i2b flag)
-		     ((send this interp-x86 env) (goto-label label (program)))]
-		    [else ((send this interp-x86 env) ss)]))]
-           |#
 	   [`(program ,xs (type ,ty) ,ss ...)
             (send this display-by-type ty ((send this interp-x86 env) `(program ,xs ,@ss)) env)]
 	   [`(program ,xs ,ss ...)
