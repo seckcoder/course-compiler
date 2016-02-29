@@ -297,14 +297,19 @@
          (define as^  (append* (map (select-instructions rs-var) as)))
          (define data (unique-var 'end-data))
          (define lt   (unique-var 'lt))
+         ;;cmp arg2, arg1 GAS Syntax
+         
+         ;;Note that the GAS/AT&T syntax can be rather confusing, as for example cmp $0, %rax followed by jl branch will branch if %rax < 0 (and not the opposite as might be expected from the order of the operands).
+
          `((movq (global-value free_ptr) (var ,data))
            (addq (int ,size) (var ,data))
-           (cmpq (var ,data) (global-value fromspace_end))
+           (cmpq (global-value fromspace_end) (var ,data))
            (setl (byte-reg al))
            (movzbq (byte-reg al) (var ,lt))
            ;; (not (< end-data fromspace_end)) implies collection-need? 
            (if (eq? (int 0) (var ,lt)) ,cs^ ,as^))]
-        [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer)))
+        [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer))) 
+         ;; We should try to do this in patch instructions
          (define lhs^ ((select-instructions rs-var) lhs))
          (define e-vec^ ((select-instructions rs-var) e-vec))
          `((movq ,e-vec^ (reg r11))

@@ -33,7 +33,9 @@
     (define/public (interp-op op)
       (match op
          ['+ fx+]
-	 ['- (lambda (n) (fx- 0 n))]
+	 ['- (case-lambda
+               [(n) (fx- 0 n)]
+               [(n m) (fx- n m)])]
 	 ['read read-fixnum]
 	 [else (error "in interp-op S0, unmatched" op)]))
 
@@ -597,8 +599,11 @@
            ((send this interp-x86 new-env) ss)]
           ;; cmpq performs a subq operation and examimines the state
           ;; of the result, this is done without overiting the second
-          ;; register(I think). -andre
-          [`((cmpq ,s1 ,s2) . ,ss)
+          ;; register. -andre
+          ;; Notice that the syntax is very confusing
+          ;; (cmpq ,s2 ,s1) (jl then) (jmp else) ...
+          ;; (if (< s1 s2) then else)
+          [`((cmpq ,s2 ,s1) . ,ss)
            (let* ([v1 ((send this interp-x86-exp env) s1)] 
                   [v2 ((send this interp-x86-exp env) s2)] 
                   [v3 (- v2 v1)]

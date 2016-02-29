@@ -506,20 +506,25 @@
 			(format "\tpopq\t%~a\n" r)))
 	    (define callee-space (* (length (set->list callee-save))
 				    (send this variable-size)))
+
+            ;; This adjustment needs to be befor
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
-				  callee-space))
+                                 callee-space))
 	    (string-append
 	     (format "\t.globl ~a\n" f)
 	     (format "~a:\n" f)
 	     (format "\tpushq\t%rbp\n")
-	     (format "\tmovq\t%rsp, %rbp\n")
-	     (string-append* save-callee-reg)
-	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
+             (format "\tmovq\t%rsp, %rbp\n")
+             (format "\tsubq\t$~a, %rsp\n" stack-adj)
+             ;; Push callee saves at the bottom of the stack
+             ;; frame because the current code for stack nodes
+             ;; doesn't reason about them. -andre
+             (string-append* save-callee-reg)
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
-	     (format "\taddq\t$~a, %rsp\n" stack-adj)
-	     (string-append* restore-callee-reg)
+             (string-append* restore-callee-reg)
+             (format "\taddq\t$~a, %rsp\n" stack-adj)	     
 	     (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]

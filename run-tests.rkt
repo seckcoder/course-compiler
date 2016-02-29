@@ -36,7 +36,7 @@
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32))
     (2 . ,(range 1 19))
-    (3 . ,(range 1 17))
+    (3 . ,(range 1 20))
     (4 . ,(range 0 6))))
 
 (define (suite-range x)
@@ -124,6 +124,9 @@
       (error 'run-tests
              "heap-size expected positive multiple of 8: ~v" bytes)) 
     (heap-size bytes?))]
+ ["--small-register-set"
+  "use a minimal set of registers for register allocation"
+  (use-minimal-set-of-registers! #t)]
 
  ;; Allows setting the number of columns that the pretty printer
  ;; uses to display s-expressions.

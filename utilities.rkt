@@ -10,6 +10,7 @@
          read-fixnum read-program 
 	 compile compile-file check-passes interp-tests compiler-tests
 	 make-graph add-edge adjacent vertices print-dot
+         use-minimal-set-of-registers!
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align
          byte-reg->full-reg print-by-type)
@@ -454,24 +455,22 @@
     				  'r8 'r9 'r10 'r12 
 				  'r13 'r14 'r15))
 
-;; We have a bug in --suite 3 --test 4 
-;; that shows up when we use the small register set. -Jeremy
-(define small-register-set #t)
-(define arg-registers '())
-(define registers-for-alloc '())
+(define arg-registers (void))
+(define registers-for-alloc (void))
 
-;; registers-for-alloc should always inlcude the arg-registers. -Jeremy 
+;; registers-for-alloc should always inlcude the arg-registers.
+;;  -Jeremy 
+(define (use-minimal-set-of-registers! f)
+  (if f
+      (begin
+        (set! arg-registers (vector 'rcx))      
+        (set! registers-for-alloc (vector 'rbx 'rcx)))
+      (begin
+        (set! arg-registers   (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+        (set! registers-for-alloc general-registers))))
 
-(if small-register-set
-    (begin
-      (set! arg-registers (vector 'rcx))      
-      (set! registers-for-alloc (vector 'rbx 'rcx))
-      )
-    (begin
-      (set! arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
-      (set! registers-for-alloc general-registers)
-      )
-    )
+(use-minimal-set-of-registers! #f)
+
 
 (define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11))
 (define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
