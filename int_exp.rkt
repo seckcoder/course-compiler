@@ -189,7 +189,7 @@
     ;; patch-instructions : psuedo-x86 -> x86
     ;; Uses register rax to patch things up
 
-    ;; should this be call in-memory? 
+    ;; should this be called in-memory? 
     (define/public (on-stack? a)
       (match a
         [`(stack ,n) #t]

@@ -485,6 +485,9 @@
 	   [else ((super lower-conditionals) e)]
 	   )))
 
+    ;; 
+    (define/override (first-offset) 48)
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
     (define/override (print-x86)
@@ -496,7 +499,7 @@
 	    (format "\tcallq\t*~a\n" ((send this print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
-	   [`(define (,f) ,n ,spill-space ,ss ...)
+           [`(define (,f) ,n ,spill-space ,ss ...)
 	    (define callee-reg (set->list callee-save))
 	    (define save-callee-reg
 	      (for/list ([r callee-reg])
@@ -515,17 +518,17 @@
 	     (format "~a:\n" f)
 	     (format "\tpushq\t%rbp\n")
              (format "\tmovq\t%rsp, %rbp\n")
+             (string-append* save-callee-reg)
              (format "\tsubq\t$~a, %rsp\n" stack-adj)
              ;; Push callee saves at the bottom of the stack
              ;; frame because the current code for stack nodes
              ;; doesn't reason about them. -andre
-             (string-append* save-callee-reg)
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
-             (string-append* restore-callee-reg)
              (format "\taddq\t$~a, %rsp\n" stack-adj)	     
-	     (format "\tpopq\t%rbp\n")
+             (string-append* restore-callee-reg)
+             (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
 	   [`(program ,stack-space (type ,ty) (defines ,ds ...) ,ss ...)

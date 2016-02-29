@@ -176,15 +176,15 @@
                 biased-selection))
           biased-selection))
 
-    (define variable-size 8)
-    (define first-offset 8)
+    (inherit variable-size first-offset)
 
     (define (identify-home c)
       (define n (vector-length registers-for-alloc))
-      (cond [(< c n)
-	     `(reg ,(vector-ref registers-for-alloc c))]
-	    [else 
-	     `(stack ,(+ first-offset (* (- c n) variable-size)))]))
+      (cond
+        [(< c n)
+         `(reg ,(vector-ref registers-for-alloc c))]
+        [else 
+         `(stack ,(+ (first-offset) (* (- c n) (variable-size))))]))
 
     (define/public (allocate-homes IG MG xs ss)
       (set! largest-color 0)
