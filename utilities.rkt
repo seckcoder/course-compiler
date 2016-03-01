@@ -459,8 +459,6 @@
     				  'r8 'r9 'r10 'r12 
 				  'r13 'r14 'r15))
 
-;; We have a bug in --suite 3 --test 4 
-;; that shows up when we use the small register set. -Jeremy
 (define small-register-set #t)
 (define arg-registers '())
 (define registers-for-alloc '())

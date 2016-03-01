@@ -11,16 +11,15 @@ February
 8 due: Control Flow (1 week)
 15
 22 due: Tuples and GC (2 weeks)
-29 due: Functions (1 week)
+29
 
 March
 --------------------------------------------
-7
+7 due: Functions (2 weeks)
   9  Midterm Exam 
 
-  11 (Friday) due: Lambda (2 weeks)
 14 Spring Break
-21
+21 due: Lambda (1 week)
 28
 
 April
