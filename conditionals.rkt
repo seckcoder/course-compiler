@@ -26,57 +26,64 @@
       (lambda (e)
         (vomit "conditionals/type-check" e env)
         (match e
-	   [(? symbol?) (lookup e env)]
-	   [(? integer?) 'Integer]
-	   [`(let ([,x ,e]) ,body)
-	    (let ([T ((send this type-check env) e)])
-	      ((send this type-check (cons (cons x T) env)) body))]
-	   [`(program ,body)
-	    (define ty ((send this type-check '()) body))
-	    `(program (type ,ty) ,body)]
-	   [#t 'Boolean]
-	   [#f 'Boolean]
-	   [`(if ,cnd ,thn ,els)
-	    (let ([T-cnd ((send this type-check env) cnd)]
-		  [T-thn ((send this type-check env) thn)]
-		  [T-els ((send this type-check env) els)])
-	      (unless (equal? T-cnd 'Boolean)
-		  (error "expected conditional to have type Boolean, not" T-cnd))
-	      (unless (equal? T-thn T-els)
-		  (error "expected branches of if to have same type"
-			 (list T-thn T-els)))
-	      T-thn)]
-           [`(eq? ,e1 ,e2)
-            (let ([t1 ((send this type-check env) e1)]
-                  [t2 ((send this type-check env) e2)])
-              (cond [(eq? t1 t2) 'Boolean]
-                    [else (error "checking equality between different-typed values")]))]
+          [(? symbol? v)
+           (let ([t (lookup e env)])
+             (values `(has-type ,v ,t) t))]
+          [(? integer? n) (values `(has-type ,n Integer) 'Integer)]
+          [(? boolean? b) (values `(has-type ,b Boolean) 'Boolean)]
+          [`(let ([,x ,e]) ,body)
+	    (let*-values ([(e Te) ((type-check env) e)]
+                          [(b Tb) ((type-check (cons (cons x Te) env)) body)])
+              (values `(has-type (let ([,x ,e]) ,b) ,Tb) Tb))]
+          [`(program ,body)
+           (let*-values ([(b Tb) ((type-check '()) body)])
+             `(program (type ,Tb) ,b))]
+          [`(if ,cnd ,thn ,els)
+           (let*-values ([(c Tc) ((type-check env) cnd)]
+                         [(t Tt) ((type-check env) thn)]
+                         [(e Te) ((type-check env) els)])
+             (unless (equal? Tc 'Boolean)
+               (error "expected conditional to have type Boolean, not" Tc))
+             (unless (equal? Tt Te)
+               (error "expected branches of if to have same type"
+                      (list Tt Te)))
+	     (values `(has-type (if ,c ,t ,e) ,Te) Te))]
+          [`(eq? ,e1 ,e2)
+           (let-values ([(e1 T1) ((type-check env) e1)]
+                        [(e2 T2) ((type-check env) e2)])
+             ;; Should this be equal? --Andre
+             (unless (eq? T1 T2)
+               (error "checking equality between different-typed values"))
+             (values `(has-type (eq? ,e1 ,e2) Boolean) 'Boolean))]
 	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
-	    (let ([ts (map (send this type-check env) es)])
-	      (define binary-ops
-		'((+ . ((Integer Integer) . Integer))
-		  (- . ((Integer Integer) . Integer))
-		  (* . ((Integer Integer) . Integer))
-		  (and . ((Boolean Boolean) . Boolean))
-		  (or . ((Boolean Boolean) . Boolean))
-		  (eq? . ((Integer Integer) . Boolean))
-		  ))
+            (define-values (new-es ts)
+              (for/lists (exprs types) ([e es]) ((type-check env) e)))
+            (define binary-ops
+              '((+ . ((Integer Integer) . Integer))
+                (- . ((Integer Integer) . Integer))
+                (* . ((Integer Integer) . Integer))
+                (and . ((Boolean Boolean) . Boolean))
+                (or . ((Boolean Boolean) . Boolean))
+                (eq? . ((Integer Integer) . Boolean))))
 	      (define unary-ops
-		'((- . ((Integer) . Integer))
+                '((- . ((Integer) . Integer))
 		  (not . ((Boolean) . Boolean))))
 	      (define nullary-ops
 		'((read . (() . Integer))))
-	      (define (check op ts table)
-		(let ([pts (car (cdr (assq op table)))]
-		      [ret (cdr (cdr (assq op table)))])
-		  (unless (equal? ts pts)
-			  (error "argument type does not match parameter type"
-				 (list ts pts)))
-		  ret))
-	      (cond [(eq? 2 (length ts)) (check op ts binary-ops)]
-		    [(eq? 1 (length ts)) (check op ts unary-ops)]
-		    [else (check op ts nullary-ops)]))]
-	   [else
+            (define (check op ts table)
+              (let ([pts (car (cdr (assq op table)))]
+                    [ret (cdr (cdr (assq op table)))])
+                (unless (equal? ts pts)
+                  (error "argument type does not match parameter type"
+                         (list ts pts)))
+                ret))
+            (define t-ret
+              (cond
+                [(eq? 2 (length ts)) (check op ts binary-ops)]
+                [(eq? 1 (length ts)) (check op ts unary-ops)]
+                [else (check op ts nullary-ops)]))
+            (values `(has-type (,op ,@new-es) ,t-ret) t-ret)]
+          [else
 	    (error "type-check couldn't match" e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -84,17 +91,16 @@
     (define/override (uniquify env)
       (lambda (e)
 	(match e
-	   [#t #t]
-	   [#f #f]
-	   [`(if ,cnd ,thn ,els)
-	    (let ([cnd ((send this uniquify env) cnd)]
-		  [thn ((send this uniquify env) thn)]
-		  [els ((send this uniquify env) els)])
-	      `(if ,cnd ,thn ,els))]
-           [`(program (type ,ty) ,e)
-            `(program (type ,ty) ,((send this uniquify env) e))]
-	   [else ((super uniquify env) e)]
-	   )))
+          [`(has-type ,e ,t) `(has-type ,((uniquify env) e) ,t)]
+          [(? boolean? b) b]
+          [`(if ,cnd ,thn ,els)
+           (let ([cnd ((send this uniquify env) cnd)]
+                 [thn ((send this uniquify env) thn)]
+                 [els ((send this uniquify env) els)])
+             `(if ,cnd ,thn ,els))]
+          [`(program (type ,ty) ,e)
+           `(program (type ,ty) ,((send this uniquify env) e))]
+          [else ((super uniquify env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S1 -> C1-expr x (C1-stmt list)
@@ -102,82 +108,107 @@
     (define/override (collect-locals)
       (lambda (ast)
 	(match ast
-	   [`(if ,cnd ,thn ,els)
-	    (append (append* (map (send this collect-locals) thn))
-		    (append* (map (send this collect-locals) els)))]
-	   [else ((super collect-locals) ast)]
-	   )))
+          [`(if ,cnd ,thn ,els)
+           (append (append* (map (send this collect-locals) thn))
+                   (append* (map (send this collect-locals) els)))]
+          [else ((super collect-locals) ast)])))
 
     (define optimize-if #t)
 
     (define/public (flatten-if new-thn thn-ss new-els els-ss)
       (lambda (cnd)
+        (vomit "flatten-if" cnd)
 	(match cnd
-	   [#t #:when optimize-if
-	    (values new-thn thn-ss)]
-	   [#f #:when optimize-if
-	    (values new-els els-ss)]
-	   [`(let ([,x ,e]) ,body) #:when optimize-if
-	    (define-values (new-e e-ss) ((send this flatten #f) e))
-	    (define-values (new-body body-ss)
-	      ((send this flatten-if new-thn thn-ss new-els els-ss) body))
-	    (values new-body
-		    (append e-ss
-			    `((assign ,x ,new-e))
-			    body-ss))]
-	   [`(not ,cnd) #:when optimize-if
-	    ((send this flatten-if new-els els-ss new-thn thn-ss) cnd)]
-
-	   [`(eq? ,e1 ,e2) #:when optimize-if
-	    (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
-	    (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
-	    (define tmp (gensym 'if))
-	    (define thn-ret `(assign ,tmp ,new-thn))
-	    (define els-ret `(assign ,tmp ,new-els))
-	    (values tmp
-		    (append e1-ss e2-ss 
-			    `((if (eq? ,new-e1 ,new-e2)
-				  ,(append thn-ss (list thn-ret))
-				  ,(append els-ss (list els-ret))))))]
-	   [else
-	    (let-values ([(new-cnd cnd-ss) ((send this flatten #t) cnd)])
-	      (define tmp (gensym 'if))
-	      (define thn-ret `(assign ,tmp ,new-thn))
-	      (define els-ret `(assign ,tmp ,new-els))
-	      (values tmp
-		      (append cnd-ss
-			      `((if (eq? #t ,new-cnd)
-				    ,(append thn-ss (list thn-ret))
-				    ,(append els-ss (list els-ret)))))))]
-	   )))
-
+          [`(has-type ,cnd ,t)
+           (match cnd
+             [#t #:when optimize-if
+                 (values new-thn thn-ss)]
+             [#f #:when optimize-if
+                 (values new-els els-ss)]
+             [`(let ([,x ,e]) ,body) #:when optimize-if
+              (define-values (new-e e-ss) ((send this flatten #f) e))
+              (define-values (new-body body-ss)
+                ((send this flatten-if new-thn thn-ss new-els els-ss) body))
+              (values new-body
+                      (append e-ss
+                              `((assign ,x ,new-e))
+                              body-ss))]
+             [`(not ,cnd) #:when optimize-if
+              ((send this flatten-if new-els els-ss new-thn thn-ss) cnd)]
+             [`(eq? ,e1 ,e2) #:when optimize-if
+              (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
+              (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
+              (define tmp (gensym 'if))
+              (define thn-ret `(assign ,tmp ,new-thn))
+              (define els-ret `(assign ,tmp ,new-els))
+              (values `(has-type ,tmp ,t)
+                      (append e1-ss e2-ss 
+                              `((if (eq? ,new-e1 ,new-e2)
+                                    ,(append thn-ss (list thn-ret))
+                                    ,(append els-ss (list els-ret))))))]
+             [else
+              (let-values ([(new-cnd cnd-ss) ((send this flatten #t) `(has-type ,cnd ,t))])
+                (define tmp (gensym 'if))
+                (define thn-ret `(assign ,tmp ,new-thn))
+                (define els-ret `(assign ,tmp ,new-els))
+                (values `(has-type ,tmp ,t)
+                        (append cnd-ss
+                                `((if (eq? (has-type #t Boolean) ,new-cnd)
+                                      ,(append thn-ss (list thn-ret))
+                                      ,(append els-ss (list els-ret)))))))])]
+          [other (error 'flatten-if "unmatched ~a" other)])))
+    
+    ;; Flatten is reimplemented without dispatch because it has to reason about inserting
+    ;; new type annotations when breaking up expressions into statements.
     (define/override (flatten need-atomic)
       (lambda (e)
+        (vomit "flatten" e)
 	(match e
-	   [#t (values #t '())]
-	   [#f (values #f '())]
-	   [`(and ,e1 ,e2)
-	    (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
-	    (define-values (new-e2 e2-ss) ((send this flatten #f) e2))
-	    (define tmp (gensym 'and))
-	    (values tmp (append e1-ss
-				`((if (eq? #t ,new-e1)
-				      ,(append e2-ss `((assign ,tmp ,new-e2)))
-				      ((assign ,tmp #f))))))]
-	   [`(if ,cnd ,thn ,els)
-	    (let-values ([(new-thn thn-ss) ((send this flatten #t) thn)]
-			 [(new-els els-ss) ((send this flatten #t) els)])
-	      ((send this flatten-if new-thn thn-ss new-els els-ss) cnd))]
-	   [`(program ,e)
-	    (define-values (new-e ss) ((send this flatten #t) e))
-	    (define xs (append* (map (send this collect-locals) ss)))
-	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
-	   [`(program (type ,ty) ,e)
-	    (define-values (new-e ss) ((send this flatten #t) e))
-	    (define xs (append* (map (send this collect-locals) ss)))
-	    `(program ,(remove-duplicates xs) (type ,ty) ,@(append ss `((return ,new-e))))]
-	   [else ((super flatten need-atomic) e)]
-	   )))
+          [`(has-type ,e ,t)
+           (match e
+             [(or (? symbol?) (? integer?) (? boolean?))
+              (values `(has-type ,e ,t) '())]
+             [`(let ([,x ,e]) ,body)
+              (define-values (new-e e-ss) ((send this flatten #f) e))
+              (define-values (new-body body-ss)
+                ((send this flatten need-atomic) body))
+              (values new-body (append e-ss `((assign ,x ,new-e)) body-ss))]
+             [`(and ,e1 ,e2)
+              (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
+              (define-values (new-e2 e2-ss) ((send this flatten #f) e2))
+              (define tmp (gensym 'and))
+              (values `(has-type ,tmp ,t)
+                      (append e1-ss
+                              `((if (eq? (has-type #t Boolean) ,new-e1)
+                                    ,(append e2-ss `((assign ,tmp ,new-e2)))
+                                    ((assign ,tmp (has-type #f Boolean)))))))]
+             [`(if ,cnd ,thn ,els)
+              (let-values ([(new-thn thn-ss) ((send this flatten #t) thn)]
+                           [(new-els els-ss) ((send this flatten #t) els)])
+                ((flatten-if new-thn #;`(has-type ,new-thn ,t) thn-ss
+                             new-els #;`(has-type ,new-els ,t) els-ss
+                             )
+                 cnd))]
+             [`(,op ,es ...) #:when (set-member? (send this primitives) op)
+              (define-values (new-es sss) (map2 (send this flatten #t) es))
+              (define ss (append* sss))
+              (define prim-apply `(,op ,@new-es))
+              (cond
+                [need-atomic
+                 (define tmp (gensym 'tmp))
+                 (values `(has-type ,tmp ,t)
+                         (append ss `((assign ,tmp (has-type ,prim-apply ,t)))))]
+                [else (values `(has-type ,prim-apply ,t) ss)])]
+             [else (error 'conditionals/flatten "unmatched ~a" e)])]
+          [`(program ,e)
+              (define-values (new-e ss) ((send this flatten #t) e))
+              (define xs (append* (map (send this collect-locals) ss)))
+              `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
+          [`(program (type ,ty) ,e)
+           (define-values (new-e ss) ((send this flatten #t) e))
+           (define xs (append* (map (send this collect-locals) ss)))
+           `(program ,(remove-duplicates xs) (type ,ty) ,@(append ss `((return ,new-e))))]
+          [other (error 'conditionals/flatten "unmatched ~a" other)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S1 -> S1
@@ -201,54 +232,57 @@
     (define/override (select-instructions)
       (lambda (e)
 	(match e
-	   [#t `(int 1)]
-	   [#f `(int 0)]
-	   [`(assign ,lhs ,b) #:when (boolean? b)
-	    (let ([lhs ((send this select-instructions) lhs)]
-		  [b ((send this select-instructions) b)])
-	      `((movq ,b ,lhs)))]
-           [`(assign ,lhs (not ,e))
-	    (define new-lhs ((send this select-instructions) lhs))
-	    (define new-e ((send this select-instructions) e))
-	    (cond [(equal? new-e new-lhs)
-		   `((xorq (int 1) ,new-lhs))]
-		  [else `((movq ,new-e ,new-lhs) 
-                          (xorq (int 1) ,new-lhs))])]
-	   [`(assign ,lhs (eq? ,e1 ,e2))
-	    (define new-lhs ((send this select-instructions) lhs))
-	    (define new-e1 ((send this select-instructions) e1))
-	    (define new-e2 ((send this select-instructions) e2))
-	    ;; second operand of cmpq can't be an immediate
-	    (define comparison
-	      (cond [(and (immediate? new-e1) (immediate? new-e2))
-		     `((movq ,new-e2 (reg rax))
-		       (cmpq ,new-e1 (reg rax)))]
-		    [(immediate? new-e2)
-		     `((cmpq ,new-e2 ,new-e1))]
-		    [else 
-		     `((cmpq ,new-e1 ,new-e2))]))
+          [`(has-type ,e ,t) ((select-instructions) e)]
+          [#t `(int 1)]
+          [#f `(int 0)]
+          [`(assign ,lhs (has-type ,rhs ,t))
+           ((select-instructions) `(assign ,lhs ,rhs))]
+          [`(assign ,lhs ,b) #:when (boolean? b)
+           (let ([lhs ((send this select-instructions) lhs)]
+                 [b ((send this select-instructions) b)])
+             `((movq ,b ,lhs)))]
+          [`(assign ,lhs (not ,e))
+           (define new-lhs ((send this select-instructions) lhs))
+           (define new-e ((send this select-instructions) e))
+           (cond [(equal? new-e new-lhs)
+                  `((xorq (int 1) ,new-lhs))]
+                 [else `((movq ,new-e ,new-lhs) 
+                         (xorq (int 1) ,new-lhs))])]
+          [`(assign ,lhs (eq? ,e1 ,e2))
+           (define new-lhs ((send this select-instructions) lhs))
+           (define new-e1 ((send this select-instructions) e1))
+           (define new-e2 ((send this select-instructions) e2))
+           ;; second operand of cmpq can't be an immediate
+           (define comparison
+             (cond [(and (immediate? new-e1) (immediate? new-e2))
+                    `((movq ,new-e2 (reg rax))
+                      (cmpq ,new-e1 (reg rax)))]
+                   [(immediate? new-e2)
+                    `((cmpq ,new-e2 ,new-e1))]
+                   [else 
+                    `((cmpq ,new-e1 ,new-e2))]))
             ;; This works because movzbq %al, %rax is a valid instruction
-	    (append comparison
-              `((sete (byte-reg al))
-		(movzbq (byte-reg al) ,new-lhs))
-	      )]
-	   ;; Keep the if statement to simplify register allocation
-	   [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([cnd ((send this select-instructions) cnd)]
-		  [thn-ss (append* (map (send this select-instructions) 
-					thn-ss))]
-		  [els-ss (append* (map (send this select-instructions)
-					els-ss))])
-	      `((if ,cnd ,thn-ss ,els-ss)))]
-	   [`(eq? ,a1 ,a2)
-	    `(eq? ,((send this select-instructions) a1)
-		  ,((send this select-instructions) a2))]
-	   [`(program ,locals (type ,ty) ,ss ...)
+           (append comparison
+                   `((sete (byte-reg al))
+                     (movzbq (byte-reg al) ,new-lhs))
+                   )]
+          ;; Keep the if statement to simplify register allocation
+          [`(if ,cnd ,thn-ss ,els-ss)
+           (let ([cnd ((send this select-instructions) cnd)]
+                 [thn-ss (append* (map (send this select-instructions) 
+                                       thn-ss))]
+                 [els-ss (append* (map (send this select-instructions)
+                                       els-ss))])
+             `((if ,cnd ,thn-ss ,els-ss)))]
+          [`(eq? ,a1 ,a2)
+           `(eq? ,((send this select-instructions) a1)
+                 ,((send this select-instructions) a2))]
+          [`(program ,locals (type ,ty) ,ss ...)
 	    (let ([new-ss (map (send this select-instructions) ss)])
 	      `(program ,locals (type ,ty) ,@(append* new-ss)))]
-	   [else ((super select-instructions) e)]
-	   )))
-
+          [else ((super select-instructions) e)]
+          )))
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> S1 -> S1*
 

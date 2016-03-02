@@ -14,74 +14,83 @@
       (set-union (send this primitives)
 		 (set 'if 'let 'define 'program)))
 
-    (define (fun-def-name d)
-      (match d
-	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	  f]
-	 [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
-      
-    (define (fun-def-type d)
-      (match d
-	 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	  `(,@ps -> ,rt)]
-	 [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
-      
-
-
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S3 -> S3 (for programs)
     ;; type-check : env -> S3 -> type (for expressions)
+    (define/public (fun-def-name d)
+      (match d
+        [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+         f]
+        [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
+      
+    (define/public (fun-def-type d)
+      (match d
+        [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+         `(,@ps -> ,rt)]
+        [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
+    
     (define/override (type-check env)
       (lambda (e)
-	(match e
-	   [`(,e ,es ...) #:when (not (set-member? (send this non-apply-ast) e))
-	    (define t-args (map (send this type-check env) es))
-	    (define e-t ((send this type-check env) e))
-	    (match e-t
-	       [`(,ps ... -> ,rt)
-		(unless (equal? t-args ps)
-		  (error "parameter and argument type mismatch for function" e))
-		rt]
-	       [else (error "expected a function, not" e-t)])]
-	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	    ((send this type-check (append (map cons xs ps) env)) body)]
-	   [`(program ,ds ... ,body)
-	    (define new-env (for/list ([d ds]) 
-				      (cons (fun-def-name d) (fun-def-type d))))
-	    (for ([d ds])
-	       ((send this type-check new-env) d))
-	    (define ty ((send this type-check new-env) body))
-	    `(program (type ,ty) ,@ds ,body)]
-	   [else ((super type-check env) e)]
-	   )))
+        (vomit "type-check" e)
+        (match e
+          [`(,e ,es ...) #:when (not (set-member? (send this non-apply-ast) e))
+           (define-values (e* ty*)
+             (for/lists (e* ty*) ([e (in-list es)])
+               ((type-check env) e)))
+           (define-values (e^ ty)
+             ((send this type-check env) e))
+           (match ty
+             [`(,ty^* ... -> ,rt)
+              (unless (equal? ty* ty^*)
+                (error "parameter and argument type mismatch for function" e))
+              (vomit "app" e^ e* rt)
+              (values `(has-type (,e^ ,@e*) ,rt) rt)]
+             [else (error "expected a function, not" ty)])]
+          [`(define (,f ,(and p:t* `[,xs : ,ps]) ...) : ,rt ,body)
+           (let-values ([(body^ ty^) ((type-check (append (map cons xs ps) env)) body)])
+             `(define (,f ,@p:t*) : ,rt ,body^))]
+          [`(program ,ds ... ,body)
+           (define new-env
+             (for/list ([d ds]) 
+               (cons (fun-def-name d) (fun-def-type d))))
+           (define ds^
+             (for/list ([d ds])
+               ((send this type-check new-env) d)))
+           (define-values (body^ ty)
+             ((send this type-check new-env) body))
+           (vomit "prog" ty ds^ body^)
+           `(program (type ,ty) ,@ds^ ,body^)]
+          [else ((super type-check env) e)])))
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S3 -> S3
 
     (define/override (uniquify env)
       (lambda (e)
+        (vomit "uniquify" e)
 	(match e
-	   [`(,f ,es ...) #:when (not (set-member? (send this non-apply-ast) f))
-	    (define new-es (map (send this uniquify env) es))
-	    (define new-f ((send this uniquify env) f))
-	    `(,new-f ,@new-es)]
-	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	    (define new-xs (map gensym xs))
-	    (define new-env (append (map cons xs new-xs) env))
-	    `(define (,(cdr (assq f env)) 
-		      ,@(map (lambda (x t) `[,x : ,t]) new-xs ps)) : ,rt 
-		      ,((send this uniquify new-env) body))]
-	   [`(program (type ,ty) ,ds ... ,body)
-	    (define new-env
-	      (for/list ([d ds])
-	         (match d
-                    [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-		     (define new-f (gensym f))
-		     `(,f . ,new-f)]
-		    [else (error "type-check, ill-formed function def")])))
-	    `(program (type ,ty) ,@(map (send this uniquify new-env) ds)
-		      ,((send this uniquify new-env) body))]
-	   [else ((super uniquify env) e)]
-	   )))
+          [`(has-type ,e ,t) `(has-type ,((uniquify env) e) ,t)]
+          [`(,f ,es ...) #:when (not (set-member? (send this non-apply-ast) f))
+           (define new-es (map (send this uniquify env) es))
+           (define new-f ((send this uniquify env) f))
+           `(,new-f ,@new-es)]
+          [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+           (define new-xs (for/list ([x xs]) (gensym (racket-id->c-id x))))
+           (define new-env (append (map cons xs new-xs) env))
+           `(define (,(cdr (assq f env)) 
+                     ,@(map (lambda (x t) `[,x : ,t]) new-xs ps)) : ,rt 
+                     ,((send this uniquify new-env) body))]
+          [`(program (type ,ty) ,ds ... ,body)
+           (define new-env
+             (for/list ([d ds])
+               (match d
+                 [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+                  (define new-f (gensym (racket-id->c-id f)))
+                  `(,f . ,new-f)]
+                 [else (error "type-check, ill-formed function def")])))
+           `(program (type ,ty) ,@(map (send this uniquify new-env) ds)
+                     ,((send this uniquify new-env) body))]
+          [else ((super uniquify env) e)]
+          )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; reveal functions and application
@@ -93,8 +102,9 @@
 	  (match e
 	     [(? number?) e]
 	     [(? symbol?)
-	      (cond [(memq e funs) `(function-ref ,e)]
-		    [else e])]
+	      (cond
+                [(memq e funs) `(function-ref ,e)]
+                [else e])]
 	     [`(let ([,x ,e]) ,body)
 	      `(let ([,x ,(recur e)]) ,(recur body))]
 	     [#t #t]
@@ -103,7 +113,8 @@
 	      `(if ,(recur cnd) ,(recur thn) ,(recur els))]
 	     [`(define (,f ,params ...) : ,rt ,body)
 	      `(define (,f ,@params) : ,rt ,(recur body))]
-	     [`(program (type ,ty) ,ds ... ,body)
+             [`(has-type ,e ,t) `(has-type ,(recur e) ,t)]
+             [`(program (type ,ty) ,ds ... ,body)
 	      (define funs (for/list ([d ds]) (fun-def-name d)))
 	      `(program (type ,ty) ,@(map (send this reveal-functions funs) ds)
 			,((send this reveal-functions funs) body))]
@@ -134,196 +145,102 @@
            (define-values (locals new-body) (flatten-body body))
            `(define (,f ,@(map (lambda (x t) `[,x : ,t]) xs Ts)) : ,rt ,locals
               ,@new-body)]
-          [`(function-ref ,f)
+          [`(has-type (function-ref ,f) ,t)
            (define tmp (gensym 'tmp))
-           (values tmp (list `(assign ,tmp (function-ref ,f))))]
-          [`(app ,f ,es ...) 
+           (values `(has-type ,tmp ,t)
+                   (list `(assign ,tmp (has-type (function-ref ,f) ,t))))]
+          [`(has-type (app ,f ,es ...) ,t) 
            (define-values (new-f f-ss) ((send this flatten #t) f))
            (define-values (new-es sss) (map2 (send this flatten #t) es))
            (define ss (append f-ss (append* sss)))
            (define fun-apply `(app ,new-f ,@new-es))
-           (cond [need-atomic
-                  (define tmp (gensym 'tmp))
-                  (values tmp (append ss `((assign ,tmp ,fun-apply))))]
-                 [else
-                  (values fun-apply ss)])]
+           (cond
+             [need-atomic
+              (define tmp (gensym 'tmp))
+              (values `(has-type ,tmp ,t)
+                      (append ss `((assign ,tmp (has-type ,fun-apply ,t)))))]
+             [else
+              (values `(has-type ,fun-apply ,t) ss)])]
           [else ((super flatten need-atomic) ast)])))
-
-    (inherit reset-vars unique-var env-merge env-ref env-set root?)
+    
+    (inherit reset-vars unique-var root-type?)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; expose allocation : C1 -> ?
     ;; This pass has to thread a new environment through that isn't extended
     ;; This could be overcome with pointers or we could use 
+
+    (inherit expose-allocation-seq)
     (define/override (expose-allocation)
       (lambda (prog)
         (match prog
-          [`(program (,xs ...) (type ,ty) (defines ,ds ...) ,ss ...)
-           (vomit "program" prog)
-           ;; Our solution doesn't require uncover-types but we
-           ;; compare the local environment in expose-allocation
-           ;; to ensure that the code is correct for students until
-           ;; we change that nature of type-check to ellaborate the AST.
-           (let*-values
-               ([(new-ds global) (expose-allocation-defs ds)]
-                [(new-ss local)  ((expose-allocation-seq global (hash)) ss)])
-               (let ([xs (append xs (reset-vars))])
-                 (when (at-debug-level? 1)
-                   ;; All locals have types?
-                   (for ([x xs])
-                     (unless (hash-ref local x #f)
-                       (error 'expose-allocation "var not in env ~a" x)))
-                   ;; check that uncover-types (distributed student code)
-                   ;; is compatible with this pass.
-                   (match-let ([(list g-env l-env* l-env) (uncover-types prog)]) 
-                     (let ([g-env (make-immutable-hash g-env)])
-                       (for ([(k v) (in-hash global)])
-                         (unless (equal? (hash-ref g-env k #f) v)
-                           (vomit "local env" global k v g-env)
-                           (error 'expose-allocation "uncover-types failed ~a" k))))
-                     (let ([l-env (make-immutable-hash l-env)])
-                       (for ([(k v) (in-hash local)])
-                         (or (eq? 'Void v)
-                             (unless (equal? (hash-ref l-env k #f) v)
-                               (vomit "local env" local k v l-env)
-                               (error 'expose-allocation "uncover-types failed ~a" k)))))))
-                 `(program ,(hash->list local)
-                           (type ,ty)
-                           (defines ,@new-ds)
-                           (initialize ,(rootstack-size) ,(heap-size))
-                           ,@new-ss)))]
+          [`(program (,xs ...) (type ,ty)
+                     (defines ,(app expose-allocation-def ds) ...)
+                     ,ss ...)
+           (let ([ss (expose-allocation-seq ss)])
+             `(program ,(append (reset-vars) xs)
+                       (type ,ty)
+                       (defines ,@ds)
+                       (initialize ,(rootstack-size) ,(heap-size))
+                       ,@ss))]
           [else (error 'expose-allocation "unmatched ~a" prog)])))
 
-    ;; l-envs here is just being passed allong to make checking that it contains the
-    (define/public (expose-allocation-defs defs)
-      (define g-env
-        (for/hash ([d (in-list defs)])
-          (match d
-            [`(define (,f [,_ : ,t*] ...) : ,t . ,_)
-             (values f `(,@t* -> ,t))]
-            [else (error 'expose-allocation-defs
-                         "unmatched function declaration ~a" d)])))
-      (values
-       (for/list ([def (in-list defs)])
-         (match def
-           [`(define (,f ,(and p:t* `[,p* : ,t*]) ...) : ,t (,x* ...) ,s* ...)
-            (vomit "defs" def)
-            (let*-values
-                ([(p.t*)  (map cons p* t*)]
-                 [(l-env) (make-immutable-hash p.t*)]
-                 [(s* l-env^) ((expose-allocation-seq g-env l-env) s*)]
-                 [(x*^) (append x* (reset-vars))]
-                 [(l.t*) (map (lambda (l) `(,l . ,(hash-ref l-env^ l))) x*)])
-              `(define (,f ,@p:t*) : ,t ,l.t* ,@s*))]
-           [else (error 'expose-allocation-define "unmatched ~a" def)]))
-       g-env))
+    (define/public (expose-allocation-def def)
+      (match def
+        [`(define (,f ,p:t* ...) : ,t (,l* ...)
+            . ,(app expose-allocation-seq ss))
+         `(define (,f ,@p:t*) : ,t ,(append (reset-vars) l*) ,@ss)]
+        [else (error 'expose-allocation-def "unmatched ~a" def)]))
 
-        ;; This is repeated in order to thread the global-envirionment
-    ;; through. There are alternatives to this but this seems the cleanest.
-    (define/override (expose-allocation-stmt stmt g-env l-env)
-      (vomit "stmt" stmt)
-      (match stmt
-        [`(assign ,lhs (vector ,e* ...))
-         (let* (;; get the types of the arguments 
-                [t* (map (uncover-type-expr g-env l-env) e*)]
-                ;; build the type of lhs
-                [t  `(Vector ,@t*)] 
-                [l-env^ (env-set l-env lhs t)]
-                [len (length e*)]
-                ;; calculate the actual size of the data allocated
-                [size (* (+ len 1) 8)]
-                ;; get as many fresh variables as e's 
-                [v* (map (lambda (e) (unique-var '_)) e*)]
-                ;; build the initializations of the allocation
-                [s* (for/list ([e (in-list e*)] [v (in-list v*)] [n (in-naturals)])
-                      `(assign ,v (vector-set! ,lhs ,n ,e)))]
-                ;; extend the environment(we could skip this step)
-                [l-env^^ (for/fold ([e l-env^]) ([v v*])
-                           (env-set e v 'Void))])
-           ;; Build the collection check and initialization stmts
-           (values `((if (collection-needed? ,size) ((collect ,size)) ())
-                     (assign ,lhs (allocate ,len ,t))
-                     ,@s*)
-                   l-env^^))]
-        ;; Otherwise just extend the environment
-        [`(assign ,lhs ,(app (uncover-type-expr g-env l-env) t))
-         (values `(,stmt) (env-set l-env lhs t))]
-        ;; If need to merge the resulting environments
-        [`(if ,t ,c ,a)
-         (let-values ([(c c-env) ((expose-allocation-seq g-env l-env) c)]
-                      [(a a-env) ((expose-allocation-seq g-env l-env) a)])
-           (values `((if ,t ,c ,a)) (env-merge c-env a-env)))]
-        [`(return ,e) (values (list stmt) l-env)]
-        [else (error 'expose-allocation-stmt "unmatched ~a" stmt)]))
-    
-    ;; Follow the control flow, build the environment, and return
-    ;; expression rebuilt using types from environment.
-    (define/override ((expose-allocation-seq g-env l-env) seq)
-      (vomit "seq" seq)
-      (cond
-        [(null? seq) (values '() l-env)]
-        [(pair? seq)
-         (let*-values
-             ([(s ss)      (values (car seq) (cdr seq))]
-              [(s^  l-env^)  (expose-allocation-stmt s g-env l-env)]
-              [(ss^ l-env^^) ((expose-allocation-seq g-env l-env^) ss)])
-           (values (append s^ ss^) l-env^^))]
-        [else (error 'expose-allocation-seq "unmatched ~a" seq)]))
-        
-    ;; Return the type of an expression given a type environment
-    (define/override (uncover-type-expr g-env l-env)
-      (lambda (expr)
-        (vomit "expr" expr)
-        (match expr
-          [`(function-ref ,(? symbol? f)) (env-ref g-env f)]
-          [`(app ,(app (uncover-type-expr g-env l-env) ft) . ,es)
-           (match ft
-             [`(,ps ... -> ,rt) rt]
-             [else (error 'uncover-type-expr "unmatched type ~a" ft)])]
-          [other ((super uncover-type-expr l-env) expr)])))
-    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
-    (inherit uncover-call-live-seq)
-    (define/override (uncover-call-live-roots env clr*)
+    (inherit uncover-call-live-roots-seq)
+    (define/override (uncover-call-live-roots)
       (lambda (x)
-        (define (recur/mt-clr) (uncover-call-live-roots env (set)))
-        (vomit "uncover call live roots" x env clr*)
+        (vomit "uncover call live roots" x)
         (match x
-          [`(program ,x.ts ,ty (defines ,ds ...) ,ss ...)
-           (let*-values ([(ds)      (map (uncover-call-live-roots #f #f) ds)]
-                         [(new-env) (make-immutable-hash x.ts)]
-                         [(ss clr*) ((uncover-call-live-seq new-env clr*) ss)]
-                         [(xs)  (map car x.ts)])
+          [`(program ,xs ,ty (defines ,ds ...) ,ss ...)
+           (let*-values ([(ds)      (map (uncover-call-live-roots-def) ds)]
+                         [(ss clr*) ((uncover-call-live-roots-seq (set)) ss)])
              (unless (set-empty? clr*)
                (error 'uncover-call-live-roots 
                     "empty program call live roots invariant ~a" clr*))
-             `(program ,xs ,ty (defines ,@ds) ,@ss))]
-          [`(define ,(and decl `(,_ [,x* : ,t*] ...)) : ,t ,l.t* ,ss ...)
-           (let*-values ([(ccons)   (lambda (x t x.t*) `((,x . ,t) . ,x.t*))]
-                         [(x.t*)    (foldl ccons l.t* x* t*)]
-                         [(env) (make-immutable-hash x.t*)]
-                         [(ss clr*) ((uncover-call-live-seq env (set)) ss)]
-                         [(clr*)    (set-subtract clr* (list->set x*))]
-                         [(l*)  (map car l.t*)])
-             (unless (set-empty? clr*)
-               (error 'uncover-call-live-roots 
-                      "empty define call live roots invariant ~a" clr*))
-             `(define ,decl : ,t ,l* ,@ss))]
-          ;; New statements 
-          [`(assign ,v (app ,(app (recur/mt-clr) _ clr**) ...))
-           (let ([clr* (set-remove clr* v)])
-             (values `(call-live-roots ,(set->list clr*) ,x)
-                     (set-union clr* (set-union* clr**))))]
-          [`(app ,e* ...)
-           (define clr^
-             (let loop ([e* e*])
-               (let*-values ([(_ clr) ((recur/mt-clr) (car e*))])
-                 (set-union clr (loop (cdr e*))))))
-           (values `(call-live-roots ,(set->list clr*) ,x)
-                   (set-union clr* clr^))]
-          [`(function-ref ,f) (values x clr*)]     
-          [else ((super uncover-call-live-roots env clr*) x)])))
+             `(program ,(append (reset-vars) xs) ,ty (defines ,@ds) ,@ss))] 
+          [else (error 'uncover-call-live-roots "unmatched ~a" x)])))
+
+    ;; uncover-call-live-roots-def : define -> define
+    (define/public ((uncover-call-live-roots-def) def)
+      (match def
+        [`(define ,(and decl `(,f [,x* : ,_] ...)) : ,t ,l* ,ss ...)
+         (let*-values ([(ss clr*) ((uncover-call-live-roots-seq (set)) ss)]
+                       [(clr*)    (set-subtract clr* (list->set x*))])
+           (unless (set-empty? clr*)
+             (error 'uncover-call-live-roots 
+                    "empty define call live roots invariant ~a ~a" f clr*))
+           `(define ,decl : ,t ,l* ,@ss))]
+        [else (error 'uncover-call-live-roots-def "unmatched ~a" def)]))
+
+    ;; uncover-call-live-roots-stmt : stmt (set id) -> stmt (set id) 
+    (define/override (uncover-call-live-roots-stmt stmt clr*)
+      (vomit "functions/uncover-call-live-roots-stmt" stmt clr*)
+      (match stmt
+        [`(app ,(app uncover-call-live-roots-exp clr**) ...)
+         (values `(call-live-roots ,(set->list clr*) ,stmt)
+                 (set-union clr* (set-union* clr**)))]
+        [`(assign ,lhs (has-type (app ,e* ...) ,t))
+         (let* ([clr* (set-remove clr* lhs)]
+                [stmt `(call-live-roots ,(set->list clr*) ,stmt)]
+                [clr** (for/list ([e e*]) (uncover-call-live-roots-exp e))]
+                [clr* (set-union clr* (set-union* clr**))])
+           (values stmt clr*))]
+        [else (super uncover-call-live-roots-stmt stmt clr*)]))
+
+    ;;uncover-call-live-roots-exp : expr -> (set id)
+    (define/override (uncover-call-live-roots-exp e)
+      (vomit "functions/uncover-call-live-roots-exp" e)
+      (match e 
+        [`(function-ref ,f) (set)]
+        [else (super uncover-call-live-roots-exp e)]))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S3 -> S3
@@ -355,10 +272,10 @@
            ;; parameters become locals
            `(define (,f) ,(length xs) (,(append xs (reset-vars) locals) ,max-stack)
               ,@new-ss))]
-        [`(assign ,lhs (function-ref ,f))
+        [`(assign ,lhs (has-type (function-ref ,f) ,t))
          (define new-lhs ((select-instructions rootstack) lhs))
          `((leaq (function-ref ,f) ,new-lhs))]
-        [`(assign ,lhs (app ,f ,es ...))
+        [`(assign ,lhs (has-type (app ,f ,es ...) ,t))
          (unless rootstack
            (error 'app "no rootstack"))
          (let ([es (cons rootstack es)])
@@ -567,6 +484,9 @@
 	   [else ((super lower-conditionals) e)]
 	   )))
 
+    ;; 
+    (define/override (first-offset) 48)
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
     (define/override (print-x86)
@@ -578,7 +498,7 @@
 	    (format "\tcallq\t*~a\n" ((send this print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
-	   [`(define (,f) ,n ,spill-space ,ss ...)
+           [`(define (,f) ,n ,spill-space ,ss ...)
 	    (define callee-reg (set->list callee-save))
 	    (define save-callee-reg
 	      (for/list ([r callee-reg])
@@ -588,21 +508,26 @@
 			(format "\tpopq\t%~a\n" r)))
 	    (define callee-space (* (length (set->list callee-save))
 				    (send this variable-size)))
+
+            ;; This adjustment needs to be befor
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
-				  callee-space))
+                                 callee-space))
 	    (string-append
 	     (format "\t.globl ~a\n" f)
 	     (format "~a:\n" f)
 	     (format "\tpushq\t%rbp\n")
-	     (format "\tmovq\t%rsp, %rbp\n")
-	     (string-append* save-callee-reg)
-	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
+             (format "\tmovq\t%rsp, %rbp\n")
+             (string-append* save-callee-reg)
+             (format "\tsubq\t$~a, %rsp\n" stack-adj)
+             ;; Push callee saves at the bottom of the stack
+             ;; frame because the current code for stack nodes
+             ;; doesn't reason about them. -andre
 	     "\n"
 	     (string-append* (map (send this print-x86) ss))
 	     "\n"
-	     (format "\taddq\t$~a, %rsp\n" stack-adj)
-	     (string-append* restore-callee-reg)
-	     (format "\tpopq\t%rbp\n")
+             (format "\taddq\t$~a, %rsp\n" stack-adj)	     
+             (string-append* restore-callee-reg)
+             (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
 	   [`(program ,stack-space (type ,ty) (defines ,ds ...) ,ss ...)
@@ -637,7 +562,7 @@
        ,(send compiler expose-allocation)
        ,(send interp interp-C '()))
       ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots (hash) (set))
+       ,(send compiler uncover-call-live-roots)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))

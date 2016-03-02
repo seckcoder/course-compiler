@@ -5,7 +5,7 @@
 (require "conditionals.rkt")
 (require "vectors.rkt")
 (require "functions.rkt")
-;;(require "lambda.rkt")
+(require "lambda.rkt")
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
@@ -25,7 +25,7 @@
     ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
     ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
-    ;;("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
+    ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))
@@ -35,9 +35,9 @@
 (define suite-list
   `((0 . ,(range 1 26))
     (1 . ,(range 1 32))
-    (2 . ,(range 1 18))
-    (3 . ,(range 1 14))
-    (4 . ,(range 0 5))))
+    (2 . ,(range 1 19))
+    (3 . ,(range 1 20))
+    (4 . ,(range 0 7))))
 
 (define (suite-range x)
   (let ([r? (assoc x suite-list)])
@@ -124,6 +124,9 @@
       (error 'run-tests
              "heap-size expected positive multiple of 8: ~v" bytes)) 
     (heap-size bytes?))]
+ ["--small-register-set"
+  "use a minimal set of registers for register allocation"
+  (use-minimal-set-of-registers! #t)]
 
  ;; Allows setting the number of columns that the pretty printer
  ;; uses to display s-expressions.

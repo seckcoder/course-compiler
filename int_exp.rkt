@@ -21,7 +21,7 @@
 	   [(? symbol?) (cdr (assq e env))]
 	   [(? integer?) e]
 	   [`(let ([,x ,e]) ,body)
-	    (define new-x (gensym x))
+	    (define new-x (gensym (racket-id->c-id x)))
 	    (define new-e (recur e))
 	    `(let ([,new-x ,new-e])
 	       ,((send this uniquify (cons (cons x new-x) env)) body))]
@@ -189,7 +189,7 @@
     ;; patch-instructions : psuedo-x86 -> x86
     ;; Uses register rax to patch things up
 
-    ;; should this be call in-memory? 
+    ;; should this be called in-memory? 
     (define/public (on-stack? a)
       (match a
         [`(stack ,n) #t]

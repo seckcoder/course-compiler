@@ -1,6 +1,6 @@
 #lang racket
 (require racket/fixnum)
-(require "utilities.rkt")
+(require "utilities.rkt" (prefix-in runtime-config: "runtime-config.rkt"))
 (provide interp-scheme interp-C interp-x86 interp-R0 interp-R1 interp-R2 interp-R3 interp-R4 )
 
 (define interp-scheme
@@ -33,7 +33,9 @@
     (define/public (interp-op op)
       (match op
          ['+ fx+]
-	 ['- (lambda (n) (fx- 0 n))]
+	 ['- (case-lambda
+               [(n) (fx- 0 n)]
+               [(n m) (fx- n m)])]
 	 ['read read-fixnum]
 	 [else (error "in interp-op S0, unmatched" op)]))
 
@@ -200,6 +202,7 @@
       (lambda (ast)
         (vomit "R1/interp-scheme" env)
 	(match ast
+          [`(has-type ,e ,t) ((interp-scheme env) e)]
           [#t #t]
           [#f #f]
           [`(and ,e1 ,e2)
@@ -219,16 +222,17 @@
       (lambda (ast)
 	(vomit "R1/interp-C" ast)
 	(match ast
-           [#t #t]
-           [#f #f]
-	   [`(if ,cnd ,thn ,els)
-	    (if ((send this interp-C env) cnd)
-		((send this seq-C env) thn)
-		((send this seq-C env) els))]
-	   [`(program ,xs (type ,ty) ,ss ...)
-            ((super interp-C env) `(program ,xs ,@ss))]
-	   [else ((super interp-C env) ast)]
-	   )))
+          [`(has-type ,e ,t) ((interp-C env) e)]
+          [#t #t]
+          [#f #f]
+          [`(if ,cnd ,thn ,els)
+           (if ((send this interp-C env) cnd)
+               ((send this seq-C env) thn)
+               ((send this seq-C env) els))]
+          [`(program ,xs (type ,ty) ,ss ...)
+           ((super interp-C env) `(program ,xs ,@ss))]
+          [else ((super interp-C env) ast)]
+          )))
 
 
     (define (goto-label label ss)
@@ -318,45 +322,6 @@
                     ((send this interp-x86 env) (goto-label label (program)))]
                    [else ((send this interp-x86 env) ss)]))]
 
-          #|[`(program ,xs ,ss ...)
-             (parameterize ([program ss])
-               ((super interp-x86 '()) ast))]
-            [else ((super interp-x86 env) ast)]
-          )))|#
-	    
-;; TODO Fix this once all the tests pass
-	
-#|[`((sete ,d) . ,ss)
-	    (let ([v ((send this interp-x86-exp env) '(reg __flag))]
-		  [x (send this get-name d)])
-	      ((send this interp-x86 (cons (cons x v) env)) ss))]
-	   ;; if's are present before patch-instructions
-          [(or `((if ,cnd ,thn ,els) . ,ss)
-               `((if ,cnd ,thn ,_ ,els ,_) . ,ss))
-           (if (not (eq? 0 ((send this interp-x86-exp env) cnd)))
-               ((send this interp-x86 env) (append thn ss))
-               ((send this interp-x86 env) (append els ss)))]
-	   [`((label ,l) . ,ss)
-	    ((send this interp-x86 env) ss)]
-	   [`((cmpq ,s1 ,s2) . ,ss)
-	    (let ([v1 ((send this interp-x86-exp env) s1)] 
-		  [v2 ((send this interp-x86-exp env) s2)])
-	      ((send this interp-x86 (cons (cons '__flag 
-						 (b2i (eq? v1 v2))) 
-					   env))
-	       ss))]
-	   [`((movzbq ,s ,d) . ,ss)
-	    (define x (send this get-name d))
-	    (define v ((send this interp-x86-exp env) s))
-	    ((send this interp-x86 (cons (cons x v) env)) ss)]
-	   [`((jmp ,label) . ,ss)
-	    ((send this interp-x86 env) (goto-label label (program)))]
-	   [`((je ,label) . ,ss)
-	    (let ([flag (lookup '__flag env)])
-	      (cond [(i2b flag)
-		     ((send this interp-x86 env) (goto-label label (program)))]
-		    [else ((send this interp-x86 env) ss)]))]
-           |#
 	   [`(program ,xs (type ,ty) ,ss ...)
             (send this display-by-type ty ((send this interp-x86 env) `(program ,xs ,@ss)) env)]
 	   [`(program ,xs ,ss ...)
@@ -392,8 +357,8 @@
     (define rootstack_begin (box uninitialized))
     (define rootstack_end   (box uninitialized))
     ;; field is like define but public
-    (field [stack-size 8000 #;Bytes]
-           [heap-size  10000   #;Bytes]
+    (field [stack-size (runtime-config:rootstack-size)]
+           [heap-size  (runtime-config:heap-size)]
            [global-label-table
             (make-immutable-hash
              `((free_ptr         . ,free_ptr)
@@ -418,8 +383,17 @@
           (vector-set! vect (arithmetic-shift (- addr start) -3) value))))
     
     (define/public (collect!)
-      (lambda (bytes_requested rootset)
-        (error 'interp-R2/collect! "not yet implemented")))
+      (lambda (rootset bytes-requested)
+        ;; after a call to collect we must guarantee there is enough
+        ;; memory to allocate the requested block of memory
+        (let double-heap ([hs heap-size])
+          (if (< hs bytes-requested)
+              (double-heap (* 2 hs))
+              (let ((h-begin (allocate! 'fromspace hs)))
+                ;; I am only advancing the end of the heap because we
+                ;; are not reclaiming memory
+                (set-box! fromspace_end   (+ h-begin hs))
+                (set-box! free_ptr        h-begin))))))
 
     (define/public (initialize!)
       (lambda (stack-length heap_length)
@@ -443,11 +417,11 @@
                   ([page (in-list (unbox memory))])
           (match-let ([`(page ,_ ,stop ,_ ,_) page])
             (max next stop))))
-      ;; Allocate with a small pad (10 - 1000) words so that it isn't likely to
+      ;; Allocate with a small pad 100 words so that it isn't likely to
       ;; accidentally use another region.
       ;; The randomness is to dispell any reliance on interp always allocating the
       ;; same way. -Andre
-      (define start-addr (+ max-addr (* (+ (random 990) 10) 8)))
+      (define start-addr (+ max-addr 800))
       ;; The range is of valid addresses in memory are [start, stop)
       (define stop-addr (+ start-addr size))
       (define vect (make-vector (arithmetic-shift size -3) uninitialized))
@@ -456,14 +430,14 @@
       start-addr)
 
     (define (free! addr)
-      (set! memory
-        (let loop ([memory memory])
+      (set-box! memory
+        (let loop ([memory (unbox memory)])
           (match memory
             [`() (error 'free "address ~a isn't currently allocated")]
             [`(,(and page `(page ,ptr ,_ ,_ ,_)) . ,pages)
              (if (= addr ptr)
                  pages
-                (cons page (loop pages)))]))))
+                 (cons page (loop pages)))]))))
     
     (define (fetch-page addr)
       ;; Create a string containing
@@ -472,7 +446,7 @@
          string-append
          (cons (format "address ~a out of bounds\n\tcurrent memory regions:\n"
                        addr)
-               (for/list ([page (in-list memory)])
+               (for/list ([page (in-list (unbox memory))])
                  (match-let ([`(page ,start ,stop ,name ,_) page])
                    (format "\t\t~a\t\t[~a,~a)\n" name start stop))))))
       (unless (and (fixnum? addr)
@@ -484,11 +458,12 @@
         (match m
           [`() (error 'fetch-page (fmt-err addr memory))]
           [`((page ,min ,max ,name ,vect) . ,rest-memory)
+           (vomit "R2/fetch page" addr min max name vect)
            (if (and (<= min addr) (< addr max))
                (values min max name vect)
                (search rest-memory))]
           [other (error 'fetch-page "unmatched ~a" m)])))
-             
+    
     (define/override (primitives)
       (set-union (super primitives) 
 		 (set 'vector 'vector-ref 'vector-set!)))
@@ -526,10 +501,10 @@
                  "global value, ~a, used before initialization"
                  label))
         value))
-
     
     (define/override (interp-C env)
       (lambda (ast)
+        (vomit "R2/interp-C" ast)
         (match ast
           ;; I should do better than make these noops - andre
           [`(initialize ,s ,h)
@@ -546,7 +521,7 @@
           [`(collection-needed? ,size)
            (when (or (eq? (unbox free_ptr) uninitialized)
                      (eq? (unbox fromspace_end) uninitialized))
-             (error 'interp-x86 "uninitialized state in ~a" ast))
+             (error 'interp-C "uninitialized state in ~a" ast))
            #t]
           ;; Collection isn't needed or possible in this representation
           [`(collect ,size)
@@ -559,29 +534,30 @@
              (error 'interp-C "invalid argument(s) to collect in ~a" ast)) 
            env]
           ;; allocate a vector of length l and type t that is initialized.
-          [`(allocate ,l ,t) (build-vector l (lambda a uninitialized))]
+          [`(allocate ,l) (build-vector l (lambda a uninitialized))]
           ;; Analysis information making introduce rootstack easier
           [`(call-live-roots (,xs ...) ,ss ...)
            (for ([x (in-list xs)])
              (unless (vector? (lookup x env))
                (error 'interp-C
                       "call-live-roots stores non-root ~a in ~a" x ast)))
-           ((send this seq-C env) ss)]
+           ((send this seq-C env) ss)] 
           [otherwise ((super interp-C env) ast)])))
     
     (define/override (interp-x86-exp env)     
       (lambda (ast)
+        (vomit "interp-x86-exp" ast)
         (match ast
           [`(global-value ,label) (fetch-global label)]
           [`(offset ,d ,i)
            (define base ((send this interp-x86-exp env) d))
            (define addr (+ base i))
            ((send this memory-read) addr)]
-          [else ((super interp-x86-exp env) ast)]
-          )))
+          [else ((super interp-x86-exp env) ast)])))
     
     (define/public (interp-x86-store env)
       (lambda (ast value)
+        (vomit "interp-x86-store" ast value)
         (match ast
           [`(global-value ,label)
            (define loc (hash-ref global-label-table label (global-value-err ast)))
@@ -623,12 +599,13 @@
            ((send this interp-x86 new-env) ss)]
           ;; cmpq performs a subq operation and examimines the state
           ;; of the result, this is done without overiting the second
-          ;; register(I think). -andre
-          [`((cmpq ,s1 ,s2) . ,ss)
-           (vomit "cmpq" s1 s2)
+          ;; register. -andre
+          ;; Notice that the syntax is very confusing
+          ;; (cmpq ,s2 ,s1) (jl then) (jmp else) ...
+          ;; (if (< s1 s2) then else)
+          [`((cmpq ,s2 ,s1) . ,ss)
            (let* ([v1 ((send this interp-x86-exp env) s1)] 
-                  [v2 ((send this interp-x86-exp env) s2)]
-                  [_  (vomit "cmpq" v1 v2)]
+                  [v2 ((send this interp-x86-exp env) s2)] 
                   [v3 (- v2 v1)]
                   [zero     (arithmetic-shift (b2i (eq? v3 0)) 6)]
                   [sign     (arithmetic-shift (b2i (< v3 0)) 7)] 
@@ -649,7 +626,9 @@
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
            ((send this interp-x86 `((rax . ,(allocate! 'alloc num-bytes)) . ,env)) ss)]
           [`((callq collect) . ,ss)
-           ;; TODO move some pointers around
+           (define rootstack ((interp-x86-exp env) '(reg rdi)))
+           (define bytes-requested ((interp-x86-exp env) '(reg rsi))) 
+           ((collect!) rootstack bytes-requested)
            ((send this interp-x86 env) ss)]
           [`((movq ,s ,d) . ,ss)
            (define value   ((send this interp-x86-exp env) s))
@@ -687,39 +666,32 @@
       (lambda (ast)
         (vomit "R3/interp-scheme" ast env)
         (match ast
-	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	    (cons f `(lambda ,xs ,body))]
-	   [`(function-ref ,f)
-	    (lookup f env)]
-	   [`(app ,f ,args ...)
+          [`(has-type ,e ,t) ((interp-scheme env) e)]
+          [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+           (cons f `(lambda ,xs ,body))]
+          [`(function-ref ,f)
+           (lookup f env)]
+          [`(app ,f ,args ...)
 	    (define new-args (map (send this interp-scheme env) args))
-	    (let ([f-val ((send this interp-scheme env) f)])
-	      (match f-val
-	         [`(lambda (,xs ...) ,body)
-		  (define new-env (append (map cons xs new-args) env))
+           (let ([f-val ((send this interp-scheme env) f)])
+             (match f-val
+               [`(lambda (,xs ...) ,body)
+                (define new-env (append (map cons xs new-args) env))
 		  ((send this interp-scheme new-env) body)]
-		 [else (error "interp-scheme, expected function, not" f-val)]))]
-	   [`(program (type ,ty) ,ds ... ,body)
+               [else (error "interp-scheme, expected function, not" f-val)]))]
+          [`(program (type ,ty) ,ds ... ,body)
 	    ((send this interp-scheme env) `(program ,@ds ,body))]
-	   [`(program ,ds ... ,body)
-	    (let ([top-level (map  (send this interp-scheme '()) ds)])
+          [`(program ,ds ... ,body)
+           (let ([top-level (map  (send this interp-scheme '()) ds)])
 	      ((send this interp-scheme top-level) body))]
-	    #;(let loop ([ds ds] [new-env '()])
-	      (cond [(null? ds)
-		     ((send this interp-scheme new-env) body)]
-		    [else
-		     (loop (cdr ds)
-			   (cons ((send this interp-scheme new-env) (car ds))
-				 new-env))]))
-	   [`(,f ,args ...) #:when (not (set-member?
-					 (send this non-apply-ast) f))
-	    ((send this interp-scheme env) `(app ,f ,@args))]
-	   [else ((super interp-scheme env) ast)]
-	   )))
+          [`(,f ,args ...) #:when (not (set-member?
+                                        (send this non-apply-ast) f))
+           ((send this interp-scheme env) `(app ,f ,@args))]
+          [else ((super interp-scheme env) ast)])))
 
     (define/override (interp-C env)
       (lambda (ast)
-	(debug "R3/interp-C" ast)
+	(verbose "R3/interp-C" ast)
 	(match ast
 	   [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
 	    (cons f `(lambda ,xs ,@ss))]
@@ -740,8 +712,7 @@
 	    (define new-env (map (send this interp-C '()) ds))
 	    (define result-env ((send this seq-C new-env) ss))
 	    (lookup result result-env)]
-	   [else ((super interp-C env) ast)]
-	   )))
+	   [else ((super interp-C env) ast)])))
 
     (define (stack-arg-name n)
       (string->symbol (string-append "rsp_" (number->string n))))
@@ -752,16 +723,16 @@
     (define/override (get-name ast)
       (match ast
          [`(stack-arg ,n) (stack-arg-name n)]
-	 [else (super get-name ast)]
-	 ))
+	 [else (super get-name ast)]))
 
     (define (call-function f-val ss env)
       (match f-val
         [`(lambda ,n ,body-ss ...)
          ;; copy some register and stack locations over to new-env
          (define passing-regs
-	    (filter (lambda (p) p) (for/list ([r arg-registers])
-					     (assq r env))))
+           (filter (lambda (p) p)
+                   (for/list ([r arg-registers])
+                     (assq r env))))
 	  (define passing-stack
 	    (for/list ([i (in-range 
 			   0 (max 0 (- n (vector-length
@@ -786,35 +757,13 @@
 	    (lookup x env)]
 	   [`(function-ref ,f)
 	    (lookup f env)]
-	   [else ((super interp-x86-exp env) ast)]
-	   )))
+	   [else ((super interp-x86-exp env) ast)])))
 
     (define/override (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)
-          (debug "R3/interp-x86" (car ast) env))
+          (verbose "R3/interp-x86" (car ast) env))
 	(match ast
-#|
-          [`(define (,f) ,n ,extra ,ss ...)
-           (cons f `(lambda ,n ,@ss))]
-          ;; Treat lea like mov -Jeremy
-          [`((leaq ,s ,d) . ,ss)
-           (define x (send this get-name d))
-           (define v ((send this interp-x86-exp env) s))
-           ((send this interp-x86 (cons (cons x v) env)) ss)]
-          [`((indirect-callq ,f) . ,ss)
-           (define f-val ((send this interp-x86-exp env) f))
-           (call-function f-val ss env)]
-          [`((callq ,f) . ,ss) #:when (not (set-member? (send this builtin-funs) f))
-           (call-function (lookup f env) ss env)]
-          [`(program ,extra (defines ,ds) ,ss ...)
-           (parameterize ([program ss])
-             (define env (map (send this interp-x86 '()) ds))
-             (define result-env ((send this interp-x86 env) ss))
-             (lookup 'rax result-env))]
-          [else ((super interp-x86 env) ast)]
-          )))
-|#
 	   [`(define (,f) ,n ,extra ,ss ...)
 	    (cons f `(lambda ,n ,@ss))]
 	   ;; Treat lea like mov -Jeremy
@@ -831,15 +780,11 @@
             (send this display-by-type ty ((send this interp-x86 env)
                                            `(program ,extra (defines ,@ds) ,@ss)) env)]
 	   [`(program ,extra (defines ,ds ...) ,ss ...)
-            (vomit "program" ast)
             (parameterize ([program ss])
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
 	       (lookup 'rax result-env))]
-	   [else ((super interp-x86 env) ast)]
-	   )))
-
-    ));; interp-R3
+	   [else ((super interp-x86 env) ast)]))))) ;; end  interp-R3
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S4: lambda
@@ -848,38 +793,34 @@
   (class interp-R3
     (super-new)
     (inherit-field result)
-
+    
     (define/override (interp-scheme env)
       (lambda (ast)
-        (debug "R4/interp-scheme" ast env)
+        (verbose "R4/interp-scheme" ast env)
 	(match ast
-	   [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
-	    `(lambda ,xs ,body ,env)]
+          [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
+           `(lambda ,xs ,body ,env)]
 	   [`(app ,f ,args ...)
 	    (define new-args (map (send this interp-scheme env) args))
 	    (let ([f-val ((send this interp-scheme env) f)])
 	      (match f-val
-	         [`(lambda (,xs ...) ,body ,lam-env)
-		  (define new-env (append (map cons xs new-args) lam-env))
-		  ((send this interp-scheme new-env) body)]
-		 [else (error "interp-scheme, expected function, not" f-val)]))]
-	   [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
-	    (mcons f `(lambda ,xs ,body))]
-	   [`(program (type ,ty) ,ds ... ,body)
-            ((send this interp-scheme env) `(program ,@ds ,body))]
-	   [`(program ,ds ... ,body)
-	    (let ([top-level (map (send this interp-scheme '()) ds)])
-	      ;; Use set-cdr! on define lambda's for mutual recursion
-	      (for/list ([b top-level])
-			(set-mcdr! b (match (mcdr b)
-				       [`(lambda ,xs ,body)
-					`(lambda ,xs ,body ,top-level)])))
-	      ((send this interp-scheme top-level) body))]
-	   [else ((super interp-scheme env) ast)]
-	   )))
-      
-
-    )) ;; interp-R4
+                [`(lambda (,xs ...) ,body ,lam-env)
+                 (define new-env (append (map cons xs new-args) lam-env))
+                 ((send this interp-scheme new-env) body)]
+                [else (error "interp-scheme, expected function, not" f-val)]))]
+          [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
+           (mcons f `(lambda ,xs ,body))]
+          [`(program (type ,ty) ,ds ... ,body)
+           ((send this interp-scheme env) `(program ,@ds ,body))]
+          [`(program ,ds ... ,body)
+           (let ([top-level (map (send this interp-scheme '()) ds)])
+             ;; Use set-cdr! on define lambda's for mutual recursion
+             (for/list ([b top-level])
+               (set-mcdr! b (match (mcdr b)
+                              [`(lambda ,xs ,body)
+                               `(lambda ,xs ,body ,top-level)])))
+             ((send this interp-scheme top-level) body))]
+          [else ((super interp-scheme env) ast)]))))) ;; end interp-R4
 
 
  

@@ -2,12 +2,15 @@
 (require racket/pretty)
 (require (for-syntax racket))
 (provide debug-level at-debug-level? debug verbose vomit
-         map2 b2i i2b set-union*
+         map2 b2i i2b
+         racket-id->c-id
+         hash-union set-union*
          fix while 
          label-name lookup  make-dispatcher assert
          read-fixnum read-program 
 	 compile compile-file check-passes interp-tests compiler-tests
 	 make-graph add-edge adjacent vertices print-dot
+         use-minimal-set-of-registers!
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers register->color registers align
          byte-reg->full-reg print-by-type)
@@ -85,30 +88,6 @@
 (define-debug-level verbose 3)
 (define-debug-level vomit 4)
 
-#|
-(define-syntax (trace stx)
-  (syntax-case stx ()
-    [(_ label value ...) 
-     #`(when (at-debug-level 1)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-
-(define-syntax (debug stx)
-  (syntax-case stx ()
-    [(_ label value ...) 
-     #`(when (at-debug-level 2)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-
-
-(define-syntax (vomit stx)
-  (syntax-case stx ()
-    [(_ label value ...)
-     #`(when (at-debug-level 4)
-         #,(syntax/loc stx
-             (print-label-and-values label value ...)))]))
-|#
-
 (define-syntax-rule (while condition body ...)
   (let loop ()
     (when condition
@@ -142,6 +121,10 @@
 (define (set-union* ls)
   (foldl set-union (set) ls))
 
+(define (hash-union . hs)
+  (for*/hash ([h (in-list hs)]
+              [(k v) (in-hash h)])
+    (values k v)))
 
 ;; label-name prepends an underscore to a label (symbol or string)
 ;; if the current system is Mac OS and leaves it alone otherwise.
@@ -447,6 +430,19 @@
 	  (newline))
 	(void))))
 
+;; (case-> (symbol . -> . symbol) (string . -> . string))
+(define (racket-id->c-id x)
+  (define (->c-id-char c)
+    (if (or (char<=? #\A c #\Z)
+            (char<=? #\a c #\z)
+            (char<=? #\0 c #\9))
+        c
+        #\_))
+  (cond
+    [(symbol? x) (string->symbol (racket-id->c-id (symbol->string x)))]
+    [(string? x) (list->string (map ->c-id-char (string->list x)))]
+    [else (error 'racket-id->c-id "expected string or symbol: ~v" x)]))
+
 
 ;; System V Application Binary Interface
 ;; AMD64 Architecture Processor Supplement
@@ -459,22 +455,21 @@
     				  'r8 'r9 'r10 'r12 
 				  'r13 'r14 'r15))
 
-(define small-register-set #t)
-(define arg-registers '())
-(define registers-for-alloc '())
+(define arg-registers (void))
+(define registers-for-alloc (void))
 
-;; registers-for-alloc should always inlcude the arg-registers. -Jeremy 
+;; registers-for-alloc should always inlcude the arg-registers.
+;;  -Jeremy 
+(define (use-minimal-set-of-registers! f)
+  (if f
+      (begin
+        (set! arg-registers (vector 'rcx))      
+        (set! registers-for-alloc (vector 'rbx 'rcx)))
+      (begin
+        (set! arg-registers   (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
+        (set! registers-for-alloc general-registers))))
 
-(if small-register-set
-    (begin
-      (set! arg-registers (vector 'rcx))      
-      (set! registers-for-alloc (vector 'rbx 'rcx))
-      )
-    (begin
-      (set! arg-registers (vector 'rdi 'rsi 'rdx 'rcx 'r8 'r9))
-      (set! registers-for-alloc general-registers)
-      )
-    )
+(use-minimal-set-of-registers! #f)
 
 (define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11))
 (define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
