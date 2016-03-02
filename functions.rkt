@@ -484,9 +484,15 @@
 	   [else ((super lower-conditionals) e)]
 	   )))
 
-    ;; 
-    (define/override (first-offset) 48)
-
+    (inherit variable-size)
+    
+    ;; Locals now take into account that the first few locals on each
+    ;; frame will be the callee saved registers.
+    (define number-callee-saves (length (set->list callee-save)))
+    
+    (define/override (first-offset)
+      (+ (super first-offset) (* number-callee-saves (variable-size))))
+    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; print-x86 : x86 -> string
     (define/override (print-x86)
@@ -508,8 +514,6 @@
 			(format "\tpopq\t%~a\n" r)))
 	    (define callee-space (* (length (set->list callee-save))
 				    (send this variable-size)))
-
-            ;; This adjustment needs to be befor
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
                                  callee-space))
 	    (string-append
