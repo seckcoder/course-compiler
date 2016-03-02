@@ -160,6 +160,8 @@
     
     ;; Flatten is reimplemented without dispatch because it has to reason about inserting
     ;; new type annotations when breaking up expressions into statements.
+    ;;
+    ;; What does the above comment mean? -Jeremy
     (define/override (flatten need-atomic)
       (lambda (e)
         (vomit "flatten" e)
@@ -183,12 +185,12 @@
                                     ,(append e2-ss `((assign ,tmp ,new-e2)))
                                     ((assign ,tmp (has-type #f Boolean)))))))]
              [`(if ,cnd ,thn ,els)
-              (let-values ([(new-thn thn-ss) ((send this flatten #t) thn)]
-                           [(new-els els-ss) ((send this flatten #t) els)])
-                ((flatten-if new-thn #;`(has-type ,new-thn ,t) thn-ss
-                             new-els #;`(has-type ,new-els ,t) els-ss
-                             )
-                 cnd))]
+              (define-values (new-thn thn-ss) ((send this flatten #t) thn))
+	      (define-values (new-els els-ss) ((send this flatten #t) els))
+	      ((flatten-if new-thn #;`(has-type ,new-thn ,t) thn-ss
+			   new-els #;`(has-type ,new-els ,t) els-ss
+			   )
+	       cnd)]
              [`(,op ,es ...) #:when (set-member? (send this primitives) op)
               (define-values (new-es sss) (map2 (send this flatten #t) es))
               (define ss (append* sss))

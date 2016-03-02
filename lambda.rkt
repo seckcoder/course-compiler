@@ -15,20 +15,14 @@
     (define/override (type-check env)
       (lambda (e)
         (match e
-          ;; [(? symbol? x)
-          ;;  (let ([ty (lookup x env)])
-          ;;  (match ty
-          ;;    [`(,xT ... ~> ,rT)
-          ;;     (values `(has-type ,x ,ty) `(,xT ... -> ,rT))]
-          ;;    [else (values `(has-type ,x ,ty) ty)]))]
           [`(lambda: ,(and bnd `([,xs : ,Ts] ...)) : ,rT ,body)
-           (let-values ([(body bodyT) ((type-check (append (map cons xs Ts) env)) body)]
-                        [(ty) `(,@Ts -> ,rT)])
-             (cond
-               [(equal? rT bodyT)
-                (values `(has-type (lambda: ,bnd : ,rT ,body) ,ty) ty)]
-               [else
-                (error "function body's type does not match return type" bodyT rT)]))]
+           (define-values (new-body bodyT) ((type-check (append (map cons xs Ts) env)) body))
+	   (define ty `(,@Ts -> ,rT))
+	   (cond
+	    [(equal? rT bodyT)
+	     (values `(has-type (lambda: ,bnd : ,rT ,new-body) ,ty) ty)]
+	    [else
+	     (error "function body's type does not match return type" bodyT rT)])]
           [else ((super type-check env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
