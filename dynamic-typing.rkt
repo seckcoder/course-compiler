@@ -1,9 +1,10 @@
 #lang racket
 (require racket/set)
 (require "utilities.rkt")
+(require "interp.rkt")
 (require "lambda.rkt")
 
-(provide compile-R6 compile-R7 R6-passes R6-typechecker R7-passes R7-typechecker)
+(provide compile-R6 R6-passes R6-typechecker)
 
 (define compile-R6
   (class compile-R4
@@ -16,6 +17,9 @@
 		 type-predicates
 		 (set 'inject 'project)
 		 ))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; type-check
 
     (define/override (type-check env)
       (lambda (e)
@@ -34,7 +38,7 @@
 	     (values `(has-type (project ,new-e ,ty) ,ty) ty)]
 	    [else
 	     (error "project expression does not have type Any" e)])]
-	  [`(,pred ,e) #:when (set-member pred type-predicates)
+	  [`(,pred ,e) #:when (set-member? type-predicates pred)
 	   (define-values (new-e e-ty) ((type-check env) e))
 	   (cond
 	    [(equal? e-ty 'Any)
@@ -44,6 +48,59 @@
 	  [else
 	   ((super type-check env) e)]
 	  )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uniquify
+    (define/override (uniquify env)
+      (lambda (e)
+	(match e
+          [`(inject ,e ,ty)
+	   `(inject ,((uniquify env) e) ,ty)]
+	  [`(project ,e ,ty)
+	   `(project ,((uniquify env) e) ,ty)]
+	  [else ((super uniquify env) e)])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; reveal-functions
+    (define/override (reveal-functions funs)
+      (lambda (e)
+	(define recur (send this reveal-functions funs))
+	(match e
+          [`(inject ,e ,t)
+	   `(inject ,(recur e) ,t)]
+	  [`(project ,e ,t)
+	   `(project ,(recur e) ,t)]
+          [else ((super reveal-functions funs) e)])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; flatten
+
+    (define/override (flatten need-atomic)
+      (lambda (e)
+        (verbose "flatten" e)
+	(match e
+          [`(has-type (inject ,e ,ty) ,ty2)
+	   (define-values (new-e e-ss) ((send this flatten #t) e))
+	   (cond [need-atomic
+		  (define tmp (gensym 'tmp))
+		  (values `(has-type ,tmp ,ty2)
+			  (append e-ss `((assign ,tmp (has-type (inject ,new-e ,ty) ,ty2)))))]
+		 [else
+		  (values `(has-type (inject ,new-e ,ty) ,ty2) e-ss)])]
+	  [`(has-type (project ,e ,ty) ,ty2)
+	   (define-values (new-e e-ss) ((send this flatten #t) e))
+	   (cond [need-atomic
+		  (define tmp (gensym 'tmp))
+		  (values `(has-type ,tmp ,ty2)
+			  (append e-ss `((assign ,tmp (has-type (project ,new-e ,ty) ,ty2)))))]
+		 [else
+		  (values `(has-type (project ,new-e ,ty) ,ty2) e-ss)])]
+	  [else
+	   ((super flatten need-atomic) e)]
+	  )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; select-instructions
 
     (define (any-tag ty)
       (match ty
@@ -71,12 +128,13 @@
       (set-union (super instructions)
 		 (set 'salq 'sarq)))
 
-    (define/override (select-instructions)
+    (define/override (select-instructions [rootstack #t])
       (lambda (e)
+	(define recur (send this select-instructions rootstack))
 	(match e
           [`(assign ,lhs (inject ,e ,ty))
-           (define new-lhs ((send this select-instructions) lhs))
-	   (define new-e ((send this select-instructions) e))
+           (define new-lhs (recur lhs))
+	   (define new-e (recur e))
 	   (cond [(or (equal? ty 'Integer) (equal? ty 'Boolean))
 		  `((movq ,new-e ,new-lhs)
 		    (salq (int 2) ,new-lhs)
@@ -85,14 +143,15 @@
 		  `((movq ,new-e ,new-lhs)
 		    (orq (int ,(any-tag ty)) new-lhs))])]
           [`(assign ,lhs (project ,e ,ty))
-           (define new-lhs ((send this select-instructions) lhs))
-	   (define new-e ((send this select-instructions) e))
+           (define new-lhs (recur lhs))
+	   (define new-e (recur e))
 	   `((movq ,new-e ,new-lhs)
 	     (andq (int ,any-mask) ,new-lhs)
 	     (if (eq? ,new-lhs (int ,(any-tag ty)))
 		 ((andq (int ,pointer-mask) ,new-lhs)
 		  (if (eq? ,new-lhs (int ,pointer-mask))
-		      ;; vectors and procedures. This needs work to handle length and arity. -Jeremy
+		      ;; vectors and procedures.
+		      ;; To do: check length and arity. -Jeremy
 		      ((movq (int ,any-mask) ,new-lhs)
 		       (notq ,new-lhs)
 		       (andq  ,new-e ,new-lhs))
@@ -101,15 +160,59 @@
 		       (sarq (int 2) ,new-lhs))
 		      ))
 		 ((callq ,(label-name "exit")))))]
-	  [`(assign ,lhs (,pred ,e)) #:when (set-member pred type-predicates)
-           (define new-lhs ((send this select-instructions) lhs))
-	   (define new-e ((send this select-instructions) e))
+	  [`(assign ,lhs (,pred ,e)) #:when (set-member? type-predicates pred)
+           (define new-lhs (recur lhs))
+	   (define new-e (recur e))
 	   `((movq ,new-e ,new-lhs)
 	     (andq (int ,any-mask) ,new-lhs)
 	     (cmpq ,(pred->tag pred) ,new-lhs)
 	     (sete (byte-reg al))
 	     (movzbq (byte-reg al) ,new-lhs))]
-	  [else ((super select-instructions) e)]
+	  [else ((super select-instructions rootstack) e)]
 	  )))
     
     ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Passes
+(define R6-typechecker
+  (let ([compiler (new compile-R6)])
+    (send compiler type-check '())))
+(define R6-passes
+  (let ([compiler (new compile-R6)]
+        [interp (new interp-R6)])
+    `(
+      ;("type-check" ,(send compiler type-check '())
+      ; ,(send interp interp-scheme '()))
+      ("uniquify" ,(send compiler uniquify '())
+       ,(send interp interp-scheme '()))
+      ("reveal-functions" ,(send compiler reveal-functions '())
+       ,(send interp interp-scheme '()))
+      ("convert-to-closures" ,(send compiler convert-to-closures)
+       ,(send interp interp-scheme '()))
+      ("flatten" ,(send compiler flatten #f)
+       ,(send interp interp-C '()))
+      ("expose allocation"
+       ,(send compiler expose-allocation)
+       ,(send interp interp-C '()))
+      ("uncover call live roots"
+       ,(send compiler uncover-call-live-roots)
+       ,(send interp interp-C '()))
+      ("instruction selection" ,(send compiler select-instructions)
+       ,(send interp interp-x86 '()))
+      ("liveness analysis" ,(send compiler uncover-live (void))
+       ,(send interp interp-x86 '()))
+      ("build interference" ,(send compiler build-interference
+                                   (void) (void))
+       ,(send interp interp-x86 '()))
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
+       ,(send interp interp-x86 '()))
+      ("allocate registers" ,(send compiler allocate-registers)
+       ,(send interp interp-x86 '()))
+      ("lower conditionals" ,(send compiler lower-conditionals)
+       ,(send interp interp-x86 '()))
+      ("patch instructions" ,(send compiler patch-instructions)
+       ,(send interp interp-x86 '()))
+      ("print x86" ,(send compiler print-x86) #f)
+      )))

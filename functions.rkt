@@ -136,6 +136,7 @@
 
     (define/override (flatten need-atomic)
       (lambda (ast)
+	(verbose "flatten" ast)
 	(match ast
           [`(program (type ,ty) ,ds ... ,body)
            (define-values (locals new-body) (flatten-body body))

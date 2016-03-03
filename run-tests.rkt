@@ -6,6 +6,7 @@
 (require "vectors.rkt")
 (require "functions.rkt")
 (require "lambda.rkt")
+(require "dynamic-typing.rkt")
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
@@ -26,6 +27,7 @@
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
     ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
     ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
+    ;("any"          ,R6-typechecker           ,R6-passes           (0 1 2 3 4 6))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))
@@ -37,7 +39,9 @@
     (1 . ,(range 1 32))
     (2 . ,(range 1 19))
     (3 . ,(range 1 20))
-    (4 . ,(range 0 7))))
+    (4 . ,(range 0 7))
+    (6 . ,(range 0 1))
+    ))
 
 (define (suite-range x)
   (let ([r? (assoc x suite-list)])

@@ -158,50 +158,49 @@
                                       ,(append els-ss (list els-ret)))))))])]
           [other (error 'flatten-if "unmatched ~a" other)])))
     
-    ;; Flatten is reimplemented without dispatch because it has to reason about inserting
-    ;; new type annotations when breaking up expressions into statements.
-    ;;
-    ;; What does the above comment mean? -Jeremy
     (define/override (flatten need-atomic)
       (lambda (e)
-        (vomit "flatten" e)
+        (verbose "flatten" e)
 	(match e
-          [`(has-type ,e ,t)
-           (match e
-             [(or (? symbol?) (? integer?) (? boolean?))
-              (values `(has-type ,e ,t) '())]
-             [`(let ([,x ,e]) ,body)
-              (define-values (new-e e-ss) ((send this flatten #f) e))
-              (define-values (new-body body-ss)
-                ((send this flatten need-atomic) body))
-              (values new-body (append e-ss `((assign ,x ,new-e)) body-ss))]
-             [`(and ,e1 ,e2)
-              (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
-              (define-values (new-e2 e2-ss) ((send this flatten #f) e2))
-              (define tmp (gensym 'and))
-              (values `(has-type ,tmp ,t)
-                      (append e1-ss
-                              `((if (eq? (has-type #t Boolean) ,new-e1)
-                                    ,(append e2-ss `((assign ,tmp ,new-e2)))
-                                    ((assign ,tmp (has-type #f Boolean)))))))]
-             [`(if ,cnd ,thn ,els)
-              (define-values (new-thn thn-ss) ((send this flatten #t) thn))
-	      (define-values (new-els els-ss) ((send this flatten #t) els))
-	      ((flatten-if new-thn #;`(has-type ,new-thn ,t) thn-ss
-			   new-els #;`(has-type ,new-els ,t) els-ss
-			   )
-	       cnd)]
-             [`(,op ,es ...) #:when (set-member? (send this primitives) op)
-              (define-values (new-es sss) (map2 (send this flatten #t) es))
-              (define ss (append* sss))
-              (define prim-apply `(,op ,@new-es))
-              (cond
-                [need-atomic
-                 (define tmp (gensym 'tmp))
-                 (values `(has-type ,tmp ,t)
-                         (append ss `((assign ,tmp (has-type ,prim-apply ,t)))))]
-                [else (values `(has-type ,prim-apply ,t) ss)])]
-             [else (error 'conditionals/flatten "unmatched ~a" e)])]
+	  ;; For atomic stuff, we keep the has-type annotation. -Jeremy
+	  [`(has-type ,e ,t) #:when (or (symbol? e) (integer? e) (boolean? e))
+	   (values `(has-type ,e ,t) '())]
+
+	  ;; We override 'and' to place has-type's around the #t and #f
+	  ;; in the generated code. -Jeremy
+	  [`(has-type (and ,e1 ,e2) ,t)
+	   (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
+	   (define-values (new-e2 e2-ss) ((send this flatten #f) e2))
+	   (define tmp (gensym 'and))
+	   (values `(has-type ,tmp ,t)
+		   (append e1-ss
+			   `((if (eq? (has-type #t Boolean) ,new-e1)
+				 ,(append e2-ss `((assign ,tmp ,new-e2)))
+				 ((assign ,tmp (has-type #f Boolean)))))))]
+
+          ;; We override flattening for op's because we
+	  ;; need to put a has-type on the LHS of the assign. -Jeremy
+          [`(has-type (,op ,es ...) ,t)
+	   #:when (set-member? (send this primitives) op)
+	   (define-values (new-es sss) (map2 (send this flatten #t) es))
+	   (define ss (append* sss))
+	   (define prim-apply `(,op ,@new-es))
+	   (cond
+	    [need-atomic
+	     (define tmp (gensym 'tmp))
+	     (values `(has-type ,tmp ,t)
+		     (append ss `((assign ,tmp (has-type ,prim-apply ,t)))))]
+	    [else (values `(has-type ,prim-apply ,t) ss)])]
+
+	  ;; For 'let' we just need to strip the enclosing has-type. -Jeremy
+          [`(has-type (let ([,x ,e]) ,body) ,t)
+	   ((send this flatten need-atomic) `(let ([,x ,e]) ,body))]
+
+	  [`(has-type (if ,cnd ,thn ,els) ,t)
+	   (define-values (new-thn thn-ss) ((send this flatten #t) thn))
+	   (define-values (new-els els-ss) ((send this flatten #t) els))
+	   ((flatten-if new-thn thn-ss new-els els-ss) cnd)]
+
           [`(program ,e)
               (define-values (new-e ss) ((send this flatten #t) e))
               (define xs (append* (map (send this collect-locals) ss)))
@@ -210,7 +209,7 @@
            (define-values (new-e ss) ((send this flatten #t) e))
            (define xs (append* (map (send this collect-locals) ss)))
            `(program ,(remove-duplicates xs) (type ,ty) ,@(append ss `((return ,new-e))))]
-          [other (error 'conditionals/flatten "unmatched ~a" other)])))
+          [else ((super flatten need-atomic) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S1 -> S1

@@ -44,6 +44,7 @@
 
     (define/public (flatten need-atomic)
       (lambda (e)
+        (verbose "flatten" e)
         (match e
            [(? symbol?) (values e '())]
 	   [(? integer?) (values e '())]
@@ -128,7 +129,7 @@
 	   [`(program ,locals ,ss ...)
 	    (let ([new-ss (map (send this select-instructions) ss)])
 	      `(program ,locals ,@(append* new-ss)))]
-	   [else (error "instruction selection, unmatched " e)])))
+	   [else (error "R0/instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86

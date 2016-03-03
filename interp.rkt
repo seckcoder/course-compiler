@@ -1,19 +1,20 @@
 #lang racket
 (require racket/fixnum)
 (require "utilities.rkt" (prefix-in runtime-config: "runtime-config.rkt"))
-(provide interp-scheme interp-C interp-x86 interp-R0 interp-R1 interp-R2 interp-R3 interp-R4 )
+(provide interp-scheme interp-C interp-x86 interp-R0 interp-R1 interp-R2 interp-R3
+	 interp-R4 interp-R6)
 
 (define interp-scheme
   (lambda (p)
-    ((send (new interp-R4) interp-scheme '()) p)))
+    ((send (new interp-R6) interp-scheme '()) p)))
 
 (define interp-C
   (lambda (p)
-    ((send (new interp-R4) interp-C '()) p)))
+    ((send (new interp-R6) interp-C '()) p)))
 
 (define interp-x86
   (lambda (p)
-    ((send (new interp-R4) interp-x86 '()) p)))
+    ((send (new interp-R6) interp-x86 '()) p)))
 
 ;; This (dynamically scoped) parameter is used for goto
 (define program (make-parameter '()))
@@ -41,7 +42,7 @@
 
     (define/public (interp-scheme env)
       (lambda (ast)
-        (vomit "R0/interp-scheme" ast env)
+        (verbose "R0/interp-scheme" ast)
 	(match ast
            [(? symbol?)
 	    (lookup ast env)]
@@ -200,9 +201,9 @@
 
     (define/override (interp-scheme env)
       (lambda (ast)
-        (vomit "R1/interp-scheme" env)
+        (verbose "R1/interp-scheme" ast)
 	(match ast
-          [`(has-type ,e ,t) ((interp-scheme env) e)]
+          [`(has-type ,e ,t) ((send this interp-scheme env) e)]
           [#t #t]
           [#f #f]
           [`(and ,e1 ,e2)
@@ -660,13 +661,12 @@
 
     (define/public (non-apply-ast)
       (set-union (send this primitives)
-		 (set 'if 'let 'define 'program)))
+		 (set 'if 'let 'define 'program 'has-type)))
 
     (define/override (interp-scheme env)
       (lambda (ast)
-        (vomit "R3/interp-scheme" ast env)
+        (verbose "R3/interp-scheme" ast)
         (match ast
-          [`(has-type ,e ,t) ((interp-scheme env) e)]
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
            (cons f `(lambda ,xs ,body))]
           [`(function-ref ,f)
@@ -796,7 +796,7 @@
     
     (define/override (interp-scheme env)
       (lambda (ast)
-        (verbose "R4/interp-scheme" ast env)
+        (verbose "R4/interp-scheme" ast)
 	(match ast
           [`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
            `(lambda ,xs ,body ,env)]
@@ -823,4 +823,53 @@
           [else ((super interp-scheme env) ast)]))))) ;; end interp-R4
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interpreters for R6: type Any and inject/project
  
+(define interp-R6
+  (class interp-R4
+    (super-new)
+    (inherit-field result)
+    
+    (define/override (interp-op op)
+      (match op
+         ['boolean? (lambda (v)
+		      (match v
+			 [`(inject ,v1 Boolean) #t]
+			 [else #f]))]
+	 ['integer? (lambda (v)
+		      (match v
+			 [`(inject ,v1 Integer) #t]
+			 [else #f]))]
+	 ['vector? (lambda (v)
+		      (match v
+			 [`(inject ,v1 (Vector ,ts ...)) #t]
+			 [else #f]))]
+	 ['procedure? (lambda (v)
+		      (match v
+			 [`(inject ,v1 (,ts ... -> ,rt)) #t]
+			 [else #f]))]
+	 [else (super interp-op op)]
+	 ))
+
+    (define/override (interp-scheme env)
+      (lambda (ast)
+        (verbose "R6/interp-scheme" ast)
+	(match ast
+          [`(inject ,e ,t)
+	   `(inject ,((send this interp-scheme env) e) ,t)]
+	  [`(project ,e ,t2)
+	   (define v ((send this interp-scheme env) e))
+	   (match v
+	      [`(inject ,v1 ,t1)
+	       (cond [(equal? t1 t2)
+		      v1]
+		     [else
+		      (error "in project, type mismatch" t1 t2)])]
+	      [else
+	       (error "in project, expected injected value" v)])]
+	  [else 
+	   ((super interp-scheme env) ast)]
+	  )))
+
+    ))

@@ -51,6 +51,8 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; convert-to-closures : env -> S4 -> S3
 
+    ;; The returned hash table maps variable x to (has-type x t). -Jeremy
+
     ;; free-variable : expr -> (immutable-hash id expr)
     (define/public (free-variables e)
       (define (recur e) (send this free-variables e))

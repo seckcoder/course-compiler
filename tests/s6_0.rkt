@@ -1,0 +1,1 @@
+(project (inject 42 Integer) Integer)
