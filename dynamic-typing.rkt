@@ -100,6 +100,16 @@
 	  )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-call-live-roots
+
+    (define/override (uncover-call-live-roots-exp e)
+      (vomit "any/uncover-call-live-roots-exp" e)
+      (match e 
+        [`(inject ,e ,ty) (uncover-call-live-roots-exp e)]
+        [`(project ,e ,ty) (uncover-call-live-roots-exp e)]
+        [else (super uncover-call-live-roots-exp e)]))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions
 
     (define (any-tag ty)
@@ -138,7 +148,7 @@
 	   (cond [(or (equal? ty 'Integer) (equal? ty 'Boolean))
 		  `((movq ,new-e ,new-lhs)
 		    (salq (int 2) ,new-lhs)
-		    (orq (int ,(any-tag ty)) new-lhs))]
+		    (orq (int ,(any-tag ty)) ,new-lhs))]
 		 [else
 		  `((movq ,new-e ,new-lhs)
 		    (orq (int ,(any-tag ty)) new-lhs))])]

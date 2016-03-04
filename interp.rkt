@@ -784,7 +784,9 @@
 	       (define env (map (send this interp-x86 '()) ds))
 	       (define result-env ((send this interp-x86 env) ss))
 	       (lookup 'rax result-env))]
-	   [else ((super interp-x86 env) ast)]))))) ;; end  interp-R3
+	   [else ((super interp-x86 env) ast)])))
+
+    )) ;; end  interp-R3
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for S4: lambda
@@ -872,4 +874,31 @@
 	   ((super interp-scheme env) ast)]
 	  )))
 
-    ))
+    (define/override (interp-C env)
+      (lambda (ast)
+	(verbose "R6/interp-C" ast)
+	(match ast
+          [`(inject ,e ,t)
+	   `(inject ,((send this interp-C env) e) ,t)]
+	  [`(project ,e ,t2)
+	   (define v ((send this interp-C env) e))
+	   (match v
+	      [`(inject ,v1 ,t1)
+	       (cond [(equal? t1 t2)
+		      v1]
+		     [else
+		      (error "in project, type mismatch" t1 t2)])]
+	      [else
+	       (error "in project, expected injected value" v)])]
+	  [else 
+	   ((super interp-C env) ast)]
+	  )))
+
+    (inherit-field x86-ops)
+    (set! x86-ops (hash-set* x86-ops
+                   'orq `(2 ,bitwise-ior)
+                   'salq `(2 ,arithmetic-shift)
+                   'sarq `(2 ,(lambda (n v) (arithmetic-shift (- n) v)))
+		   ))
+
+    )) ;; interp-R6
