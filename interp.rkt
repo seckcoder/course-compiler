@@ -818,6 +818,11 @@
     (super-new)
     (inherit-field result)
     
+
+    (define/override (primitives)
+      (set-union (super primitives) 
+		 (set 'boolean? 'integer? 'vector? 'procedure?)))
+
     (define/override (interp-op op)
       (match op
          ['boolean? (lambda (v)
