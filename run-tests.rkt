@@ -27,7 +27,7 @@
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
     ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
     ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
-    ;("any"          ,R6-typechecker           ,R6-passes           (0 1 2 3 4 6))
+    ("any"          ,R6-typechecker           ,R6-passes           (0 1 2 3 4 6))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))

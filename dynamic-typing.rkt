@@ -169,7 +169,7 @@
 		      ((movq ,new-e ,new-lhs)
 		       (sarq (int 2) ,new-lhs))
 		      ))
-		 ((callq ,(label-name "exit")))))]
+		 ((callq ,(string->symbol (label-name 'exit))))))]
 	  [`(assign ,lhs (,pred ,e)) #:when (set-member? type-predicates pred)
            (define new-lhs (recur lhs))
 	   (define new-e (recur e))
@@ -181,6 +181,23 @@
 	  [else ((super select-instructions rootstack) e)]
 	  )))
     
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uncover-live
+
+    (define/override (read-vars instr)
+      (match instr
+        [(or `(sarq ,s ,d) `(salq ,s ,d))
+         (set-union (send this free-vars s) (send this free-vars d))]
+        [else (super read-vars instr)]
+	))
+
+    (define/override (write-vars instr)
+      (match instr
+        [(or `(sarq ,s ,d) `(salq ,s ,d)) 
+         (send this free-vars d)]
+        [else (super write-vars instr)]))
+	
+
     ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

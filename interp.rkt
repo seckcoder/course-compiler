@@ -90,7 +90,7 @@
            (define env ((send this seq-C '()) ss))
            (lookup result env)]
           [`(,op ,args ...) #:when (set-member? (send this primitives) op)
-                            (apply (interp-op op) (map (send this interp-C env) args))]
+	   (apply (interp-op op) (map (send this interp-C env) args))]
           [else
            (error "no match in interp-C0 for " ast)]
           )))
@@ -122,6 +122,7 @@
 
     (define/public (interp-x86-exp env)
       (lambda (ast)
+        (vomit "interp-x86-exp" ast)
 	(match ast
 	   [(or `(var ,x) `(reg ,x) `(stack ,x))
             (lookup x env)]
@@ -137,23 +138,6 @@
 	   ['() env]
 	   [`((callq read_int) . ,ss) 
 	    ((send this interp-x86 (cons (cons 'rax (read)) env)) ss)]
-           #|
-           [`((callq malloc) . ,ss)
-	    (define num-bytes ((send this interp-x86-exp env) '(reg rdi)))
-	    (define vec (make-vector (/ num-bytes 8)))
-	    (define new-env (cons (cons 'rax vec) env))
-	    ((send this interp-x86 new-env) ss)]
-          
-           [`((callq alloc) . ,ss)
-	    (define num-bytes ((send this interp-x86-exp env) '(reg rdi)))
-	    (define vec (make-vector (/ num-bytes 8)))
-	    (define new-env (cons (cons 'rax vec) env))
-	    ((send this interp-x86 new-env) ss)]
-           [`((callq initialize) . ,ss)
-            ;; Could do some work here if we decide to lower the
-            ;; representation of vectors for this interpreter. 
-            ((send this interp-x86 env) ss)]
-	   |#
            [`((movq ,s ,d) . ,ss)
             (define x (send this get-name d))
 	    (define v ((send this interp-x86-exp env) s))
@@ -166,7 +150,7 @@
 		  [d ((send this interp-x86-exp env) d)]
                   [x (send this get-name d)]
 		  [f (send this interp-x86-op binary-op)])
-              ((send this interp-x86 (cons (cons x (f d s)) env)) ss))]
+	      ((send this interp-x86 (cons (cons x (f d s)) env)) ss))]
 	   [`((,unary-op ,d) . ,ss)
 	    (let ([d ((send this interp-x86-exp env) d)]
 		  [x (send this get-name d)]
@@ -271,6 +255,7 @@
 
     (define/override (interp-x86-exp env)
       (lambda (ast)
+        (vomit "interp-x86-exp" ast)
 	(match ast
           [`(byte-reg ,r)
            ((send this interp-x86-exp env) `(reg ,(byte2full-reg r)))]
@@ -897,8 +882,8 @@
     (inherit-field x86-ops)
     (set! x86-ops (hash-set* x86-ops
                    'orq `(2 ,bitwise-ior)
-                   'salq `(2 ,arithmetic-shift)
-                   'sarq `(2 ,(lambda (n v) (arithmetic-shift (- n) v)))
+                   'salq `(2 ,(lambda (n v) (arithmetic-shift v n)))
+                   'sarq `(2 ,(lambda (n v) (arithmetic-shift v (- n))))
 		   ))
 
     )) ;; interp-R6

@@ -302,6 +302,7 @@
      				    (send this free-vars s2))]
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d))
          (set-union (send this free-vars s) (send this free-vars d))]
+	[`(notq ,d) (send this free-vars d)]
         [`(sete ,d) (set)]
         [else (super read-vars instr)]))
     
@@ -311,6 +312,7 @@
         [`(cmpq ,s1 ,s2) (set '__flag)]
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
          (send this free-vars d)]
+	[`(notq ,d) (send this free-vars d)]
         [`(sete ,d) (send this free-vars d)]
         [else (super write-vars instr)]))
 
