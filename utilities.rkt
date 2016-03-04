@@ -410,7 +410,8 @@
   (define (handler e)
     (vomit "test-typecheck" tcer exp e)
     (when (at-debug-level? 1)
-      (display (exn-message e)))
+	  (display (exn-message e))
+	  (newline)(newline))
     #f)
   (if (eq? tcer #f)
       exp

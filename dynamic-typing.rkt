@@ -72,6 +72,17 @@
 	   `(project ,(recur e) ,t)]
           [else ((super reveal-functions funs) e)])))
 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; convert-to-closures
+
+    (define/override (free-variables e)
+      (define (recur e) (send this free-variables e))
+      (match e
+        [(or `(inject ,e ,ty) `(project ,e ,ty))
+	 (recur e)]
+	[else (super free-variables e)]
+	))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten
 
@@ -151,7 +162,7 @@
 		    (orq (int ,(any-tag ty)) ,new-lhs))]
 		 [else
 		  `((movq ,new-e ,new-lhs)
-		    (orq (int ,(any-tag ty)) new-lhs))])]
+		    (orq (int ,(any-tag ty)) ,new-lhs))])]
           [`(assign ,lhs (project ,e ,ty))
            (define new-lhs (recur lhs))
 	   (define new-e (recur e))

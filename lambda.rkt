@@ -74,7 +74,7 @@
 	 (apply hash-union (map recur es))]
 	[`(,op ,es ...)
 	 (apply hash-union (map recur es))]
-        [else (error 'free-vars "unmatched ~a" e)]))
+        [else (error 'free-variables "unmatched ~a" e)]))
 
     (define (convert-fun-body fvs-id free-vars body rt)
       (let loop ([xs free-vars] [i 1])
