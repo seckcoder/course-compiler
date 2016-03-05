@@ -149,9 +149,9 @@
       (set-union (super instructions)
 		 (set 'salq 'sarq)))
 
-    (define/override (select-instructions [rootstack #t])
+    (define/override (select-instructions)
       (lambda (e)
-	(define recur (send this select-instructions rootstack))
+	(define recur (send this select-instructions))
 	(match e
           [`(assign ,lhs (inject ,e ,ty))
            (define new-lhs (recur lhs))
@@ -189,7 +189,7 @@
 	     (cmpq (int ,(pred->tag pred)) ,new-lhs)
 	     (sete (byte-reg al))
 	     (movzbq (byte-reg al) ,new-lhs))]
-	  [else ((super select-instructions rootstack) e)]
+	  [else ((super select-instructions) e)]
 	  )))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

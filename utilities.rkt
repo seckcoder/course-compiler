@@ -12,7 +12,7 @@
 	 make-graph add-edge adjacent vertices print-dot
          use-minimal-set-of-registers!
 	 general-registers registers-for-alloc caller-save callee-save
-	 arg-registers register->color registers align
+	 arg-registers rootstack-reg register->color registers align
          byte-reg->full-reg print-by-type)
 
 ;; debug state is a nonnegative integer.
@@ -451,16 +451,17 @@
 ;; December 2, 2003
 
 ;; We reserve rax and r11 for patching instructions.
-;; There are 12 other general registers:
+;; We reserve r15 for the rootstack pointer. 
+(define rootstack-reg 'r15)
+;; There are 11 other general registers:
 (define general-registers (vector 'rbx 'rcx 'rdx 'rsi 'rdi
     				  'r8 'r9 'r10 'r12 
-				  'r13 'r14 'r15))
+				  'r13 'r14))
 
 (define arg-registers (void))
 (define registers-for-alloc (void))
 
 ;; registers-for-alloc should always inlcude the arg-registers.
-;;  -Jeremy 
 (define (use-minimal-set-of-registers! f)
   (if f
       (begin
@@ -472,8 +473,10 @@
 
 (use-minimal-set-of-registers! #f)
 
-(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10 'r11))
-(define callee-save (set 'rbx 'r12 'r13 'r14 'r15))
+;; We don't need to include the reserved registers
+;; in the list of caller or callee save registers.
+(define caller-save (set 'rdx 'rcx 'rsi 'rdi 'r8 'r9 'r10))
+(define callee-save (set 'rbx 'r12 'r13 'r14))
 
 
 
@@ -493,16 +496,16 @@
 ;; The numbers here correspond to indices in the general-registers
 ;; and registers-for-alloc.
 (define reg-colors
-  '((rax . -1) (r11 . -2) (__flag . -1)
+  '((rax . -1) (r11 . -2) (r15 . -3) (__flag . -1)
     (rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
     (r8 . 5) (r9 . 6) (r10 . 7) (r12 . 8) (r13 . 9)
-    (r14 . 10) (r15 . 11)))
+    (r14 . 10)))
 
 (define (register->color r)
   (cdr (assq r reg-colors)))
 
 (define registers (set-union (list->set (vector->list general-registers))
-			     (set 'rax 'r11 'rsp 'rbp '__flag)))
+			     (set 'rax 'r11 'r15 'rsp 'rbp '__flag)))
 
 (define (align n alignment)
   (cond [(eq? 0 (modulo n alignment))

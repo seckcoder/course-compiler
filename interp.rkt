@@ -110,7 +110,7 @@
 
     (field [x86-ops (make-immutable-hash
                      `((addq 2 ,+)
-                       (subq 2 ,-)
+                       (subq 2 ,(lambda (s d) (- d s)))
                        (negq 1 ,-)))])
     
     (define/public (interp-x86-op op)

@@ -104,7 +104,7 @@
                      ())
                  (assign ,lhs (has-type (allocate ,len) ,t))
                  ,@inits)]
-              [otherwise (error 'expose-allocation "vector type invarient ~a" t)])]
+              [else (error 'expose-allocation "vector type invarient ~a" t)])]
            [e (list stmt)])]
         [`(if ,t ,(app expose-allocation-seq c) ,(app expose-allocation-seq a))
          `((if ,t ,c ,a))]
@@ -114,7 +114,6 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots : C1-Expr  -> C1-Expr x (set id)
 
-        
     (define/public (uncover-call-live-roots)
       (lambda (x)
         (vomit "uncover call live roots" x)
@@ -239,15 +238,12 @@
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; select-instructions : C2 -> psuedo-x86
 
-  (define/override (select-instructions [rs-var 'Unknown])
-    (define (known-invariant rs-var x)
-      (when (eq? 'Unkown rs-var)
-        (error 'select-instructions "known invariant broken ~a" x)))
+  (define/override (select-instructions)
     (lambda (x)
-      (vomit "select instructions" x vars)
+      (vomit "select instructions" x)
       (match x
         [`(assign ,lhs (has-type (allocate ,length) (Vector ,ts ...)))
-         (define lhs^ ((select-instructions rs-var) lhs))
+         (define lhs^ ((select-instructions) lhs))
          ;; Add one quad word for the meta info tag
          (define size (* (add1 length) 8))
          ;;highest 7 bits are unused
@@ -267,34 +263,33 @@
            (movq (int ,tag) (offset (reg r11) 0)))]        
         [`(call-live-roots (,clr* ...) . ,ss)
          (if (null? clr*)
-             (append* (map (select-instructions rs-var) ss))
-             (let ([rs-var^ (unique-var 'rootstack)]
-                   [frame-size  (* (length clr*) 8)]
+             (append* (map (select-instructions) ss))
+             (let ([frame-size  (* (length clr*) 8)]
                    [pushes
                     (for/list ([root (in-list clr*)] [i (in-naturals)])
-                      `(movq (var ,root) (offset (var ,rs-var) ,(* i 8))))]
+                      `(movq (var ,root) (offset (reg ,rootstack-reg)
+						 ,(* i 8))))]
                    [pops
                     (for/list ([root (in-list clr*)] [i (in-naturals)])
-                      `(movq (offset (var ,rs-var) ,(* i 8)) (var ,root)))])
+                      `(movq (offset (reg ,rootstack-reg)
+				     ,(* i 8)) (var ,root)))])
                `(,@pushes
-                 (movq (var ,rs-var) (var ,rs-var^))
-                 (addq (int ,frame-size) (var ,rs-var^))
-                 ,@(append* (map (select-instructions rs-var^) ss))
+                 (addq (int ,frame-size) (reg ,rootstack-reg))
+                 ,@(append* (map (select-instructions) ss))
+                 (subq (int ,frame-size) (reg ,rootstack-reg))		 
                  ,@pops)))]
         [`(initialize ,s ,h)
-         (known-invariant rs-var x)
          `((movq (int ,s) (reg rdi))
            (movq (int ,h) (reg rsi))
            (callq initialize)
-           (movq (global-value rootstack_begin) (var ,rs-var)))]
+           (movq (global-value rootstack_begin) (reg ,rootstack-reg)))]
         [`(collect ,size)
-         (known-invariant rs-var x)
-         `((movq (var ,rs-var) (reg rdi))
-           (movq ,((select-instructions rs-var) size) (reg rsi))
+         `((movq (reg ,rootstack-reg) (reg rdi))
+           (movq ,((select-instructions) size) (reg rsi))
            (callq collect))]
         [`(if (has-type (collection-needed? ,size) Boolean) ,cs ,as)
-         (define cs^  (append* (map (select-instructions rs-var) cs)))
-         (define as^  (append* (map (select-instructions rs-var) as)))
+         (define cs^  (append* (map (select-instructions) cs)))
+         (define as^  (append* (map (select-instructions) as)))
          (define data (unique-var 'end-data))
          (define lt   (unique-var 'lt))
          ;;cmp arg2, arg1 GAS Syntax
@@ -310,36 +305,35 @@
            (if (eq? (int 0) (var ,lt)) ,cs^ ,as^))]
         [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer))) 
          ;; We should try to do this in patch instructions
-         (define lhs^ ((select-instructions rs-var) lhs))
-         (define e-vec^ ((select-instructions rs-var) e-vec))
+         (define lhs^ ((select-instructions) lhs))
+         (define e-vec^ ((select-instructions) e-vec))
          `((movq ,e-vec^ (reg r11))
 	   (movq (offset (reg r11) ,(* (add1 i) 8)) ,lhs^))]
         [`(assign ,lhs (vector-set! ,e-vec (has-type ,i ,Integer) ,e-arg))
-         (define new-lhs ((select-instructions rs-var) lhs))
-         (define new-e-vec ((select-instructions rs-var) e-vec))
-         (define new-e-arg ((select-instructions rs-var) e-arg))
+         (define new-lhs ((select-instructions) lhs))
+         (define new-e-vec ((select-instructions) e-vec))
+         (define new-e-arg ((select-instructions) e-arg))
          `((movq ,new-e-vec (reg r11))
 	   (movq ,new-e-arg (offset (reg r11) ,(* (add1 i) 8))))]
         ;; If has to be overridden because it needs to propagate
         [`(if ,cnd ,thn-ss ,els-ss)
-         (let ([cnd ((select-instructions rs-var) cnd)]
-               [thn-ss (append* (map (select-instructions rs-var) thn-ss))]
-               [els-ss (append* (map (select-instructions rs-var) els-ss))])
+         (let ([cnd ((select-instructions) cnd)]
+               [thn-ss (append* (map (select-instructions) thn-ss))]
+               [els-ss (append* (map (select-instructions) els-ss))])
            `((if ,cnd ,thn-ss ,els-ss)))]
         [`(program ,xs (type ,ty) . ,ss)
-         (define rs-var (gensym 'rootstack))
-         (define ss^ (append* (map (select-instructions rs-var) ss)))
-         `(program ,(cons rs-var (append (reset-vars) xs)) (type ,ty) ,@ss^)]
-        [otherwise ((super select-instructions) otherwise)])))
+         (define ss^ (append* (map (select-instructions) ss)))
+         `(program ,(append (reset-vars) xs) (type ,ty) ,@ss^)]
+        [else ((super select-instructions) x)])))
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; uncover-live
   (define/override (free-vars a)
     (match a
-    [`(global-value ,l) (set)]
-    [`(offset ,e ,i) (send this free-vars e)]
-    [else (super free-vars a)]
-    ))
+       [`(global-value ,l) (set)]
+       [`(offset ,e ,i) (send this free-vars e)]
+       [else (super free-vars a)]
+       ))
 
   (define/override (write-vars x)
     (match x
@@ -418,7 +412,7 @@
        ,(send compiler uncover-call-live-roots)
        ,(send interp interp-C '()))
       ("instruction selection"
-       ,(send compiler select-instructions 'rootstack)
+       ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
       ("liveness analysis" ,(send compiler uncover-live (void))
        ,(send interp interp-x86 '()))

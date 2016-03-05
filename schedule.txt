@@ -26,14 +26,29 @@ April
 ---------------------------------------------
 4 due: Type Dynamic, Dynamic Typing (2 weeks)
 
+
+
+
 Student Projects
 
   ideas:
   * basic blocks and optimize jumps
-  * continuations
-  * procedure inlining, etc.
-  * LLVM
-  * other back ends (ARM)
+  * continuations, exceptions
+  * high-level optimizations like procedure inlining, etc.
+  * alternative back ends (ARM, LLVM)
+  * lazy evaluation
+  * gradual typing
+  * self hosting
+  * tail call optimization
+  * I/O
+  * foreign function interface
+  * quasi-quote and unquote
+  * macros (perhaps too difficult?)
+  * alternative garbage collector
+  * alternative register allocator
+  * parametric polymorphism
+  * type classes (perhaps too difficulty?)
+
 
 25 projects due
 25-29: Student Presentations

@@ -248,66 +248,59 @@
 
     (define max-stack 0)
 
-    (define/override ((select-instructions [rootstack #f]) e)
+    (define/override ((select-instructions) e)
       (vomit "select" e)
       (match e
         [`(define (,f [,xs : ,ps] ...) : ,rt ,locals ,ss ...)
          (set! max-stack 0)
          (define n (vector-length arg-registers))
-         (define rootstack (gensym 'rootstack))
-         (let ([xs (cons rootstack xs)])
-           ;; move from registers and stack locations to parameters
-           (define-values (first-params last-params) 
-             (cond[(> (length xs) n) (split-at xs n)]
-                  [else (values xs '())]))
-           (define mov-regs
-             (for/list ([param first-params] [r arg-registers])
-               `(movq (reg ,r) (var ,param))))
-           (define mov-stack
-             (for/list ([param last-params] 
-                        [i (in-range 0 (length last-params))])
-               `(movq (stack ,(- (+ 16 (* i 8)))) (var ,param))))
-           (define new-ss
-             (append mov-stack mov-regs
-                     (append* (map (select-instructions rootstack) ss))))
-           ;; parameters become locals
-           `(define (,f) ,(length xs) (,(append xs (reset-vars) locals) ,max-stack)
-              ,@new-ss))]
+	 ;; move from registers and stack locations to parameters
+	 (define-values (first-params last-params) 
+	   (cond[(> (length xs) n) (split-at xs n)]
+		[else (values xs '())]))
+	 (define mov-regs
+	   (for/list ([param first-params] [r arg-registers])
+		     `(movq (reg ,r) (var ,param))))
+	 (define mov-stack
+	   (for/list ([param last-params] 
+		      [i (in-range 0 (length last-params))])
+		     `(movq (stack ,(- (+ 16 (* i 8)))) (var ,param))))
+	 (define new-ss
+	   (append mov-stack mov-regs
+		   (append* (map (select-instructions) ss))))
+	 ;; parameters become locals
+	 `(define (,f) ,(length xs) (,(append xs (reset-vars) locals) ,max-stack)
+	    ,@new-ss)]
         [`(assign ,lhs (has-type (function-ref ,f) ,t))
-         (define new-lhs ((select-instructions rootstack) lhs))
+         (define new-lhs ((select-instructions) lhs))
          `((leaq (function-ref ,f) ,new-lhs))]
         [`(assign ,lhs (has-type (app ,f ,es ...) ,t))
-         (unless rootstack
-           (error 'app "no rootstack"))
-         (let ([es (cons rootstack es)])
-           (define new-lhs ((select-instructions rootstack) lhs))
-           (define new-f ((select-instructions rootstack) f))
-           (define new-es (map (select-instructions rootstack) es))
-           (define n (vector-length arg-registers))
-           (define-values (first-args last-args) 
-             (cond[(> (length new-es) n) (split-at new-es n)]
-                  [else (values new-es '())]))
-           (define mov-regs
-             (for/list ([arg first-args] [r arg-registers])
-               `(movq ,arg (reg ,r))))
-           (define mov-stack
-             (for/list ([arg last-args] [i (in-range 0 (length last-args))])
-               `(movq ,arg (stack-arg ,(* i 8)))))
-           (set! max-stack (max max-stack (length last-args)))
-           (append mov-stack mov-regs
-                   `((indirect-callq ,new-f) (movq (reg rax) ,new-lhs))))]
+	 (define new-lhs ((select-instructions) lhs))
+	 (define new-f ((select-instructions) f))
+	 (define new-es (map (select-instructions) es))
+	 (define n (vector-length arg-registers))
+	 (define-values (first-args last-args) 
+	   (cond[(> (length new-es) n) (split-at new-es n)]
+		[else (values new-es '())]))
+	 (define mov-regs
+	   (for/list ([arg first-args] [r arg-registers])
+		     `(movq ,arg (reg ,r))))
+	 (define mov-stack
+	   (for/list ([arg last-args] [i (in-range 0 (length last-args))])
+		     `(movq ,arg (stack-arg ,(* i 8)))))
+	 (set! max-stack (max max-stack (length last-args)))
+	 (append mov-stack mov-regs
+		 `((indirect-callq ,new-f) (movq (reg rax) ,new-lhs)))]
         [`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
-         (define rootstack (gensym 'rootstack))
-         (define new-ds (map (select-instructions #f) ds))
+         (define new-ds (map (select-instructions) ds))
          (set! max-stack 0)
-         (define new-ss
-           (append* (map (select-instructions rootstack) ss)))
+         (define new-ss (append* (map (select-instructions) ss)))
          `(program
-           (,(cons rootstack (append (reset-vars) locals)) ,max-stack)
+           (,(append (reset-vars) locals) ,max-stack)
            (type ,ty)
            (defines ,@new-ds)
            ,@new-ss)]
-        [else ((super select-instructions rootstack) e)]))
+        [else ((super select-instructions) e)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
