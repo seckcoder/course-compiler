@@ -48,6 +48,8 @@
              [else (error "expected a function, not" ty)])]
           [`(define (,f ,(and p:t* `[,xs : ,ps]) ...) : ,rt ,body)
            (let-values ([(body^ ty^) ((type-check (append (map cons xs ps) env)) body)])
+             (unless (equal? ty^ rt)
+               (error "body type and declared return type mismatch for function" e))
              `(define (,f ,@p:t*) : ,rt ,body^))]
           [`(program ,ds ... ,body)
            (define new-env

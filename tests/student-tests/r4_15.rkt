@@ -1,0 +1,10 @@
+(define (mapint [fun : (Integer -> Integer)] [v : (Vector Integer Integer Integer)])
+  : (Vector Integer Integer Integer)
+  (vector (fun (vector-ref v 0)) (fun (vector-ref v 1)) (fun (vector-ref v 2))))
+(define (add1 [x : Boolean]) : Integer
+  2)
+(let ([vec (vector 1 2 3)])
+  (let ([vec2 (mapint add1 vec)])
+    (+ (vector-ref vec2 0) 
+       (+ (vector-ref vec2 1) 
+          (+ (vector-ref vec2 2) 33)))))
