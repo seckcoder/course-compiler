@@ -5,7 +5,8 @@
 (require "conditionals.rkt")
 (require "vectors.rkt")
 (require "functions.rkt")
-;;(require "lambda.rkt")
+(require "lambda.rkt")
+(require "dynamic-typing.rkt")
 (require "interp.rkt")
 (require "runtime-config.rkt")
 
@@ -25,7 +26,8 @@
     ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
     ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
     ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
-    ;;("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
+    ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
+    ("any"          ,R6-typechecker           ,R6-passes           (0 1 2 3 4 6))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))
@@ -33,11 +35,13 @@
 ;; This list serves the same function as the range definitions that were used
 ;; prior to giving run-tests a command line interfaces.
 (define suite-list
-  `((0 . ,(range 1 26))
+  `((0 . ,(range 1 28))
     (1 . ,(range 1 32))
-    (2 . ,(range 1 18))
-    (3 . ,(range 1 14))
-    (4 . ,(range 0 5))))
+    (2 . ,(range 1 19))
+    (3 . ,(range 1 20))
+    (4 . ,(range 0 7))
+    (6 . ,(range 0 8))
+    ))
 
 (define (suite-range x)
   (let ([r? (assoc x suite-list)])
@@ -124,6 +128,9 @@
       (error 'run-tests
              "heap-size expected positive multiple of 8: ~v" bytes)) 
     (heap-size bytes?))]
+ ["--small-register-set"
+  "use a minimal set of registers for register allocation"
+  (use-minimal-set-of-registers! #t)]
 
  ;; Allows setting the number of columns that the pretty printer
  ;; uses to display s-expressions.

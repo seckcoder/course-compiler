@@ -9,7 +9,7 @@
 
 ;; Parameter that determines what the initial rootstack size of the program is.
 (define rootstack-size
-  (make-parameter (expt 2 13)))
+  (make-parameter (expt 2 14)))
 
 ;; Parameter that determines what the initial heap size of the program is.
 (define heap-size 

@@ -21,7 +21,7 @@
 	   [(? symbol?) (cdr (assq e env))]
 	   [(? integer?) e]
 	   [`(let ([,x ,e]) ,body)
-	    (define new-x (gensym x))
+	    (define new-x (gensym (racket-id->c-id x)))
 	    (define new-e (recur e))
 	    `(let ([,new-x ,new-e])
 	       ,((send this uniquify (cons (cons x new-x) env)) body))]
@@ -44,6 +44,7 @@
 
     (define/public (flatten need-atomic)
       (lambda (e)
+        (verbose "flatten" e)
         (match e
            [(? symbol?) (values e '())]
 	   [(? integer?) (values e '())]
@@ -128,7 +129,7 @@
 	   [`(program ,locals ,ss ...)
 	    (let ([new-ss (map (send this select-instructions) ss)])
 	      `(program ,locals ,@(append* new-ss)))]
-	   [else (error "instruction selection, unmatched " e)])))
+	   [else (error "R0/instruction selection, unmatched " e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
@@ -189,7 +190,7 @@
     ;; patch-instructions : psuedo-x86 -> x86
     ;; Uses register rax to patch things up
 
-    ;; should this be call in-memory? 
+    ;; should this be called in-memory? 
     (define/public (on-stack? a)
       (match a
         [`(stack ,n) #t]
