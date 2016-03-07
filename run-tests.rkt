@@ -35,7 +35,7 @@
 ;; This list serves the same function as the range definitions that were used
 ;; prior to giving run-tests a command line interfaces.
 (define suite-list
-  `((0 . ,(range 1 26))
+  `((0 . ,(range 1 28))
     (1 . ,(range 1 32))
     (2 . ,(range 1 19))
     (3 . ,(range 1 20))
