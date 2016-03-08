@@ -1,5 +1,5 @@
- \documentclass[12pt,answers]{exam}
-%\documentclass[12pt]{exam}
+%\documentclass[12pt,answers]{exam}
+\documentclass[12pt]{exam}
 \usepackage{amsmath}
 \usepackage{listings}
 \usepackage{graphicx}
@@ -25,12 +25,12 @@ deletekeywords={error,apply,values,and,equal,eq},%
 }
 \lstset{style=basic}
 
-\firstpageheader{\bf\large Compiler Construction\\ Professor Jeremy Siek\\[1ex]}%
+\firstpageheader{\bf\large Compilers\\ Professor Jeremy Siek\\[1ex]}%
 {}%
 {\bf Midterm Exam \\March 9, 2016\\[1ex]Name:\enspace\hbox to 2in{\hrulefill}}
 \firstpageheadrule
 
-\runningheader{Compiler Construction\\[1ex]}%
+\runningheader{Compilers\\[1ex]}%
 {Midterm Exam \\ }%
 {March 9, 2016\\[1ex] Name:\enspace\hbox to 2in{\hrulefill}}
 
@@ -62,7 +62,7 @@ points.
 %     stack alocation
 % *   patch-instructions
 
-\question[10] Compile the following Racket program to an equivalent
+\question[12] Compile the following Racket program to an equivalent
 program in the $C_0$ language defined in Figure~\ref{fig:c0-syntax}.
 \begin{lstlisting}
   (- (+ (read) 10))
@@ -87,7 +87,7 @@ C_0 & ::= & (\key{program}\;(\itm{var}^{*})\;\itm{stmt}^{+})
 \end{figure}
 
 
-\begin{solution}[1in]
+\begin{solution}[1.5in]
 \begin{lstlisting}
 (program (t1 t2 t3)
   (assign t1 (read))
@@ -97,7 +97,7 @@ C_0 & ::= & (\key{program}\;(\itm{var}^{*})\;\itm{stmt}^{+})
 \end{lstlisting}
 \end{solution}
 
-\question[10] Given the following psuedo-x86 program, compile it to an
+\question[14] Given the following psuedo-x86 program, compile it to an
 equivalent x86 program, using stack locations (and not registers) for
 the variables \texttt{x} and \texttt{t}.
 \begin{lstlisting}
@@ -147,7 +147,7 @@ Rubric:
 % *   build interference
 % *   allocate registers (graph coloring)
 
-\question[10] Given the following results from liveness analysis (we
+\question[12] Given the following results from liveness analysis (we
 have listed the live-after set next to each instruction) draw the
 interference graph.
 
@@ -161,20 +161,17 @@ interference graph.
   (movq (var t) (reg rax)))     |$\emptyset$|
 \end{lstlisting}
 
-\begin{solution}[2in]
+\begin{solution}[3in]
 
 \includegraphics[height=2in]{interfere}
 \end{solution}
 
-\question[10] Given the following interference graph, assign a
-register to each variable. 
+\question[12] Given the following interference graph, assign a
+register to each variable. You may use the registers rbx, rcx, and
+rdx.
 \begin{center}
 \includegraphics[height=2in]{interfere2}
 \end{center}
-You may use the following registers 
-\begin{lstlisting}
-rbx rcx rdx
-\end{lstlisting}
 
 \begin{solution}[1in]
 \begin{lstlisting}
@@ -189,34 +186,34 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
 %     lower-conditionals (if (eq? a1 a2) thn els)
 %     patch-instructions: cmpq, movzbq
 
-\question[10] The following is a partial impelmentation of the type
+\question[12] The following is a partial impelmentation of the type
 checker for the $R_2$ language, which include integers, Booleans,
 \texttt{let}, conditionals, and several primitive operations. Fill in
 the match clauses for type checking \texttt{let} and \texttt{if}.
 
 \begin{lstlisting}
-   (define (typecheck-R2 env exp)
-     (match exp
-       [(? fixnum?) 'Integer]
-       [(? boolean?) 'Boolean]
-       [(? symbol?) (lookup exp env)]
-       [`(program ,body)
-         (let ([ty (typecheck-R2 '() body)])
-           `(program (type ,ty) ,body))]
-       [`(eq? ,e1 ,e2)
-         (define T1 (typecheck-R2 env e1))
-	 (define T2 (typecheck-R2 env e2))
-	 (unless (equal? T1 T2)
-           (error "eq? on different-typed values"))
-	 'Boolean]
-       [`(let ([,x ,exp1]) ,exp2)
-         FILL ME IN
-       ]
-       [`(if ,cnd ,thn ,els)
-         FILL ME IN
-       ]
-       ...
-       ))
+(define (typecheck-R2 env exp)
+  (match exp
+    [(? fixnum?) 'Integer]
+    [(? boolean?) 'Boolean]
+    [(? symbol?) (lookup exp env)]
+    [`(program ,body)
+      (let ([ty (typecheck-R2 '() body)])
+        `(program (type ,ty) ,body))]
+    [`(eq? ,e1 ,e2)
+      (define T1 (typecheck-R2 env e1))
+      (define T2 (typecheck-R2 env e2))
+      (unless (equal? T1 T2)
+        (error "eq? on different types"))
+      'Boolean]
+    [`(let ([,x ,exp1]) ,exp2)
+      FILL ME IN
+    ]
+    [`(if ,cnd ,thn ,els)
+      FILL ME IN
+    ]
+    ...
+    ))
 \end{lstlisting}
 
 \begin{solution}
@@ -237,12 +234,11 @@ the match clauses for type checking \texttt{let} and \texttt{if}.
 \end{lstlisting}
 \end{solution}
 
-\question[10] Perform liveness analysis on the following programming,
+\question[14] Perform liveness analysis on the following programming,
 listing the live-after set next to each instruction.
 
 \begin{lstlisting}
 (program (a b t3 t2 if4 x t5) (type Integer)
-
   (movq (int 1) (var a))
 
   (movq (int 2) (var b))
@@ -252,7 +248,6 @@ listing the live-after set next to each instruction.
   (movq (reg rax) (var t3))
 
   (if (eq? (var t3) (int 0))
-
     ((movq (var a) (var t2))
 
      (negq (var t2))
@@ -302,7 +297,7 @@ listing the live-after set next to each instruction.
 %          offset, collection-needed, allocate, vector-ref, vector-set!
 
 
-\question[10] Draw a diagram of the heap as it would look after the
+\question[12] Draw a diagram of the heap as it would look after the
 following expression is evaluated (but before the garbage collector is
 invoked). Your diagram should include bit-level details of the
 representation and annotations that describe the various parts.
@@ -315,14 +310,16 @@ representation and annotations that describe the various parts.
 \includegraphics[width=4in]{vectors}
 \end{solution}
 
-\question[10] Show the result of performing a copying collection given
+\pagebreak
+\question[12] Show the result of performing a copying collection given
 the following heap.
 
-\includegraphics[width=7in]{copy-collect}
+\includegraphics[width=6.5in]{copy-collect}
 
 
 \begin{solution}
 
+\includegraphics[width=6.5in]{copy-collect-soln}
 \end{solution}
 
 \end{questions}
