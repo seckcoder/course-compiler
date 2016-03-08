@@ -29,7 +29,7 @@
 ;; and change the number there.
 (define debug-level
   (make-parameter
-   0 
+   0
    (lambda (d)
      (unless (exact-nonnegative-integer? d) 
        (error 'debug-state "expected nonnegative-integer in ~a" d))
@@ -225,7 +225,7 @@
     (define tsexp (test-typecheck typechecker sexp))    
     (cond
      [(and type-error-expected tsexp)
-      (error (format "expected type error in compiler '~a', but no error raised by typechecker" name))]
+      (error (format "expected type error in compiler '~a', case ~a, but no error raised by typechecker" name test-name))]
      [type-error-expected 'expected-type-error]
      [tsexp 
       (let loop ([passes passes] [p tsexp]
