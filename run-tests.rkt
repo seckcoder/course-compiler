@@ -36,7 +36,7 @@
 ;; prior to giving run-tests a command line interfaces.
 (define suite-list
   `((0 . ,(range 1 28))
-    (1 . ,(range 1 32))
+    (1 . ,(range 1 33))
     (2 . ,(range 1 19))
     (3 . ,(range 1 20))
     (4 . ,(range 0 7))

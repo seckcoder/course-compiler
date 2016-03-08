@@ -21,7 +21,7 @@ basicstyle=\footnotesize\ttfamily,%
 commentstyle=\mdseries\rmfamily,%
 morekeywords={class,object,with,fun,new,end,int,bool,string},%
 deletekeywords={error,apply,values,and,equal,eq},%
-moredelim=**[is][\color{red}]{`}{`}
+%moredelim=**[is][\color{red}]{`}{`}
 }
 \lstset{style=basic}
 
@@ -184,12 +184,15 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
 
 %   Control flow and Booleans
 % *   type check
-%     select instructions: eq? => cmpq, sete, movzbq
 % *   uncover live handling of 'if' statements
+%     select instructions: eq? => cmpq, sete, movzbq
 %     lower-conditionals (if (eq? a1 a2) thn els)
 %     patch-instructions: cmpq, movzbq
 
-\question[10] 
+\question[10] The following is a partial impelmentation of the type
+checker for the $R_2$ language, which include integers, Booleans,
+\texttt{let}, conditionals, and several primitive operations. Fill in
+the match clauses for type checking \texttt{let} and \texttt{if}.
 
 \begin{lstlisting}
    (define (typecheck-R2 env exp)
@@ -200,17 +203,91 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
        [`(program ,body)
          (let ([ty (typecheck-R2 '() body)])
            `(program (type ,ty) ,body))]
+       [`(eq? ,e1 ,e2)
+         (define T1 (typecheck-R2 env e1))
+	 (define T2 (typecheck-R2 env e2))
+	 (unless (equal? T1 T2)
+           (error "eq? on different-typed values"))
+	 'Boolean]
        [`(let ([,x ,exp1]) ,exp2)
+         FILL ME IN
        ]
        [`(if ,cnd ,thn ,els)
+         FILL ME IN
        ]
+       ...
        ))
 \end{lstlisting}
 
+\begin{solution}
+\begin{lstlisting}
+[`(let ([,x ,exp1]) ,exp2)
+  (define T1 (typecheck-R2 env exp1))
+  (typecheck-R2 (cons (cons x T1) env) exp2)]
 
+[`(if ,cnd ,thn ,els)
+ (define Tc (typecheck-R2 env cnd))
+ (define Tt (typecheck-R2 env thn))
+ (define Te (typecheck-R2 env els))
+ (unless (equal? Tc 'Boolean)
+   (error "expected conditional to have type Boolean, not" Tc))
+ (unless (equal? Tt Te)
+   (error "expected branches of if to have same type" (list Tt Te)))
+ Te]
+\end{lstlisting}
+\end{solution}
 
-\question[10] ...
+\question[10] Perform liveness analysis on the following programming,
+listing the live-after set next to each instruction.
 
+\begin{lstlisting}
+(program (a b t3 t2 if4 x t5) (type Integer)
+
+  (movq (int 1) (var a))
+
+  (movq (int 2) (var b))
+
+  (callq read_int)
+
+  (movq (reg rax) (var t3))
+
+  (if (eq? (var t3) (int 0))
+
+    ((movq (var a) (var t2))
+
+     (negq (var t2))
+
+     (movq (var t2) (var if4)))
+
+    ((movq (var b) (var if4))))
+
+  (movq (var if4) (var x))
+
+  (movq (var x) (var t5))
+
+  (addq (int 10) (var t5))
+
+  (movq (var t5) (reg rax)))
+\end{lstlisting}
+
+\begin{solution}
+\begin{lstlisting}
+(program (a b t3 t2 if4 x t5) (type Integer)
+  (movq (int 1) (var a))            |$\{a,\itm{rax}\}$|
+  (movq (int 2) (var b))            |$\{a,b,\itm{rax}\}$|
+  (callq read_int)                  |$\{a,b,\itm{rax}\}$|
+  (movq (reg rax) (var t3))         |$\{a,b,\itm{t3}\}$|
+  (if (eq? (var t3) (int 0))
+    ((movq (var a) (var t2))        |$\{\itm{t2}\}$|
+     (negq (var t2))                |$\{\itm{t2}\}$|
+     (movq (var t2) (var if4)))     |$\{\itm{if4}\}$|
+    ((movq (var b) (var if4))))     |$\{\itm{if4}\}$|
+  (movq (var if4) (var x))          |$\{x\}$|
+  (movq (var x) (var t5))           |$\{\itm{t5}\}$|
+  (addq (int 10) (var t5))          |$\{\itm{t5}\}$|
+  (movq (var t5) (reg rax)))        |$\emptyset$|
+\end{lstlisting}
+\end{solution}
 
 %   Tuples and GC
 % *   vector representation
@@ -225,9 +302,28 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
 %          offset, collection-needed, allocate, vector-ref, vector-set!
 
 
-\question[10] ...
+\question[10] Draw a diagram of the heap as it would look after the
+following expression is evaluated (but before the garbage collector is
+invoked). Your diagram should include bit-level details of the
+representation and annotations that describe the various parts.
+\begin{lstlisting}
+  (vector 4 (vector 7) #t)
+\end{lstlisting}
 
-\question[10] ...
+\begin{solution}[4in]
+
+\includegraphics[width=4in]{vectors}
+\end{solution}
+
+\question[10] Show the result of performing a copying collection given
+the following heap.
+
+\includegraphics[width=7in]{copy-collect}
+
+
+\begin{solution}
+
+\end{solution}
 
 \end{questions}
 
