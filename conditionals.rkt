@@ -32,30 +32,29 @@
           [(? integer? n) (values `(has-type ,n Integer) 'Integer)]
           [(? boolean? b) (values `(has-type ,b Boolean) 'Boolean)]
           [`(let ([,x ,e]) ,body)
-	    (let*-values ([(e Te) ((type-check env) e)]
-                          [(b Tb) ((type-check (cons (cons x Te) env)) body)])
-              (values `(has-type (let ([,x ,e]) ,b) ,Tb) Tb))]
+	    (define-values (e^ Te) ((type-check env) e))
+	    (define-values (b Tb) ((type-check (cons (cons x Te) env)) body))
+	    (values `(has-type (let ([,x ,e^]) ,b) ,Tb) Tb)]
           [`(program ,body)
-           (let*-values ([(b Tb) ((type-check '()) body)])
-             `(program (type ,Tb) ,b))]
+           (define-values (b Tb) ((type-check '()) body))
+	   `(program (type ,Tb) ,b)]
           [`(if ,cnd ,thn ,els)
-           (let*-values ([(c Tc) ((type-check env) cnd)]
-                         [(t Tt) ((type-check env) thn)]
-                         [(e Te) ((type-check env) els)])
-             (unless (equal? Tc 'Boolean)
-               (error "expected conditional to have type Boolean, not" Tc))
-             (unless (equal? Tt Te)
-               (error "expected branches of if to have same type"
-                      (list Tt Te)))
-	     (values `(has-type (if ,c ,t ,e) ,Te) Te))]
+           (define-values (c Tc) ((type-check env) cnd))
+	   (define-values (t Tt) ((type-check env) thn))
+	   (define-values (e Te) ((type-check env) els))
+	   (unless (equal? Tc 'Boolean)
+             (error "expected conditional to have type Boolean, not" Tc))
+	   (unless (equal? Tt Te)
+             (error "expected branches of if to have same type"
+		    (list Tt Te)))
+	   (values `(has-type (if ,c ,t ,e) ,Te) Te)]
           [`(eq? ,e1 ,e2)
-           (let-values ([(e1 T1) ((type-check env) e1)]
-                        [(e2 T2) ((type-check env) e2)])
-             ;; Should this be equal? --Andre
-             (unless (eq? T1 T2)
+           (define-values (e1^ T1) ((type-check env) e1))
+	   (define-values (e2^ T2) ((type-check env) e2))
+	   (unless (equal? T1 T2)
                (error "checking equality between different-typed values"))
-             (values `(has-type (eq? ,e1 ,e2) Boolean) 'Boolean))]
-	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
+	   (values `(has-type (eq? ,e1^ ,e2^) Boolean) 'Boolean)]
+	  [`(,op ,es ...) #:when (set-member? (send this primitives) op)
             (define-values (new-es ts)
               (for/lists (exprs types) ([e es]) ((type-check env) e)))
             (define binary-ops

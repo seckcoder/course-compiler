@@ -189,7 +189,27 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
 %     lower-conditionals (if (eq? a1 a2) thn els)
 %     patch-instructions: cmpq, movzbq
 
+\question[10] 
 
+\begin{lstlisting}
+   (define (typecheck-R2 env exp)
+     (match exp
+       [(? fixnum?) 'Integer]
+       [(? boolean?) 'Boolean]
+       [(? symbol?) (lookup exp env)]
+       [`(program ,body)
+         (let ([ty (typecheck-R2 '() body)])
+           `(program (type ,ty) ,body))]
+       [`(let ([,x ,exp1]) ,exp2)
+       ]
+       [`(if ,cnd ,thn ,els)
+       ]
+       ))
+\end{lstlisting}
+
+
+
+\question[10] ...
 
 
 %   Tuples and GC
@@ -204,6 +224,10 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
 %        select instructions: 
 %          offset, collection-needed, allocate, vector-ref, vector-set!
 
+
+\question[10] ...
+
+\question[10] ...
 
 \end{questions}
 
