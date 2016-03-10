@@ -13,6 +13,8 @@
   (class compile-R0
     (super-new)
 
+    (inherit assign-homes)
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-live : live-after -> pseudo-x86 -> pseudo-x86*
     ;; *annotated program with live-after information for each stmt
@@ -27,20 +29,20 @@
 
     (define/public (read-vars instr)
       (match instr
-         [`(movq ,s ,d) (send this free-vars s)]
+         [`(movq ,s ,d) (free-vars s)]
 	 [(or `(addq ,s ,d) `(subq ,s ,d) `(imulq ,s ,d)) 
-	  (set-union (send this free-vars s) (send this free-vars d))]
-	 [`(negq ,d) (send this free-vars d)]
+	  (set-union (free-vars s) (free-vars d))]
+	 [`(negq ,d) (free-vars d)]
 	 [`(callq ,f) (set)]
 	 [else (error "read-vars unmatched" instr)]
 	 ))
   
     (define/public (write-vars instr)
       (match instr
-         [`(movq ,s ,d) (send this free-vars d)]
+         [`(movq ,s ,d) (free-vars d)]
 	 [(or `(addq ,s ,d) `(subq ,s ,d) `(imulq ,s ,d)) 
-	  (send this free-vars d)]
-	 [`(negq ,d) (send this free-vars d)]
+	  (free-vars d)]
+	 [`(negq ,d) (free-vars d)]
 	 [`(callq ,f) caller-save]
 	 [else (error "write-vars unmatched" instr)]
 	 ))
@@ -52,7 +54,7 @@
 	  (cond [(null? ss) (values new-ss lives)]
 		[else
 		 (define-values (new-s new-live-after)
-		   ((send this uncover-live live-after) (car ss)))
+		   ((uncover-live live-after) (car ss)))
 		 (loop (cdr ss) new-live-after (cons new-live-after lives)
 		       (cons new-s new-ss))]))))
 
@@ -60,16 +62,16 @@
       (lambda (ast)
 	(match ast
           [`(program ,xs (type ,ty) ,ss ...)
-	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
 	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
 	    `(program (,xs ,(cdr lives)) (type ,ty) ,@new-ss)]
           [`(program ,xs ,ss ...)
-	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
 	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
 	    `(program (,xs ,(cdr lives)) ,@new-ss)]
 	   [else
 	    (values ast (set-union (set-subtract live-after 
-						 (send this write-vars ast))
+						 (write-vars ast))
 				   (read-vars ast)))]
 	   )))
 
@@ -82,7 +84,7 @@
 	(match ast
 	   [`(movq ,s ,d)
 	    (for ([v live-after])
-		 (for ([d (send this free-vars d)]
+		 (for ([d (free-vars d)]
 		       #:when (not (or (equal? `(var ,v) s) (equal? v d))))
 		      (add-edge G d v)))
 	    ast]
@@ -96,19 +98,19 @@
 	    (define G (make-graph xs))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-	         ((send this build-interference live-after G) inst)))
+	         ((build-interference live-after G) inst)))
 	    (print-dot G "./interfere.dot")
 	    `(program (,xs ,G) (type ,ty) ,@new-ss)]
            [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph xs))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-	         ((send this build-interference live-after G) inst)))
+	         ((build-interference live-after G) inst)))
 	    (print-dot G "./interfere.dot")
 	    `(program (,xs ,G) ,@new-ss)]
 	   [else
 	    (for ([v live-after])
-		 (for ([d (send this write-vars ast)] #:when (not (equal? v d)))
+		 (for ([d (write-vars ast)] #:when (not (equal? v d)))
 		      (add-edge G d v)))
 	    ast])))
 
@@ -130,7 +132,7 @@
               (if use-move-biasing
                   (let ([nss 
                          (for/list ([inst ss])
-                           ((send this build-move-graph MG) inst))])
+                           ((build-move-graph MG) inst))])
                     (print-dot MG "./move.dot")
                     nss)
                   ss))
@@ -141,7 +143,7 @@
               (if use-move-biasing
                   (let ([nss 
                          (for/list ([inst ss])
-                           ((send this build-move-graph MG) inst))])
+                           ((build-move-graph MG) inst))])
                     (print-dot MG "./move.dot")
                     nss)
                   ss))
@@ -227,7 +229,7 @@
 			     (cons x (identify-home (hash-ref color x))))))
       (define num-spills 
 	(max 0 (- (add1 largest-color) (vector-length registers-for-alloc))))
-      (define spill-space (* num-spills (send this variable-size)))
+      (define spill-space (* num-spills (variable-size)))
       (values homes spill-space)
       )
     (define/public (allocate-registers)
@@ -235,14 +237,14 @@
 	(match ast
            [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
 	    (define-values (homes stk-size) 
-	      (send this allocate-homes IG MG locals ss))
+	      (allocate-homes IG MG locals ss))
 	    `(program ,stk-size (type ,ty)
-		      ,@(map (send this assign-homes homes) ss))]
+		      ,@(map (assign-homes homes) ss))]
            [`(program (,locals ,IG ,MG) ,ss ...)
 	    (define-values (homes stk-size) 
-	      (send this allocate-homes IG MG locals ss))
+	      (allocate-homes IG MG locals ss))
 	    `(program ,stk-size 
-		      ,@(map (send this assign-homes homes) ss))]
+		      ,@(map (assign-homes homes) ss))]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -259,7 +261,7 @@
 	      (for/list ([r (reverse callee-reg)])
 			(format "\tpopq\t%~a\n" r)))
 	    (define callee-space (* (length (set->list callee-save))
-				    (send this variable-size)))
+				    (variable-size)))
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
 				  callee-space))
 	    (string-append
@@ -270,7 +272,7 @@
 	     (string-append* save-callee-reg)
 	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
 	     "\n"
-	     (string-append* (map (send this print-x86) ss))
+	     (string-append* (map (print-x86) ss))
 	     "\n"
              (format "\tmovq\t%rax, %rdi\n")
              (format "\tcallq\t~a\n" (label-name "print_int"))

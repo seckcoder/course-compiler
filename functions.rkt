@@ -10,8 +10,10 @@
   (class compile-R2
     (super-new)
 
+    (inherit primitives liveness-ss allocate-homes collect-locals)
+
     (define/public (non-apply-ast)
-      (set-union (send this primitives)
+      (set-union (primitives)
 		 (set 'if 'let 'define 'program)))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -33,12 +35,12 @@
       (lambda (e)
         (vomit "type-check" e)
         (match e
-          [`(,e ,es ...) #:when (not (set-member? (send this non-apply-ast) e))
+          [`(,e ,es ...) #:when (not (set-member? (non-apply-ast) e))
            (define-values (e* ty*)
              (for/lists (e* ty*) ([e (in-list es)])
                ((type-check env) e)))
            (define-values (e^ ty)
-             ((send this type-check env) e))
+             ((type-check env) e))
            (match ty
              [`(,ty^* ... -> ,rt)
               (unless (equal? ty* ty^*)
@@ -57,9 +59,9 @@
                (cons (fun-def-name d) (fun-def-type d))))
            (define ds^
              (for/list ([d ds])
-               ((send this type-check new-env) d)))
+               ((type-check new-env) d)))
            (define-values (body^ ty)
-             ((send this type-check new-env) body))
+             ((type-check new-env) body))
            (vomit "prog" ty ds^ body^)
            `(program (type ,ty) ,@ds^ ,body^)]
           [else ((super type-check env) e)])))
@@ -71,16 +73,16 @@
         (vomit "uniquify" e)
 	(match e
           [`(has-type ,e ,t) `(has-type ,((uniquify env) e) ,t)]
-          [`(,f ,es ...) #:when (not (set-member? (send this non-apply-ast) f))
-           (define new-es (map (send this uniquify env) es))
-           (define new-f ((send this uniquify env) f))
+          [`(,f ,es ...) #:when (not (set-member? (non-apply-ast) f))
+           (define new-es (map (uniquify env) es))
+           (define new-f ((uniquify env) f))
            `(,new-f ,@new-es)]
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
            (define new-xs (for/list ([x xs]) (gensym (racket-id->c-id x))))
            (define new-env (append (map cons xs new-xs) env))
            `(define (,(cdr (assq f env)) 
                      ,@(map (lambda (x t) `[,x : ,t]) new-xs ps)) : ,rt 
-                     ,((send this uniquify new-env) body))]
+                     ,((uniquify new-env) body))]
           [`(program (type ,ty) ,ds ... ,body)
            (define new-env
              (for/list ([d ds])
@@ -89,8 +91,8 @@
                   (define new-f (gensym (racket-id->c-id f)))
                   `(,f . ,new-f)]
                  [else (error "type-check, ill-formed function def")])))
-           `(program (type ,ty) ,@(map (send this uniquify new-env) ds)
-                     ,((send this uniquify new-env) body))]
+           `(program (type ,ty) ,@(map (uniquify new-env) ds)
+                     ,((uniquify new-env) body))]
           [else ((super uniquify env) e)]
           )))
 
@@ -99,7 +101,7 @@
 
     (define/public (reveal-functions funs)
       (lambda (e)
-	(let ([recur (send this reveal-functions funs)])
+	(let ([recur (reveal-functions funs)])
         (define ret
 	  (match e
 	     [(? number?) e]
@@ -118,9 +120,9 @@
              [`(has-type ,e ,t) `(has-type ,(recur e) ,t)]
              [`(program (type ,ty) ,ds ... ,body)
 	      (define funs (for/list ([d ds]) (fun-def-name d)))
-	      `(program (type ,ty) ,@(map (send this reveal-functions funs) ds)
-			,((send this reveal-functions funs) body))]
-	     [`(,op ,es ...) #:when (set-member? (send this primitives) op)
+	      `(program (type ,ty) ,@(map (reveal-functions funs) ds)
+			,((reveal-functions funs) body))]
+	     [`(,op ,es ...) #:when (set-member? (primitives) op)
 	      `(,op ,@(map recur es))]
 	     [`(,f ,es ...)
 	      `(app ,(recur f) ,@(map recur es))]
@@ -131,8 +133,8 @@
     ;; flatten : S3 -> C3-expr x (C3-stmt list)
 
     (define (flatten-body body)
-      (define-values (new-body ss) ((send this flatten #t) body))
-      (define locals (append* (map (send this collect-locals) ss)))
+      (define-values (new-body ss) ((flatten #t) body))
+      (define locals (append* (map (collect-locals) ss)))
       (values (remove-duplicates locals) 
 	      (append ss `((return ,new-body)))))
 
@@ -142,7 +144,7 @@
 	(match ast
           [`(program (type ,ty) ,ds ... ,body)
            (define-values (locals new-body) (flatten-body body))
-           (define new-ds (map (send this flatten #f) ds))
+           (define new-ds (map (flatten #f) ds))
            `(program ,locals (type ,ty) (defines ,@new-ds) ,@new-body)]
           [`(define (,f [,xs : ,Ts] ...) : ,rt ,body)
            (define-values (locals new-body) (flatten-body body))
@@ -153,8 +155,8 @@
            (values `(has-type ,tmp ,t)
                    (list `(assign ,tmp (has-type (function-ref ,f) ,t))))]
           [`(has-type (app ,f ,es ...) ,t) 
-           (define-values (new-f f-ss) ((send this flatten #t) f))
-           (define-values (new-es sss) (map2 (send this flatten #t) es))
+           (define-values (new-f f-ss) ((flatten #t) f))
+           (define-values (new-es sss) (map2 (flatten #t) es))
            (define ss (append f-ss (append* sss)))
            (define fun-apply `(app ,new-f ,@new-es))
            (cond
@@ -316,27 +318,27 @@
 
     (define/override (read-vars instr)
       (match instr
-         [`(leaq ,s ,d) (send this free-vars s)]
+         [`(leaq ,s ,d) (free-vars s)]
 	 [`(indirect-callq ,arg) 
-	   (send this free-vars arg)]
+	   (free-vars arg)]
 	 [`(callq ,f) (set)]
      	 [else (super read-vars instr)]))
 
     (define/override (write-vars instr)
       (match instr
 	 [`(indirect-callq ,f) caller-save]
-	 [`(leaq ,s ,d)  (send this free-vars d)]
+	 [`(leaq ,s ,d)  (free-vars d)]
      	 [else (super write-vars instr)]))
 
     (define/override (uncover-live live-after)
       (lambda (ast)
 	(match ast
 	   [`(define (,f) ,n (,locals ,max-stack) ,ss ...)
-	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
+	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
 	    `(define (,f) ,n (,locals ,max-stack ,(cdr lives)) ,@new-ss)]
            [`(program (,locals ,max-stack) (type ,ty) (defines ,ds ...) ,ss ...)
-	    (define-values (new-ss lives) ((send this liveness-ss (set)) ss))
-	    (define new-ds (map (send this uncover-live (set)) ds))
+	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
+	    (define new-ds (map (uncover-live (set)) ds))
 	    `(program (,locals ,max-stack ,(cdr lives)) (type ,ty) (defines ,@new-ds) ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)])))
     
@@ -352,16 +354,16 @@
 	    (define new-G (make-graph locals))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-                ((send this build-interference live-after new-G) inst)))
+                ((build-interference live-after new-G) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
            [`(program (,locals ,max-stack ,lives) (type ,ty) (defines ,ds ...) ,ss ...)
 	    (define new-G (make-graph locals))
 	    (define new-ds
               (for/list ([d ds])
-                ((send this build-interference (void) (void)) d)))
+                ((build-interference (void) (void)) d)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-                ((send this build-interference live-after new-G) inst)))
+                ((build-interference live-after new-G) inst)))
 	    `(program (,locals ,max-stack ,new-G) (type ,ty) (defines ,@new-ds) ,@new-ss)]
 	   [else ((super build-interference live-after G) ast)]
 	   )))
@@ -375,18 +377,18 @@
 	(match ast
            [`(program (,locals ,max-stack ,IG) (type ,ty) (defines ,ds ...) ,ss ...)
 	    (define new-ds (for/list ([d ds])
-                             ((send this build-move-graph (void)) d)))
+                             ((build-move-graph (void)) d)))
             (define MG (make-graph locals))
             (define new-ss
               (for/list ([inst ss])
-                ((send this build-move-graph MG) inst)))
+                ((build-move-graph MG) inst)))
             (print-dot MG "./move.dot")
             `(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,@new-ds) ,@new-ss)]
 	   [`(define (,f) ,n (,locals ,max-stack ,IG) ,ss ...)
             (define MG (make-graph locals))
             (define new-ss
               (for/list ([inst ss])
-                ((send this build-move-graph MG) inst)))
+                ((build-move-graph MG) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,IG ,MG) ,@new-ss)]
 	   [else ((super build-move-graph G) ast)])))
            
@@ -404,7 +406,7 @@
 	   [`(stack ,i) `(stack ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
 	   [`(indirect-callq ,f)
-	    `(indirect-callq ,((send this assign-homes homes) f))]
+	    `(indirect-callq ,((assign-homes homes) f))]
 	   [`(function-ref ,f) `(function-ref ,f) ]
 	   [else ((super assign-homes homes) e)]
 	   )))
@@ -417,15 +419,15 @@
 	(match ast
 	   [`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
 	    (define-values (homes stk-size)
-	      (send this allocate-homes IG MG xs ss))
-	    (define new-ss (map (send this assign-homes homes) ss))
+	      (allocate-homes IG MG xs ss))
+	    (define new-ss (map (assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
            [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
 		      ,ss ...)
-	    (define new-ds (map (send this allocate-registers) ds)) 
+	    (define new-ds (map (allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
-	      (send this allocate-homes IG MG locals ss))
-	    (define new-ss (map (send this assign-homes homes) ss))
+	      (allocate-homes IG MG locals ss))
+	    (define new-ss (map (assign-homes homes) ss))
 	    `(program ,(+ stk-size (* 8 max-stack)) (type ,ty)
 		      (defines ,@new-ds) ,@new-ss)]
 	   )))
@@ -443,14 +445,14 @@
       (lambda (e)
 	(match e
 	   [`(define (,f) ,n ,stack-space ,ss ...)
-	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
+	    (define sss (for/list ([s ss]) ((patch-instructions) s)))
 	    `(define (,f) ,n ,stack-space ,@(append* sss))]
 	   [`(indirect-callq ,f)
 	    `((indirect-callq ,f))]
 	   [`(program ,stack-space (type ,ty) (defines ,ds ...) ,ss ...)
 	    (define new-ds (for/list ([d ds])
-				     ((send this patch-instructions) d)))
-	    (define sss (for/list ([s ss]) ((send this patch-instructions) s)))
+				     ((patch-instructions) d)))
+	    (define sss (for/list ([s ss]) ((patch-instructions) s)))
 	    `(program ,stack-space (type ,ty) (defines ,@new-ds) ,@(append* sss))]
 	   [`(leaq ,s ,d)
 	    (cond [(on-stack? d)
@@ -469,13 +471,13 @@
 	(match e
 	   [`(define (,f) ,n ,stack-space ,ss ...)
 	    `(define (,f) ,n ,stack-space
-	       ,@(append* (map (send this lower-conditionals) ss)))]
+	       ,@(append* (map (lower-conditionals) ss)))]
 
 	   [`(program ,stack-space (type ,ty) (defines ,ds ...) ,ss ...)
 	    (define new-ds (for/list ([d ds])
-				     ((send this lower-conditionals) d)))
+				     ((lower-conditionals) d)))
 	    (define new-ss (for/list ([s ss])
-				     ((send this lower-conditionals) s)))
+				     ((lower-conditionals) s)))
 	    `(program ,stack-space (type ,ty) (defines ,@new-ds) ,@(append* new-ss))]
 	   [else ((super lower-conditionals) e)]
 	   )))
@@ -497,7 +499,7 @@
 	   [`(function-ref ,f)
 	    (format "~a(%rip)" f)]
 	   [`(indirect-callq ,f)
-	    (format "\tcallq\t*~a\n" ((send this print-x86) f))]
+	    (format "\tcallq\t*~a\n" ((print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
            [`(define (,f) ,n ,spill-space ,ss ...)
@@ -509,7 +511,7 @@
 	      (for/list ([r (reverse callee-reg)])
 			(format "\tpopq\t%~a\n" r)))
 	    (define callee-space (* (length (set->list callee-save))
-				    (send this variable-size)))
+				    (variable-size)))
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
                                  callee-space))
 	    (string-append
@@ -523,7 +525,7 @@
              ;; frame because the current code for stack nodes
              ;; doesn't reason about them. -andre
 	     "\n"
-	     (string-append* (map (send this print-x86) ss))
+	     (string-append* (map (print-x86) ss))
 	     "\n"
              (format "\taddq\t$~a, %rsp\n" stack-adj)	     
              (string-append* restore-callee-reg)
@@ -532,7 +534,7 @@
 	     )]
 	   [`(program ,stack-space (type ,ty) (defines ,ds ...) ,ss ...)
 	    (string-append
-	     (string-append* (for/list ([d ds]) ((send this print-x86) d)))
+	     (string-append* (for/list ([d ds]) ((print-x86) d)))
 	     "\n"
 	     ((super print-x86) `(program ,stack-space (type ,ty) ,@ss)))]
 	   [else ((super print-x86) e)]

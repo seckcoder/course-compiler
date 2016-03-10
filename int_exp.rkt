@@ -16,7 +16,7 @@
     ;; uniquify : env -> S0 -> S0
     (define/public (uniquify env)
       (lambda (e)
-	(define recur (send this uniquify env))
+	(define recur (uniquify env))
 	(match e
 	   [(? symbol?) (cdr (assq e env))]
 	   [(? integer?) e]
@@ -24,10 +24,10 @@
 	    (define new-x (gensym (racket-id->c-id x)))
 	    (define new-e (recur e))
 	    `(let ([,new-x ,new-e])
-	       ,((send this uniquify (cons (cons x new-x) env)) body))]
+	       ,((uniquify (cons (cons x new-x) env)) body))]
 	   [`(program ,body)
 	    `(program ,(recur body))]
-	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
+	   [`(,op ,es ...) #:when (set-member? (primitives) op)
 	    `(,op ,@(map recur es))]
 	   [else (error "uniquify couldn't match" e)])))
 
@@ -49,12 +49,12 @@
            [(? symbol?) (values e '())]
 	   [(? integer?) (values e '())]
 	   [`(let ([,x ,e]) ,body)
-	    (define-values (new-e e-ss) ((send this flatten #f) e))
+	    (define-values (new-e e-ss) ((flatten #f) e))
 	    (define-values (new-body body-ss)
-	      ((send this flatten need-atomic) body))
+	      ((flatten need-atomic) body))
 	    (values new-body (append e-ss `((assign ,x ,new-e)) body-ss))]
-	   [`(,op ,es ...) #:when (set-member? (send this primitives) op)
-	    (define-values (new-es sss) (map2 (send this flatten #t) es))
+	   [`(,op ,es ...) #:when (set-member? (primitives) op)
+	    (define-values (new-es sss) (map2 (flatten #t) es))
 	    (define ss (append* sss))
 	    (define prim-apply `(,op ,@new-es))
 	    (cond [need-atomic
@@ -62,8 +62,8 @@
 		   (values tmp (append ss `((assign ,tmp ,prim-apply))))]
 		  [else (values prim-apply ss)])]
 	   [`(program ,e)
-	    (define-values (new-e ss) ((send this flatten #t) e))
-	    (define xs (append* (map (send this collect-locals) ss)))
+	    (define-values (new-e ss) ((flatten #t) e))
+	    (define xs (append* (map (collect-locals) ss)))
 	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
            [else (error "flatten could not match" e)]
 	   )))
@@ -94,40 +94,40 @@
 	   [(? integer?) `(int ,e)]
 	   [`(reg ,r) `(reg ,r)]
 	   [`(return ,e)
-	    ((send this select-instructions) `(assign (reg rax) ,e))]
+	    ((select-instructions) `(assign (reg rax) ,e))]
 	   [`(assign ,lhs (read))
-	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-lhs ((select-instructions) lhs))
 	    `((callq read_int) (movq (reg rax) ,new-lhs))]
 	   [`(assign ,lhs ,x) #:when (symbol? x)
-	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-lhs ((select-instructions) lhs))
 	    (cond [(equal? `(var ,x) new-lhs) '()]
 		  [else `((movq (var ,x) ,new-lhs))])]
 	   [`(assign ,lhs ,n) #:when (integer? n)
-	    (define new-lhs ((send this select-instructions) lhs))
+	    (define new-lhs ((select-instructions) lhs))
 	    `((movq (int ,n) ,new-lhs))]
 	   [`(assign ,lhs (,op ,e1 ,e2))
-	    (define new-lhs ((send this select-instructions) lhs))
-	    (define new-e1 ((send this select-instructions) e1))
-	    (define new-e2 ((send this select-instructions) e2))
+	    (define new-lhs ((select-instructions) lhs))
+	    (define new-e1 ((select-instructions) e1))
+	    (define new-e2 ((select-instructions) e2))
 	    (define inst (binary-op->inst op))
 	    (cond [(equal? new-e1 new-lhs)
 		   `((,inst ,new-e2 ,new-lhs))]
 		  [(equal? new-e2 new-lhs)
 		   `((,inst ,new-e1 ,new-lhs))]
 		  ;; The following can shorten the live range of e2. -JGS
-		  [(and (send this commutative? op) 
+		  [(and (commutative? op) 
 			(integer? e1) (symbol? e2))
 		   `((movq ,new-e2 ,new-lhs) (,inst ,new-e1 ,new-lhs))]
 		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-e2 ,new-lhs))])]
 	   [`(assign ,lhs (,op ,e1))	
-	    (define new-lhs ((send this select-instructions) lhs))
-	    (define new-e1 ((send this select-instructions) e1))
+	    (define new-lhs ((select-instructions) lhs))
+	    (define new-e1 ((select-instructions) e1))
 	    (define inst (unary-op->inst op))
 	    (cond [(equal? new-e1 new-lhs)
 		   `((,inst ,new-lhs))]
 		  [else `((movq ,new-e1 ,new-lhs) (,inst ,new-lhs))])]
 	   [`(program ,locals ,ss ...)
-	    (let ([new-ss (map (send this select-instructions) ss)])
+	    (let ([new-ss (map (select-instructions) ss)])
 	      `(program ,locals ,@(append* new-ss)))]
 	   [else (error "R0/instruction selection, unmatched " e)])))
 
@@ -153,36 +153,36 @@
 	   [`(program (,xs ...) (type ,ty) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack ,(+ (send this first-offset)
-			  (* (send this variable-size) n))))
+	      `(stack ,(+ (first-offset)
+			  (* (variable-size) n))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
 				   (stream->list (in-range 0 (length xs)))))))
 	    (define stack-space (align 
 				 (* (length xs)
-				    (send this variable-size))
+				    (variable-size))
 				 16))
 	    `(program ,stack-space (type ,ty)
-		      ,@(map (send this assign-homes new-homes) ss))]
+		      ,@(map (assign-homes new-homes) ss))]
 	   [`(program (,xs ...) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack ,(+ (send this first-offset)
-			  (* (send this variable-size) n))))
+	      `(stack ,(+ (first-offset)
+			  (* (variable-size) n))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
 				   (stream->list (in-range 0 (length xs)))))))
 	    (define stack-space (align 
 				 (* (length xs)
-				    (send this variable-size))
+				    (variable-size))
 				 16))
 	    `(program ,stack-space
-		      ,@(map (send this assign-homes new-homes) ss))]
+		      ,@(map (assign-homes new-homes) ss))]
 	   [`(,instr-name ,as ...) 
-	    #:when (set-member? (send this instructions) instr-name)
-	    `(,instr-name ,@(map (send this assign-homes homes) as))]
+	    #:when (set-member? (instructions) instr-name)
+	    `(,instr-name ,@(map (assign-homes homes) as))]
 	   [else (error "in assign-homes S0, unmatched" e)]
 	   )))
 
@@ -214,7 +214,7 @@
 	   [`(callq ,f) `((callq ,f))]
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
-		      ,@(append* (map (send this patch-instructions) ss)))]
+		      ,@(append* (map (patch-instructions) ss)))]
 	   ;; for imulq, destination must be a register -Jeremy
 	   [`(imulq ,s (reg ,d))
 	    `((imulq ,s (reg ,d)))]
@@ -223,13 +223,13 @@
 	      (imulq ,s (reg rax))
 	      (movq (reg rax) ,d))]
 	   [`(,instr-name ,s ,d)
-	    #:when (set-member? (send this instructions) instr-name)
+	    #:when (set-member? (instructions) instr-name)
 	    (cond [(and (on-stack? s) (on-stack? d))	
 		   (debug 'patch-instructions "spilling")
 		   `((movq ,s (reg rax)) (,instr-name (reg rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
 	   [`(,instr-name ,d)
-	    #:when (set-member? (send this instructions) instr-name)
+	    #:when (set-member? (instructions) instr-name)
 	    `((,instr-name ,d))]
 	   )))
   
@@ -251,7 +251,7 @@
 	     (format "\tmovq\t%rsp, %rbp\n")
 	     (format "\tsubq\t$~a, %rsp\n" stack-space)
 	     "\n"
-	     (string-append* (map (send this print-x86) ss))
+	     (string-append* (map (print-x86) ss))
 	     "\n"
              (format "\tmovq\t%rax, %rdi\n")
              (format "\tcallq\t~a\n" (label-name "print_int"))
@@ -261,13 +261,13 @@
 	     (format "\tretq\n")
 	     )]
 	   [`(,instr-name ,s ,d)
-	    #:when (set-member? (send this instructions) instr-name)
+	    #:when (set-member? (instructions) instr-name)
 	    (format "\t~a\t~a, ~a\n" instr-name
-		    ((send this print-x86) s) 
-		    ((send this print-x86) d))]
+		    ((print-x86) s) 
+		    ((print-x86) d))]
 	   [`(,instr-name ,d)
-	    #:when (set-member? (send this instructions) instr-name)
-	    (format "\t~a\t~a\n" instr-name ((send this print-x86) d))]
+	    #:when (set-member? (instructions) instr-name)
+	    (format "\t~a\t~a\n" instr-name ((print-x86) d))]
 	   [else (error "print-x86, unmatched" e)]
 	   )))
     )) ;; class compile-R0

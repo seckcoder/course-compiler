@@ -34,8 +34,8 @@
                 (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t))]
              [else (error "expected a vector in vector-ref, not" t)])]
           [`(vector-set! ,e-vec ,i ,e-arg) 
-           (define-values (e-vec^ t-vec) ((send this type-check env) e-vec))
-           (define-values (e-arg^ t-arg) ((send this type-check env) e-arg))
+           (define-values (e-vec^ t-vec) ((type-check env) e-vec))
+           (define-values (e-arg^ t-arg) ((type-check env) e-arg))
            (match t-vec
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
@@ -233,7 +233,7 @@
       tmp))
   
   (define (primitive? x)
-    (set-member? (send this primitives) x))
+    (set-member? (primitives) x))
   
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; select-instructions : C2 -> psuedo-x86
@@ -331,14 +331,14 @@
   (define/override (free-vars a)
     (match a
        [`(global-value ,l) (set)]
-       [`(offset ,e ,i) (send this free-vars e)]
+       [`(offset ,e ,i) (free-vars e)]
        [else (super free-vars a)]
        ))
 
   (define/override (write-vars x)
     (match x
       [`(movq ,s (offset ,d ,i)) (set)]
-      [`(setl ,d) (send this free-vars d)]
+      [`(setl ,d) (free-vars d)]
       [else (super write-vars x)]))
   
   (define/override (read-vars x)
@@ -383,10 +383,10 @@
        ;(error "offset, stack case " n)
        (format "~a(%rbp)" (- i n))]
       [`(offset ,e ,i)
-       (format "~a(~a)" i ((send this print-x86) e))]
+       (format "~a(~a)" i ((print-x86) e))]
       [`(global-value ,label)
        (format "~a(%rip)" (label-name (symbol->string label)))]
-      [`(setl ,d) (format "\tsetl\t~a\n" ((send this print-x86) d))]
+      [`(setl ,d) (format "\tsetl\t~a\n" ((print-x86) d))]
       [else ((super print-x86) e)]
       )))));; compile-R2
 

@@ -35,14 +35,14 @@
 	   (define new-env (append (map cons xs new-xs) env))
            (define (annotate x t) `[,x : ,t])
            `(lambda: ,(map annotate new-xs Ts) : ,rT 
-                     ,((send this uniquify new-env) body))]
+                     ,((uniquify new-env) body))]
 	  [else ((super uniquify env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; reveal-functions
     (define/override (reveal-functions funs)
       (lambda (e)
-	(define recur (send this reveal-functions funs))
+	(define recur (reveal-functions funs))
 	(match e
           [`(lambda: ,params : ,rT ,body)
            `(lambda: ,params : ,rT ,(recur body))]
@@ -55,7 +55,7 @@
 
     ;; free-variable : expr -> (immutable-hash id expr)
     (define/public (free-variables e)
-      (define (recur e) (send this free-variables e))
+      (define (recur e) (free-variables e))
       (match e
         [`(has-type ,x? ,t)
          (if (symbol? x?)
@@ -91,7 +91,7 @@
 
     (define/public (convert-to-closures)
       (lambda (e)
-        (define (recur e) ((send this convert-to-closures) e))
+        (define (recur e) ((convert-to-closures) e))
         (match e
           [`(has-type (app ,e ,es ...) ,t)
            (define-values (new-e e-fs) (recur e))
