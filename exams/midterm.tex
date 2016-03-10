@@ -1,5 +1,5 @@
-%\documentclass[12pt,answers]{exam}
-\documentclass[12pt]{exam}
+\documentclass[12pt,answers]{exam}
+%\documentclass[12pt]{exam}
 \usepackage{amsmath}
 \usepackage{listings}
 \usepackage{graphicx}
@@ -62,7 +62,7 @@ points.
 %     stack alocation
 % *   patch-instructions
 
-\question[12] Compile the following Racket program to an equivalent
+\question[14] Compile the following Racket program to an equivalent
 program in the $C_0$ language defined in Figure~\ref{fig:c0-syntax}.
 \begin{lstlisting}
   (- (+ (read) 10))
@@ -97,9 +97,13 @@ C_0 & ::= & (\key{program}\;(\itm{var}^{*})\;\itm{stmt}^{+})
 \end{lstlisting}
 \end{solution}
 
-\question[14] Given the following psuedo-x86 program, compile it to an
+\pagebreak
+
+\question[15] Given the following psuedo-x86 program, compile it to an
 equivalent x86 program, using stack locations (and not registers) for
-the variables \texttt{x} and \texttt{t}.
+the variables \texttt{x} and \texttt{t}. Your answer should be given
+in the AT\&T syntax that the GNU assembler expects for \text{.s}
+files.
 \begin{lstlisting}
 (program (x t)
   (callq read_int)
@@ -109,7 +113,7 @@ the variables \texttt{x} and \texttt{t}.
   (movq (var t) (reg rax)))
 \end{lstlisting}
 
-\begin{solution}[3in]
+\begin{solution}[2.5in]
 \begin{lstlisting}
 	.globl main
 main:
@@ -147,7 +151,9 @@ Rubric:
 % *   build interference
 % *   allocate registers (graph coloring)
 
-\question[12] Given the following results from liveness analysis (we
+\pagebreak
+
+\question[14] Given the following results from liveness analysis (we
 have listed the live-after set next to each instruction) draw the
 interference graph.
 
@@ -166,7 +172,7 @@ interference graph.
 \includegraphics[height=2in]{interfere}
 \end{solution}
 
-\question[12] Given the following interference graph, assign a
+\question[14] Given the following interference graph, assign a
 register to each variable. You may use the registers rbx, rcx, and
 rdx.
 \begin{center}
@@ -186,55 +192,55 @@ x: rbx, y: rcx, z: rbx, t1: rcx, t2: rbx
 %     lower-conditionals (if (eq? a1 a2) thn els)
 %     patch-instructions: cmpq, movzbq
 
-\question[12] The following is a partial impelmentation of the type
-checker for the $R_2$ language, which include integers, Booleans,
-\texttt{let}, conditionals, and several primitive operations. Fill in
-the match clauses for type checking \texttt{let} and \texttt{if}.
+%% \question[12] The following is a partial impelmentation of the type
+%% checker for the $R_2$ language, which includes integers, Booleans,
+%% \texttt{let}, conditionals, and several primitive operations. Fill in
+%% the match clauses for type checking \texttt{let} and \texttt{if}.
 
-\begin{lstlisting}
-(define (typecheck-R2 env exp)
-  (match exp
-    [(? fixnum?) 'Integer]
-    [(? boolean?) 'Boolean]
-    [(? symbol?) (lookup exp env)]
-    [`(program ,body)
-      (let ([ty (typecheck-R2 '() body)])
-        `(program (type ,ty) ,body))]
-    [`(eq? ,e1 ,e2)
-      (define T1 (typecheck-R2 env e1))
-      (define T2 (typecheck-R2 env e2))
-      (unless (equal? T1 T2)
-        (error "eq? on different types"))
-      'Boolean]
-    [`(let ([,x ,exp1]) ,exp2)
-      FILL ME IN
-    ]
-    [`(if ,cnd ,thn ,els)
-      FILL ME IN
-    ]
-    ...
-    ))
-\end{lstlisting}
+%% \begin{lstlisting}
+%% (define (typecheck-R2 env exp)
+%%   (match exp
+%%     [(? fixnum?) 'Integer]
+%%     [(? boolean?) 'Boolean]
+%%     [(? symbol?) (lookup exp env)]
+%%     [`(program ,body)
+%%       (let ([ty (typecheck-R2 '() body)])
+%%         `(program (type ,ty) ,body))]
+%%     [`(eq? ,e1 ,e2)
+%%       (define T1 (typecheck-R2 env e1))
+%%       (define T2 (typecheck-R2 env e2))
+%%       (unless (equal? T1 T2)
+%%         (error "eq? on different types"))
+%%       'Boolean]
+%%     [`(let ([,x ,exp1]) ,exp2)
+%%       FILL ME IN
+%%     ]
+%%     [`(if ,cnd ,thn ,els)
+%%       FILL ME IN
+%%     ]
+%%     ...
+%%     ))
+%% \end{lstlisting}
 
-\begin{solution}
-\begin{lstlisting}
-[`(let ([,x ,exp1]) ,exp2)
-  (define T1 (typecheck-R2 env exp1))
-  (typecheck-R2 (cons (cons x T1) env) exp2)]
+%% \begin{solution}
+%% \begin{lstlisting}
+%% [`(let ([,x ,exp1]) ,exp2)
+%%   (define T1 (typecheck-R2 env exp1))
+%%   (typecheck-R2 (cons (cons x T1) env) exp2)]
 
-[`(if ,cnd ,thn ,els)
- (define Tc (typecheck-R2 env cnd))
- (define Tt (typecheck-R2 env thn))
- (define Te (typecheck-R2 env els))
- (unless (equal? Tc 'Boolean)
-   (error "expected conditional to have type Boolean, not" Tc))
- (unless (equal? Tt Te)
-   (error "expected branches of if to have same type" (list Tt Te)))
- Te]
-\end{lstlisting}
-\end{solution}
+%% [`(if ,cnd ,thn ,els)
+%%  (define Tc (typecheck-R2 env cnd))
+%%  (define Tt (typecheck-R2 env thn))
+%%  (define Te (typecheck-R2 env els))
+%%  (unless (equal? Tc 'Boolean)
+%%    (error "expected conditional to have type Boolean, not" Tc))
+%%  (unless (equal? Tt Te)
+%%    (error "expected branches of if to have same type" (list Tt Te)))
+%%  Te]
+%% \end{lstlisting}
+%% \end{solution}
 
-\question[14] Perform liveness analysis on the following programming,
+\question[15] Perform liveness analysis on the following programming,
 listing the live-after set next to each instruction.
 
 \begin{lstlisting}
@@ -296,14 +302,22 @@ listing the live-after set next to each instruction.
 %        select instructions: 
 %          offset, collection-needed, allocate, vector-ref, vector-set!
 
+\pagebreak
 
-\question[12] Draw a diagram of the heap as it would look after the
-following expression is evaluated (but before the garbage collector is
-invoked). Your diagram should include bit-level details of the
-representation and annotations that describe the various parts.
+\question[14] Draw a graph that represents the heap as it would look
+after the following expression is evaluated (but before the garbage
+collector is invoked). 
 \begin{lstlisting}
   (vector 4 (vector 7) #t)
 \end{lstlisting}
+The nodes in your graph are allocated objects
+(draw them as rectangles) and the directed edges are pointers.  The
+rectanges should be subdivided into a box for each 64-bit element. If
+a box represents a pointer, then draw an arrow from it to the object
+it points to. If the box represents an integer or Boolean, simple
+write the value in the box. If the box contains tag information, then
+show the individual bits and annotate to describe which bits represent
+what.
 
 \begin{solution}[4in]
 
@@ -311,9 +325,8 @@ representation and annotations that describe the various parts.
 \end{solution}
 
 \pagebreak
-\question[12] Show the result of performing a copying collection given
+\question[14] Show the result of performing a copying collection given
 the following heap.
-
 \includegraphics[width=6.5in]{copy-collect}
 
 

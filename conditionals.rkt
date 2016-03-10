@@ -10,6 +10,8 @@
   (class compile-reg-R0
     (super-new)
 
+    (inherit liveness-ss first-offset variable-size on-stack?)
+
     (define/override (primitives)
       (set-union (super primitives) 
 		 (set 'eq? 'and 'or 'not)))
@@ -54,7 +56,7 @@
 	   (unless (equal? T1 T2)
                (error "checking equality between different-typed values"))
 	   (values `(has-type (eq? ,e1^ ,e2^) Boolean) 'Boolean)]
-	  [`(,op ,es ...) #:when (set-member? (send this primitives) op)
+	  [`(,op ,es ...) #:when (set-member? (primitives) op)
             (define-values (new-es ts)
               (for/lists (exprs types) ([e es]) ((type-check env) e)))
             (define binary-ops
@@ -93,12 +95,12 @@
           [`(has-type ,e ,t) `(has-type ,((uniquify env) e) ,t)]
           [(? boolean? b) b]
           [`(if ,cnd ,thn ,els)
-           (let ([cnd ((send this uniquify env) cnd)]
-                 [thn ((send this uniquify env) thn)]
-                 [els ((send this uniquify env) els)])
+           (let ([cnd ((uniquify env) cnd)]
+                 [thn ((uniquify env) thn)]
+                 [els ((uniquify env) els)])
              `(if ,cnd ,thn ,els))]
           [`(program (type ,ty) ,e)
-           `(program (type ,ty) ,((send this uniquify env) e))]
+           `(program (type ,ty) ,((uniquify env) e))]
           [else ((super uniquify env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -108,8 +110,8 @@
       (lambda (ast)
 	(match ast
           [`(if ,cnd ,thn ,els)
-           (append (append* (map (send this collect-locals) thn))
-                   (append* (map (send this collect-locals) els)))]
+           (append (append* (map (collect-locals) thn))
+                   (append* (map (collect-locals) els)))]
           [else ((super collect-locals) ast)])))
 
     (define optimize-if #t)
@@ -125,18 +127,18 @@
              [#f #:when optimize-if
                  (values new-els els-ss)]
              [`(let ([,x ,e]) ,body) #:when optimize-if
-              (define-values (new-e e-ss) ((send this flatten #f) e))
+              (define-values (new-e e-ss) ((flatten #f) e))
               (define-values (new-body body-ss)
-                ((send this flatten-if new-thn thn-ss new-els els-ss) body))
+                ((flatten-if new-thn thn-ss new-els els-ss) body))
               (values new-body
                       (append e-ss
                               `((assign ,x ,new-e))
                               body-ss))]
              [`(not ,cnd) #:when optimize-if
-              ((send this flatten-if new-els els-ss new-thn thn-ss) cnd)]
+              ((flatten-if new-els els-ss new-thn thn-ss) cnd)]
              [`(eq? ,e1 ,e2) #:when optimize-if
-              (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
-              (define-values (new-e2 e2-ss) ((send this flatten #t) e2))
+              (define-values (new-e1 e1-ss) ((flatten #t) e1))
+              (define-values (new-e2 e2-ss) ((flatten #t) e2))
               (define tmp (gensym 'if))
               (define thn-ret `(assign ,tmp ,new-thn))
               (define els-ret `(assign ,tmp ,new-els))
@@ -146,7 +148,7 @@
                                     ,(append thn-ss (list thn-ret))
                                     ,(append els-ss (list els-ret))))))]
              [else
-              (let-values ([(new-cnd cnd-ss) ((send this flatten #t) `(has-type ,cnd ,t))])
+              (let-values ([(new-cnd cnd-ss) ((flatten #t) `(has-type ,cnd ,t))])
                 (define tmp (gensym 'if))
                 (define thn-ret `(assign ,tmp ,new-thn))
                 (define els-ret `(assign ,tmp ,new-els))
@@ -168,8 +170,8 @@
 	  ;; We override 'and' to place has-type's around the #t and #f
 	  ;; in the generated code. -Jeremy
 	  [`(has-type (and ,e1 ,e2) ,t)
-	   (define-values (new-e1 e1-ss) ((send this flatten #t) e1))
-	   (define-values (new-e2 e2-ss) ((send this flatten #f) e2))
+	   (define-values (new-e1 e1-ss) ((flatten #t) e1))
+	   (define-values (new-e2 e2-ss) ((flatten #f) e2))
 	   (define tmp (gensym 'and))
 	   (values `(has-type ,tmp ,t)
 		   (append e1-ss
@@ -180,8 +182,8 @@
           ;; We override flattening for op's because we
 	  ;; need to put a has-type on the LHS of the assign. -Jeremy
           [`(has-type (,op ,es ...) ,t)
-	   #:when (set-member? (send this primitives) op)
-	   (define-values (new-es sss) (map2 (send this flatten #t) es))
+	   #:when (set-member? (primitives) op)
+	   (define-values (new-es sss) (map2 (flatten #t) es))
 	   (define ss (append* sss))
 	   (define prim-apply `(,op ,@new-es))
 	   (cond
@@ -193,20 +195,20 @@
 
 	  ;; For 'let' we just need to strip the enclosing has-type. -Jeremy
           [`(has-type (let ([,x ,e]) ,body) ,t)
-	   ((send this flatten need-atomic) `(let ([,x ,e]) ,body))]
+	   ((flatten need-atomic) `(let ([,x ,e]) ,body))]
 
 	  [`(has-type (if ,cnd ,thn ,els) ,t)
-	   (define-values (new-thn thn-ss) ((send this flatten #t) thn))
-	   (define-values (new-els els-ss) ((send this flatten #t) els))
+	   (define-values (new-thn thn-ss) ((flatten #t) thn))
+	   (define-values (new-els els-ss) ((flatten #t) els))
 	   ((flatten-if new-thn thn-ss new-els els-ss) cnd)]
 
           [`(program ,e)
-              (define-values (new-e ss) ((send this flatten #t) e))
-              (define xs (append* (map (send this collect-locals) ss)))
+              (define-values (new-e ss) ((flatten #t) e))
+              (define xs (append* (map (collect-locals) ss)))
               `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
           [`(program (type ,ty) ,e)
-           (define-values (new-e ss) ((send this flatten #t) e))
-           (define xs (append* (map (send this collect-locals) ss)))
+           (define-values (new-e ss) ((flatten #t) e))
+           (define xs (append* (map (collect-locals) ss)))
            `(program ,(remove-duplicates xs) (type ,ty) ,@(append ss `((return ,new-e))))]
           [else ((super flatten need-atomic) e)])))
 
@@ -238,20 +240,20 @@
           [`(assign ,lhs (has-type ,rhs ,t))
            ((select-instructions) `(assign ,lhs ,rhs))]
           [`(assign ,lhs ,b) #:when (boolean? b)
-           (let ([lhs ((send this select-instructions) lhs)]
-                 [b ((send this select-instructions) b)])
+           (let ([lhs ((select-instructions) lhs)]
+                 [b ((select-instructions) b)])
              `((movq ,b ,lhs)))]
           [`(assign ,lhs (not ,e))
-           (define new-lhs ((send this select-instructions) lhs))
-           (define new-e ((send this select-instructions) e))
+           (define new-lhs ((select-instructions) lhs))
+           (define new-e ((select-instructions) e))
            (cond [(equal? new-e new-lhs)
                   `((xorq (int 1) ,new-lhs))]
                  [else `((movq ,new-e ,new-lhs) 
                          (xorq (int 1) ,new-lhs))])]
           [`(assign ,lhs (eq? ,e1 ,e2))
-           (define new-lhs ((send this select-instructions) lhs))
-           (define new-e1 ((send this select-instructions) e1))
-           (define new-e2 ((send this select-instructions) e2))
+           (define new-lhs ((select-instructions) lhs))
+           (define new-e1 ((select-instructions) e1))
+           (define new-e2 ((select-instructions) e2))
            ;; second operand of cmpq can't be an immediate
            (define comparison
              (cond [(and (immediate? new-e1) (immediate? new-e2))
@@ -268,17 +270,17 @@
                    )]
           ;; Keep the if statement to simplify register allocation
           [`(if ,cnd ,thn-ss ,els-ss)
-           (let ([cnd ((send this select-instructions) cnd)]
-                 [thn-ss (append* (map (send this select-instructions) 
+           (let ([cnd ((select-instructions) cnd)]
+                 [thn-ss (append* (map (select-instructions) 
                                        thn-ss))]
-                 [els-ss (append* (map (send this select-instructions)
+                 [els-ss (append* (map (select-instructions)
                                        els-ss))])
              `((if ,cnd ,thn-ss ,els-ss)))]
           [`(eq? ,a1 ,a2)
-           `(eq? ,((send this select-instructions) a1)
-                 ,((send this select-instructions) a2))]
+           `(eq? ,((select-instructions) a1)
+                 ,((select-instructions) a2))]
           [`(program ,locals (type ,ty) ,ss ...)
-	    (let ([new-ss (map (send this select-instructions) ss)])
+	    (let ([new-ss (map (select-instructions) ss)])
 	      `(program ,locals (type ,ty) ,@(append* new-ss)))]
           [else ((super select-instructions) e)]
           )))
@@ -289,30 +291,30 @@
     (define/override (free-vars a)
       (match a
 	 [`(byte-reg ,r) (set (byte-reg->full-reg r))]
-	 [`(eq? ,e1 ,e2) (set-union (send this free-vars e1)
-				    (send this free-vars e2))]
+	 [`(eq? ,e1 ,e2) (set-union (free-vars e1)
+				    (free-vars e2))]
 	 [else (super free-vars a)]
 	 ))
     
     (define/override (read-vars instr)
       (match instr
-        [`(movzbq ,s ,d) (send this free-vars s)]
-        [`(cmpq ,s1 ,s2) (set-union (send this free-vars s1)
-     				    (send this free-vars s2))]
+        [`(movzbq ,s ,d) (free-vars s)]
+        [`(cmpq ,s1 ,s2) (set-union (free-vars s1)
+     				    (free-vars s2))]
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d))
-         (set-union (send this free-vars s) (send this free-vars d))]
-	[`(notq ,d) (send this free-vars d)]
+         (set-union (free-vars s) (free-vars d))]
+	[`(notq ,d) (free-vars d)]
         [`(sete ,d) (set)]
         [else (super read-vars instr)]))
     
     (define/override (write-vars instr)
       (match instr
-        [`(movzbq ,s ,d) (send this free-vars d)]
+        [`(movzbq ,s ,d) (free-vars d)]
         [`(cmpq ,s1 ,s2) (set '__flag)]
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
-         (send this free-vars d)]
-	[`(notq ,d) (send this free-vars d)]
-        [`(sete ,d) (send this free-vars d)]
+         (free-vars d)]
+	[`(notq ,d) (free-vars d)]
+        [`(sete ,d) (free-vars d)]
         [else (super write-vars instr)]))
 
     (define/override (uncover-live live-after)
@@ -320,9 +322,9 @@
 	(match ast
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (define-values (new-thn-ss thn-lives)
-	      ((send this liveness-ss live-after) thn-ss))
+	      ((liveness-ss live-after) thn-ss))
 	    (define-values (new-els-ss els-lives)
-	      ((send this liveness-ss live-after) els-ss))
+	      ((liveness-ss live-after) els-ss))
 	    ;; I doubt that thn-lives can be null -Jeremy
 	    (define live-after-thn (cond [(null? thn-lives) live-after]
 					 [else (car thn-lives)]))
@@ -330,7 +332,7 @@
 					 [else (car els-lives)]))
 	    (values `(if ,cnd ,new-thn-ss ,(cdr thn-lives) ,new-els-ss ,(cdr els-lives))
 		    (set-union live-after-thn live-after-els
-			       (send this free-vars cnd)))]
+			       (free-vars cnd)))]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
 
@@ -349,7 +351,7 @@
               ast]
 	     [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
 	      (define (build-inter inst live-after)
-		((send this build-interference live-after G) inst))
+		((build-interference live-after G) inst))
 	      (define new-thn (map build-inter thn-ss thn-lives))
 	      (define new-els (map build-inter els-ss els-lives))
 	      `(if ,cnd ,new-thn ,new-els)]
@@ -362,28 +364,28 @@
       (lambda (e)
 	(match e
 	   [`(byte-reg ,r) `(byte-reg ,r)]
-	   [`(eq? ,e1 ,e2) `(eq? ,((send this assign-homes homes) e1)
-				 ,((send this assign-homes homes) e2))]
+	   [`(eq? ,e1 ,e2) `(eq? ,((assign-homes homes) e1)
+				 ,((assign-homes homes) e2))]
 	   [`(if ,cnd ,thn-ss ,els-ss)
-	    (let ([cnd ((send this assign-homes homes) cnd)]
-		  [thn-ss (map (send this assign-homes homes) thn-ss)]
-		  [els-ss (map (send this assign-homes homes) els-ss)])
+	    (let ([cnd ((assign-homes homes) cnd)]
+		  [thn-ss (map (assign-homes homes) thn-ss)]
+		  [els-ss (map (assign-homes homes) els-ss)])
 	      `(if ,cnd ,thn-ss ,els-ss))]
 	   [`(program (,xs ...) (type ,ty) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack ,(+ (send this first-offset)
-			  (* (send this variable-size) n))))
+	      `(stack ,(+ (first-offset)
+			  (* (variable-size) n))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
 				   (stream->list (in-range 0 (length xs)))))))
 	    (define stack-space (align 
 				 (* (length xs)
-				    (send this variable-size))
+				    (variable-size))
 				 16))
 	    `(program ,stack-space (type ,ty)
-		      ,@(map (send this assign-homes new-homes) ss))]
+		      ,@(map (assign-homes new-homes) ss))]
 	   [else ((super assign-homes homes) e)]
 	   )))
       
@@ -397,8 +399,8 @@
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
            [`(if (eq? ,a1 ,a2) ,thn-ss ,els-ss)
-	    (let ([thn-ss (append* (map (send this lower-conditionals) thn-ss))]
-		  [els-ss (append* (map (send this lower-conditionals) els-ss))]
+	    (let ([thn-ss (append* (map (lower-conditionals) thn-ss))]
+		  [els-ss (append* (map (lower-conditionals) els-ss))]
 		  [thn-label (gensym 'then)]
 		  [end-label (gensym 'if_end)])
 	      (append `((cmpq ,a1 ,a2)) 
@@ -407,7 +409,7 @@
 	       ))]
 	   [`(callq ,f) `((callq ,f))]
 	   [`(program ,stack-space (type ,ty) ,ss ...)
-	    (let ([new-ss (append* (map (send this lower-conditionals) ss))])
+	    (let ([new-ss (append* (map (lower-conditionals) ss))])
 	      `(program ,stack-space (type ,ty) ,@new-ss))]
 	   [`(,instr ,args ...)
 	    `((,instr ,@args))]
@@ -417,7 +419,7 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     (define/override (patch-instructions)
-      (define (mem? x) (send this on-stack? x))
+      (define (mem? x) (on-stack? x))
       (lambda (e)
 	(match e
 	   [`(je ,label) `((je ,label))]
@@ -441,7 +443,7 @@
               (movq (reg rax) ,d))]
 	   [`(program ,stack-space (type ,ty) ,ss ...)
 	    `(program ,stack-space (type ,ty)
-		      ,@(append* (map (send this patch-instructions) ss)))]
+		      ,@(append* (map (patch-instructions) ss)))]
 	   [else ((super patch-instructions) e)]
 	   )))
 
@@ -451,10 +453,10 @@
       (lambda (e)
 	(match e
 	   [`(byte-reg ,r) (format "%~a" r)]
-	   [`(sete ,d) (format "\tsete\t~a\n" ((send this print-x86) d))]
+	   [`(sete ,d) (format "\tsete\t~a\n" ((print-x86) d))]
            [`(cmpq ,s1 ,s2) 
-	    (format "\tcmpq\t~a, ~a\n" ((send this print-x86) s1)
-		    ((send this print-x86) s2))]
+	    (format "\tcmpq\t~a, ~a\n" ((print-x86) s1)
+		    ((print-x86) s2))]
 	   [`(je ,label) (format "\tje ~a\n" label)]
 	   [`(jmp ,label) (format "\tjmp ~a\n" label)]
 	   [`(label ,l) (format "~a:\n" l)]
@@ -467,7 +469,7 @@
 	      (for/list ([r (reverse callee-reg)])
 			(format "\tpopq\t%~a\n" r)))
 	    (define callee-space (* (length (set->list callee-save))
-				    (send this variable-size)))
+				    (variable-size)))
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
 				  callee-space))
 	    (string-append
@@ -478,7 +480,7 @@
 	     (string-append* save-callee-reg)
 	     (format "\tsubq\t$~a, %rsp\n" stack-adj)
 	     "\n"
-	     (string-append* (map (send this print-x86) ss))
+	     (string-append* (map (print-x86) ss))
 	     "\n"
              (print-by-type ty)
 	     (format "\tmovq\t$0, %rax\n")
