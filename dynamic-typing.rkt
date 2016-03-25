@@ -128,6 +128,7 @@
 	 ['Integer 0]
 	 ['Boolean 1]
 	 [`(Vector ,ts ...) 2]
+	 [`(Vectorof ,t) 2]
 	 [`(,ts ... -> ,rt) 3]
 	 [else (error "in any-tag, unrecognized type" ty)]
 	 ))
@@ -172,7 +173,7 @@
 		 ((andq (int ,pointer-mask) ,new-lhs)
 		  (if (eq? ,new-lhs (int ,pointer-mask))
 		      ;; vectors and procedures.
-		      ;; To do: check length and arity. -Jeremy
+		      ;; To do: check length of vector, arity of procedure. -Jeremy
 		      ((movq (int ,any-mask) ,new-lhs)
 		       (notq ,new-lhs)
 		       (andq  ,new-e ,new-lhs))
