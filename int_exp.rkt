@@ -149,12 +149,13 @@
 	   [`(var ,x) (hash-ref homes x)]
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
+	   [`(deref ,r ,n) `(deref ,r ,n)]
 	   [`(callq ,f) `(callq ,f)]
 	   [`(program (,xs ...) (type ,ty) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack ,(+ (first-offset)
-			  (* (variable-size) n))))
+	      `(deref rbp ,(- (+ (first-offset)
+				 (* (variable-size) n)))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
@@ -168,8 +169,8 @@
 	   [`(program (,xs ...) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack ,(+ (first-offset)
-			  (* (variable-size) n))))
+	      `(deref rbp ,(- (+ (first-offset)
+				 (* (variable-size) n)))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
@@ -190,10 +191,9 @@
     ;; patch-instructions : psuedo-x86 -> x86
     ;; Uses register rax to patch things up
 
-    ;; should this be called in-memory? 
-    (define/public (on-stack? a)
+    (define/public (in-memory? a)
       (match a
-        [`(stack ,n) #t]
+        [`(deref ,reg ,n) #t]
         [else #f]))
 
     (define/public (patch-instructions)
@@ -202,12 +202,12 @@
           ;; Large integers cannot be moved directly to memory
           ;; I am not sure what sizes can be moved directly to
           ;; memory. This is a conservative estimate. -andre 
-          [`(movq (int ,n) ,(? on-stack? d)) #:when (> n (expt 2 16))
+          [`(movq (int ,n) ,(? in-memory? d)) #:when (> n (expt 2 16))
            `((movq (int ,n) (reg rax))
              (movq (reg rax) ,d))]
            [`(movq ,s ,d)
 	    (cond [(equal? s d) '()] ;; trivial move, delete it
-		  [(and (on-stack? s) (on-stack? d))
+		  [(and (in-memory? s) (in-memory? d))
 		   `((movq ,s (reg rax))
 		     (movq (reg rax) ,d))]
                   [else `((movq ,s ,d))])]
@@ -224,7 +224,7 @@
 	      (movq (reg rax) ,d))]
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (instructions) instr-name)
-	    (cond [(and (on-stack? s) (on-stack? d))	
+	    (cond [(and (in-memory? s) (in-memory? d))	
 		   (debug 'patch-instructions "spilling")
 		   `((movq ,s (reg rax)) (,instr-name (reg rax) ,d))]
 		  [else `((,instr-name ,s ,d))])]
@@ -238,7 +238,9 @@
     (define/public (print-x86)
       (lambda (e)
 	(match e
-           [`(stack ,n) 
+	   [`(deref ,reg ,i)
+	    (format "~a(%~a)" i reg)]
+           #;[`(stack ,n) 
 	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(reg ,r) (format "%~a" r)]

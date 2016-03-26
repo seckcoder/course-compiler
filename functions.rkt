@@ -268,7 +268,7 @@
 	 (define mov-stack
 	   (for/list ([param last-params] 
 		      [i (in-range 0 (length last-params))])
-		     `(movq (stack ,(- (+ 16 (* i 8)))) (var ,param))))
+		     `(movq (deref rbp ,(+ 16 (* i 8))) (var ,param))))
 	 (define new-ss
 	   (append mov-stack mov-regs
 		   (append* (map (select-instructions) ss))))
@@ -403,7 +403,7 @@
     (define/override (assign-homes homes)
       (lambda (e)
 	(match e
-	   [`(stack ,i) `(stack ,i)]
+	   #;[`(stack ,i) `(stack ,i)]
 	   [`(stack-arg ,i) `(stack-arg ,i)]
 	   [`(indirect-callq ,f)
 	    `(indirect-callq ,((assign-homes homes) f))]
@@ -435,11 +435,11 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; patch-instructions : psuedo-x86 -> x86
 
-    (define/override (on-stack? a)
+    (define/override (in-memory? a)
       (match a
 	 [`(function-ref ,f) #t]
 	 [`(stack-arg ,i) #t]
-	 [else (super on-stack? a)]))
+	 [else (super in-memory? a)]))
 
     (define/override (patch-instructions)
       (lambda (e)
@@ -455,7 +455,7 @@
 	    (define sss (for/list ([s ss]) ((patch-instructions) s)))
 	    `(program ,stack-space (type ,ty) (defines ,@new-ds) ,@(append* sss))]
 	   [`(leaq ,s ,d)
-	    (cond [(on-stack? d)
+	    (cond [(in-memory? d)
 		   `((leaq ,s (reg rax))
 		     (movq (reg rax) ,d))]
 		  [else

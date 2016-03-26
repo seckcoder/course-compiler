@@ -10,7 +10,7 @@
   (class compile-reg-R0
     (super-new)
 
-    (inherit liveness-ss first-offset variable-size on-stack?)
+    (inherit liveness-ss first-offset variable-size in-memory?)
 
     (define/override (primitives)
       (set-union (super primitives) 
@@ -374,8 +374,8 @@
 	   [`(program (,xs ...) (type ,ty) ,ss ...)
 	    ;; create mapping of variables to stack locations
 	    (define (make-stack-loc n)
-	      `(stack ,(+ (first-offset)
-			  (* (variable-size) n))))
+	      `(deref rbp ,(- (+ (first-offset)
+				 (* (variable-size) n)))))
 	    (define new-homes
 	      (make-hash (map cons xs
 			      (map make-stack-loc
@@ -395,7 +395,7 @@
       (lambda (e)
 	(match e
 	   [`(byte-reg ,r) `(byte-reg ,r) ]
-	   [`(stack ,n) `(stack ,n)] 
+	   [`(deref ,r ,n) `(deref ,r ,n)] 
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
            [`(if (eq? ,a1 ,a2) ,thn-ss ,els-ss)
@@ -419,7 +419,7 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     (define/override (patch-instructions)
-      (define (mem? x) (on-stack? x))
+      (define (mem? x) (in-memory? x))
       (lambda (e)
 	(match e
 	   [`(je ,label) `((je ,label))]

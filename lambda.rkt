@@ -64,7 +64,7 @@
         [(or (? integer?) (? boolean?)) (hash)]
         [`(function-ref ,f) (hash)]
         [`(let ([,x ,e]) ,body)
-         (hash-remove (recur body) x)]
+	 (hash-union (recur e) (hash-remove (recur body) x))]
         [`(if ,cnd ,thn, els)
          (hash-union (recur cnd) (recur thn) (recur els))]
 	[`(lambda: ([,xs : ,Ts] ...) : ,rT ,body)
@@ -117,6 +117,7 @@
                   [fvs-expr  (map cdr fvs-table)]                  
                   [fvT       (map caddr fvs-expr)]
                   [fvs-tmp   (gensym 'fvs)])
+	     (debug "fvs: " (map car fvs-table))
              (values
               `(has-type (vector (has-type (function-ref ,fun-name) _) ,@fvs-expr)
                          (Vector _ ,@fvT))

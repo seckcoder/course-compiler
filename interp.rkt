@@ -97,14 +97,15 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; psuedo-x86 and x86
-    ;; s,d ::= (var x) | (int n) | (reg r) | (stack n)
+    ;; s,d ::= (var x) | (int n) | (reg r) | (deref r n)
     ;; i   ::= (movq s d) | (addq s d) | (subq s d) | (imulq s d) 
     ;;       | (negq d) | (callq f)
     ;; psuedo-x86 ::= (program (x ...) i ...)
 
     (define/public (get-name ast)
       (match ast
-        [(or `(var ,x) `(reg ,x) `(stack ,x)) x]
+        [(or `(var ,x) `(reg ,x)) x]
+	[`(deref rbp ,n) n]
         [else
          (error 'interp-R0/get-name "doesn't have a name: ~a" ast)]))
 
@@ -124,8 +125,10 @@
       (lambda (ast)
         (vomit "interp-x86-exp" ast)
 	(match ast
-	   [(or `(var ,x) `(reg ,x) `(stack ,x))
-            (lookup x env)]
+	   [(or `(var ,x) `(reg ,x))
+            (lookup (get-name ast) env)]
+	   [`(deref ,r ,n)
+            (lookup (get-name ast) env)]
 	   [`(int ,n) n]
 	   [else
 	    (error 'interp-R0/interp-x86-exp "unhandled ~a" ast)])))
@@ -545,8 +548,8 @@
         (vomit "interp-x86-exp" ast)
         (match ast
           [`(global-value ,label) (fetch-global label)]
-          [`(offset ,d ,i)
-           (define base ((interp-x86-exp env) d))
+          [`(deref ,r ,i) #:when (not (eq? r 'rbp))
+           (define base ((interp-x86-exp env) `(reg ,r)))
            (define addr (+ base i))
            ((memory-read) addr)]
           [else ((super interp-x86-exp env) ast)])))
@@ -559,8 +562,8 @@
            (define loc (hash-ref global-label-table label (global-value-err ast)))
            (set-box! loc value)
            env]
-          [`(offset ,d ,i)
-           (define base ((interp-x86-exp env) d))
+          [`(deref ,r ,i) #:when (not (eq? r 'rbp))
+           (define base ((interp-x86-exp env) `(reg ,r)))
            (define addr (+ base i))
            ((memory-write!) addr value)
            env]
@@ -733,7 +736,7 @@
 					  arg-registers))))])
 		      (define name (stack-arg-name (* i 8)))
 		      (define val (lookup name env))
-		      (define index (- (+ 16 (* i 8))))
+		      (define index (+ 16 (* i 8)))
 		      (cons index val)))
 	  (define new-env (append passing-regs passing-stack env))
 	  (define result-env
@@ -772,7 +775,7 @@
 	    (call-function (lookup f env) ss env)]
            [`(program ,extra (type ,ty) (defines ,ds ...) ,ss ...)
             (display-by-type ty ((interp-x86 env)
-                                           `(program ,extra (defines ,@ds) ,@ss)) env)]
+				 `(program ,extra (defines ,@ds) ,@ss)) env)]
 	   [`(program ,extra (defines ,ds ...) ,ss ...)
             (parameterize ([program ss])
 	       (define env (map (interp-x86 '()) ds))

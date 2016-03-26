@@ -22,8 +22,8 @@
     (define/public (free-vars a)
       (match a
 	 [`(var ,x) (set x)]
-	 [`(reg ,r) (set r)] ;; experimental -Jeremy
-	 [`(stack ,i) (set)]
+	 [`(reg ,r) (set r)]
+	 [`(deref ,r ,i) (set r)]
 	 [`(int ,n) (set)]
 	 [else (error "free-vars, unhandled" a)]))
 
@@ -186,7 +186,7 @@
         [(< c n)
          `(reg ,(vector-ref registers-for-alloc c))]
         [else 
-         `(stack ,(+ (first-offset) (* (- c n) (variable-size))))]))
+         `(deref rbp ,(- (+ (first-offset) (* (- c n) (variable-size)))))]))
 
     (define/public (allocate-homes IG MG xs ss)
       (set! largest-color 0)

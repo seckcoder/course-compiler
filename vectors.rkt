@@ -257,19 +257,19 @@
          `((movq (global-value free_ptr) ,lhs^)
            (addq (int ,size) (global-value free_ptr))
 	   (movq ,lhs^ (reg r11))
-           (movq (int ,tag) (offset (reg r11) 0)))]        
+           (movq (int ,tag) (deref r11 0)))]        
         [`(call-live-roots (,clr* ...) . ,ss)
          (if (null? clr*)
              (append* (map (select-instructions) ss))
              (let ([frame-size  (* (length clr*) 8)]
                    [pushes
                     (for/list ([root (in-list clr*)] [i (in-naturals)])
-                      `(movq (var ,root) (offset (reg ,rootstack-reg)
-						 ,(* i 8))))]
+                      `(movq (var ,root)
+			     (deref ,rootstack-reg ,(* i 8))))]
                    [pops
                     (for/list ([root (in-list clr*)] [i (in-naturals)])
-                      `(movq (offset (reg ,rootstack-reg)
-				     ,(* i 8)) (var ,root)))])
+                      `(movq (deref ,rootstack-reg ,(* i 8))
+			     (var ,root)))])
                `(,@pushes
                  (addq (int ,frame-size) (reg ,rootstack-reg))
                  ,@(append* (map (select-instructions) ss))
@@ -305,13 +305,13 @@
          (define lhs^ ((select-instructions) lhs))
          (define e-vec^ ((select-instructions) e-vec))
          `((movq ,e-vec^ (reg r11))
-	   (movq (offset (reg r11) ,(* (add1 i) 8)) ,lhs^))]
+	   (movq (deref r11 ,(* (add1 i) 8)) ,lhs^))]
         [`(assign ,lhs (vector-set! ,e-vec (has-type ,i ,Integer) ,e-arg))
          (define new-lhs ((select-instructions) lhs))
          (define new-e-vec ((select-instructions) e-vec))
          (define new-e-arg ((select-instructions) e-arg))
          `((movq ,new-e-vec (reg r11))
-	   (movq ,new-e-arg (offset (reg r11) ,(* (add1 i) 8))))]
+	   (movq ,new-e-arg (deref r11 ,(* (add1 i) 8))))]
         ;; If has to be overridden because it needs to propagate
         [`(if ,cnd ,thn-ss ,els-ss)
          (let ([cnd ((select-instructions) cnd)]
@@ -328,19 +328,19 @@
   (define/override (free-vars a)
     (match a
        [`(global-value ,l) (set)]
-       [`(offset ,e ,i) (free-vars e)]
+       ;[`(offset ,e ,i) (free-vars e)]
        [else (super free-vars a)]
        ))
 
   (define/override (write-vars x)
     (match x
-      [`(movq ,s (offset ,d ,i)) (set)]
+      ;[`(movq ,s (offset ,d ,i)) (set)]
       [`(setl ,d) (free-vars d)]
       [else (super write-vars x)]))
   
   (define/override (read-vars x)
     (match x
-      [`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
+      ;[`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
       [`(setl ,d) (set)]
       [else (super read-vars x)]))
 
@@ -350,7 +350,7 @@
       (lambda (e)
         (match e
           [`(global-value ,l) e]
-          [`(offset ,e ,i)
+          #;[`(offset ,e ,i)
            (define new-e ((assign-homes homes) e))
            `(offset ,new-e ,i)]
           [`(setl ,e)
@@ -361,11 +361,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; patch-instructions : psuedo-x86 -> x86
 
-(define/override (on-stack? a)
+(define/override (in-memory? a)
   (match a
-    [`(offset ,e ,i) #t]
+	 ;[`(offset ,e ,i) #t]
     [`(global-value ,l) #t]
-    [else (super on-stack? a)]))
+    [else (super in-memory? a)]))
 
 (define/override (instructions)
   (set-add (super instructions) 'setl))
@@ -376,10 +376,10 @@
 (define/override (print-x86)
   (lambda (e)
     (match e
-      [`(offset (stack ,n) ,i)
+      #;[`(offset (stack ,n) ,i)
        ;(error "offset, stack case " n)
        (format "~a(%rbp)" (- i n))]
-      [`(offset ,e ,i)
+      #;[`(offset ,e ,i)
        (format "~a(~a)" i ((print-x86) e))]
       [`(global-value ,label)
        (format "~a(%rip)" (label-name (symbol->string label)))]

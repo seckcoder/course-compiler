@@ -493,10 +493,10 @@
       (error 'byte-reg->full-reg "invalid byte register ~a" x))
     r?))
 
-;; The numbers here correspond to indices in the general-registers
+;; The positive numbers here correspond to indices in the general-registers
 ;; and registers-for-alloc.
 (define reg-colors
-  '((rax . -1) (r11 . -2) (r15 . -3) (__flag . -1)
+  '((rax . -1) (r11 . -2) (r15 . -3) (rbp . -4) (__flag . -5)
     (rbx . 0) (rcx . 1) (rdx . 2) (rsi . 3) (rdi . 4)
     (r8 . 5) (r9 . 6) (r10 . 7) (r12 . 8) (r13 . 9)
     (r14 . 10)))
