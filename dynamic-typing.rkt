@@ -32,16 +32,22 @@
           [`(let ([,x ,e1]) ,e2) `(let ([,x ,((cast-insert) e1)]) ,((cast-insert) e2))]
           [#t `(inject #t Boolean)]
           [#t `(inject #f Boolean)]
-          [`(and ,e1 ,e2) `(inject (and (project ,((cast-insert) e1) Boolean) (project ,((cast-insert) e2) Boolean)) Boolean)]
+          [`(and ,e1 ,e2) (let ([gen (gensym)])
+                            `(let ([,gen ,((cast-insert) e1)])
+                               (if (eq? ,gen (inject #f Boolean))
+                                   ,gen
+                                   ,((cast-insert) e2))))]
           [`(not ,e) `(inject (not (project ,((cast-insert) e) Boolean)) Boolean)]
-          [`(eq? ,e1 ,e2) `(inject (eq? (project ,((cast-insert) e1) Integer) (project ,((cast-insert) e2) Integer)) Boolean)] ; What about true = true?
-          [`(if ,eq ,et ,ef) `(if (project ,((cast-insert) eq) Boolean) ,((cast-insert) et) ,((cast-insert) ef))]
+          [`(eq? ,e1 ,e2) `(inject (eq? ,((cast-insert) e1),((cast-insert) e2)) Boolean)]
+          [`(if ,eq ,et ,ef) `(if (eq? ,((cast-insert) eq) (inject #t Boolean)) ,((cast-insert) et) ,((cast-insert) ef))]
           [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vectorof Any))]
           [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) n)]
           [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) n ,((cast-insert) e2))]
           [`(void) `(inject (void) Void)] ; ???
           [`(lambda (,xs ...) ,e) `(inject (lambda: (,@(map (lambda (x) `[,x : Any]) xs)) ,((cast-insert) e)) (,@(map (lambda (x) 'Any) xs) -> Any))]
-          [`(,e ,es ...) `((project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))])))
+          [`(,e ,es ...) `((project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))]
+          [`(define (,f ,xs ...) ,e) `(define (,f ,@(map (lambda (x) `[,x : Any]) xs)) : Any ,((cast-insert) e))]
+          [`(program ,ds ... ,e) `(program 
           
           
 
