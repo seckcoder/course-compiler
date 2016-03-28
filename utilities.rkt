@@ -218,6 +218,7 @@
     (debug "** compiler " name)
     (debug "** checking passes for test " test-name)
     (define input-file-name (format "tests/~a.in" test-name))
+    (define result-file-name (format "tests/~a.res" test-name))
     (define program-name (format "tests/~a.rkt" test-name))
     (define sexp (read-program program-name))
     (debug "check passes:" sexp)
@@ -229,11 +230,17 @@
      [type-error-expected 'expected-type-error]
      [tsexp 
       (let loop ([passes passes] [p tsexp]
-                 [result (if (file-exists? input-file-name)
-                             (with-input-from-file input-file-name
-                               (lambda () (initial-interp tsexp)))
-                             (initial-interp tsexp))])
-        (cond [(null? passes) result]
+                 [result (cond [initial-interp
+                                (if (file-exists? input-file-name)
+                                    (with-input-from-file input-file-name
+                                      (lambda () (initial-interp tsexp)))
+                                    (initial-interp tsexp))]
+                               [else 
+                                (if (file-exists? result-file-name)
+                                    (call-with-input-file result-file-name
+                                      (lambda (f) (string->number (read-line f))))
+                                    42)])])
+        (cond [(null? passes)  result]
               [else
                (match (car passes)
                  [`(,pass-name ,pass ,interp)
@@ -247,13 +254,14 @@
                   (cond [interp
                          (let ([new-result
                                 ;; if there is an input file with the same name
-                                ;; as this test bing current-input-port to that
+                                ;; as this test bind current-input-port to that
                                 ;; file's input port so that the interpreters
                                 ;; can use it as test input.
                                 (if (file-exists? input-file-name) 
                                     (with-input-from-file input-file-name
                                       (lambda () (interp new-p)))
                                     (interp new-p))])
+                           
                            (cond [result
                                   (cond [(equal? result new-result)
                                          (loop (cdr passes) new-p new-result)]
@@ -309,11 +317,13 @@
               (cond [(string? x86)
                      (write-string x86 out-file)
                      (newline out-file)
+                     (flush-output out-file)
                      #t]
                     [else
                      (error "compiler did not produce x86 output")])
               )
-            #f)))))
+            #f)
+        ))))
 
 ;; The interp-tests function takes a compiler name (a string), a
 ;; typechecker (see the comment for check-passes) a description of the
@@ -527,6 +537,8 @@
     (lambda (ty index)
       (format "\tmovq\t~a(%r~a), %rax\n~a" (* 8 (+ 1 index)) depth (print-by-type ty (+ 1 depth)))))
   (match ty
+    ['Any 
+     (format "\tmovq\t%rax, %rdi\n\tcallq\t~a\n" (label-name "print_any"))]
     ['Void (format "\tcallq\t~a\n" (label-name "print_void"))]
     ['Integer 
      (format "\tmovq\t%rax, %rdi\n\tcallq\t~a\n" (label-name "print_int"))]

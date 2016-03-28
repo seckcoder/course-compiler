@@ -106,7 +106,7 @@
                                   (has-type ,tmp ,t^) ,@new-es) ,t))
                  ,t)
                (append e-fs (apply append es-fss)))]
-             [else (error 'convert-to-closures "I assume this shouldn't happen")])]
+             [else (error 'convert-to-closures (format "I assume this shouldn't happen ~a" new-e))])]
           [`(has-type (lambda: ([,xs : ,Ts] ...) : ,rT ,body) ,t)
            (define-values (new-body body-fs) (recur body))
            (let* ([fun-name (gensym 'lambda)]

@@ -447,3 +447,7 @@ void print_vecend() {
 void print_ellipsis() {
   printf("#(...)");
 }
+
+void print_any(int64_t any) {
+  printf("%" PRId64, any >> 2);
+}

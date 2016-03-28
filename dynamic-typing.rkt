@@ -4,7 +4,7 @@
 (require "interp.rkt")
 (require "lambda.rkt")
 
-(provide compile-R6 R6-passes R6-typechecker R7-translator)
+(provide compile-R6 R6-passes R6-typechecker R7-passes)
 
 (define compile-R6
   (class compile-R4
@@ -17,39 +17,6 @@
 		 type-predicates
 		 (set 'inject 'project)
 		 ))
-
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; cast-insert
-    
-    (define/public (cast-insert)
-      (lambda (e)
-        (match e
-          [(? integer?) `(inject ,e Integer)]
-          [(? symbol?) e]
-          [`(read) `(inject (read) Integer)]
-          [`(+ ,e1 ,e2) `(inject (+ (project ,((cast-insert) e1) Integer) (project ,((cast-insert) e2) Integer)) Integer)]
-          [`(- ,e) `(inject (- (project ,((cast-insert) e) Integer)) Integer)]
-          [`(let ([,x ,e1]) ,e2) `(let ([,x ,((cast-insert) e1)]) ,((cast-insert) e2))]
-          [#t `(inject #t Boolean)]
-          [#t `(inject #f Boolean)]
-          [`(and ,e1 ,e2) (let ([gen (gensym)])
-                            `(let ([,gen ,((cast-insert) e1)])
-                               (if (eq? ,gen (inject #f Boolean))
-                                   ,gen
-                                   ,((cast-insert) e2))))]
-          [`(not ,e) `(inject (not (project ,((cast-insert) e) Boolean)) Boolean)]
-          [`(eq? ,e1 ,e2) `(inject (eq? ,((cast-insert) e1),((cast-insert) e2)) Boolean)]
-          [`(if ,eq ,et ,ef) `(if (eq? ,((cast-insert) eq) (inject #t Boolean)) ,((cast-insert) et) ,((cast-insert) ef))]
-          [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vectorof Any))]
-          [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) n)]
-          [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) n ,((cast-insert) e2))]
-          [`(void) `(inject (void) Void)] ; ???
-          [`(lambda (,xs ...) ,e) `(inject (lambda: (,@(map (lambda (x) `[,x : Any]) xs)) ,((cast-insert) e)) (,@(map (lambda (x) 'Any) xs) -> Any))]
-          [`(,e ,es ...) `((project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))]
-          [`(define (,f ,xs ...) ,e) `(define (,f ,@(map (lambda (x) `[,x : Any]) xs)) : Any ,((cast-insert) e))]
-          [`(program ,ds ... ,e) `(program 
-          
-          
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check
@@ -95,6 +62,7 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; reveal-functions
+    
     (define/override (reveal-functions funs)
       (lambda (e)
 	(define recur (send this reveal-functions funs))
@@ -245,11 +213,149 @@
 
     ))
 
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;; R7 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(define compile-R7
+  (class compile-R6
+    (super-new)
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; cast-insert
+
+
+    (define/public (cast-insert)
+      (lambda (e)
+        (match e
+          [(? integer?) `(inject ,e Integer)]
+          [(? symbol?) e]
+          [`(read) `(inject (read) Integer)]
+          [`(function-ref ,e ,n) `(inject (function-ref ,e) (,@(map (lambda (x) 'Any) (range n)) -> Any))]
+          [`(+ ,e1 ,e2) `(inject (+ (project ,((cast-insert) e1) Integer) (project ,((cast-insert) e2) Integer)) Integer)]
+          [`(- ,e) `(inject (- (project ,((cast-insert) e) Integer)) Integer)]
+          [`(let ([,x ,e1]) ,e2) `(let ([,x ,((cast-insert) e1)]) ,((cast-insert) e2))]
+          [#t `(inject #t Boolean)]
+          [#t `(inject #f Boolean)]
+          [`(and ,e1 ,e2) (let ([gen (gensym)])
+                            `(let ([,gen ,((cast-insert) e1)])
+                               (if (eq? ,gen (inject #f Boolean))
+                                   ,gen
+                                   ,((cast-insert) e2))))]
+          [`(not ,e) `(inject (not (project ,((cast-insert) e) Boolean)) Boolean)]
+          [`(eq? ,e1 ,e2) `(inject (eq? ,((cast-insert) e1),((cast-insert) e2)) Boolean)]
+          [`(if ,eq ,et ,ef) `(if (eq? ,((cast-insert) eq) (inject #t Boolean)) ,((cast-insert) et) ,((cast-insert) ef))]
+          [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vectorof Any))]
+          [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) n)]
+          [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) n ,((cast-insert) e2))]
+          [`(void) `(inject (void) Void)] ; ???
+          [`(lambda (,xs ...) ,e) `(inject (lambda: (,@(map (lambda (x) `[,x : Any]) xs)) : Any ,((cast-insert) e)) (,@(map (lambda (x) 'Any) xs) -> Any))]
+          [`(app ,e ,es ...) `(app (project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))]
+          [`(define (,f ,xs ...) ,e) `(define (,f ,@(map (lambda (x) `[,x : Any]) xs)) : Any ,((cast-insert) e))]
+          [`(program ,ds ... ,e) `(program ,@(map (cast-insert) ds) ,((cast-insert) e))])))
+          
+          
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; type-check
+
+   (define/override (type-check env)
+      (lambda (e)
+        (match e
+          [`(function-ref ,e)
+           (let ([t (lookup e env)])
+             (values `(has-type (function-ref ,e) ,t) t))]
+          [`(app ,e ,es ...)
+           (define-values (e* ty*)
+             (for/lists (e* ty*) ([e (in-list es)])
+               ((type-check env) e)))
+           (define-values (e^ ty)
+             ((type-check env) e))
+           (match ty
+             [`(,ty^* ... -> ,rt)
+              (unless (equal? ty* ty^*)
+                (error "parameter and argument type mismatch for function" e))
+              (vomit "app" e^ e* rt)
+              (values `(has-type (app ,e^ ,@e*) ,rt) rt)]
+             [else (error "expected a function, not" ty)])]
+	  [else
+	   ((super type-check env) e)]
+	  )))
+
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; uniquify
+    (define/override (uniquify env)
+      (lambda (e)
+	(match e
+          [`(define (,f ,xs ...) ,body)
+           (define new-xs (for/list ([x xs]) (gensym (racket-id->c-id x))))
+           (define new-env (append (map cons xs new-xs) env))
+           `(define (,(cdr (assq f env)) 
+                     ,@new-xs) 
+                     ,((uniquify new-env) body))]
+          [`(program ,ds ... ,body)  #:when (or (null? ds) (not (eq? (caar ds) 'type)))
+           (define new-env
+             (for/list ([d ds])
+               (match d
+                 [`(define (,f ,xs ...) ,body)
+                  (define new-f (gensym (racket-id->c-id f)))
+                  `(,f . ,new-f)]
+                 [else (error "type-check, ill-formed function def")])))
+           `(program ,@(map (uniquify new-env) ds)
+                     ,((uniquify new-env) body))]
+          [`(lambda (,xs ...) ,body)
+	   (define new-xs (for/list ([x xs]) (gensym (racket-id->c-id x))))
+	   (define new-env (append (map cons xs new-xs) env))
+           `(lambda ,new-xs
+              ,((uniquify new-env) body))]
+	  [else ((super uniquify env) e)])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; reveal-functions
+    (define/override (fun-def-name d)
+      (match d
+        [`(define (,f ,xs ...) ,body)
+         f]
+        [else (super fun-def-name d)])) 
+    
+    (define/public (fun-def-arity d)
+      (match d
+        [`(define (,f ,xs ...) ,body)
+         (length xs)]
+        [else (error 'Syntax-Error "ill-formed function definition in ~a" d)]))
+
+    (define/override (reveal-functions funs)
+      (lambda (e)
+	(define recur (send this reveal-functions funs))
+	(match e
+          [(? symbol?) #:when (or (null? funs) (pair? (car funs))) ; This is an arity-environment, meaning R7
+           (cond
+            [(lookup e funs #f) `(function-ref ,e ,(lookup e funs))]
+            [else e])]
+          [`(program ,ds ... ,body) #:when (or (null? ds) (not (eq? (caar ds) 'type)))
+           (define funs 
+             (for/list ([d ds]) 
+               (cons (fun-def-name d) (fun-def-arity d))))
+           `(program ,@(map (reveal-functions funs) ds)
+                     ,((reveal-functions funs) body))]
+          [`(define (,f ,params ...) ,body)
+           `(define (,f ,@params) ,(recur body))]
+          [`(lambda ,params ,body)
+           `(lambda ,params ,(recur body))]
+          [else ((super reveal-functions funs) e)])))
+
+
+    ))
+
+
+
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
-(define R7-translator
-  (let ([compiler (new compile-R6)])
-    (send compiler cast-insert))) 
 (define R6-typechecker
   (let ([compiler (new compile-R6)])
     (send compiler type-check '())))
@@ -289,5 +395,45 @@
        ,(send interp interp-x86 '()))
       ("patch instructions" ,(send compiler patch-instructions)
        ,(send interp interp-x86 '()))
+      ("print x86" ,(send compiler print-x86) #f)
+      )))
+
+(define R7-passes
+  (let ([compiler (new compile-R7)])
+    `(
+      ("uniquify" ,(send compiler uniquify '())
+       #f)
+      ("reveal-functions" ,(send compiler reveal-functions '())
+       #f)
+      ("translate" ,(send compiler cast-insert)
+       #f)
+      ("inserthastype" ,(send compiler type-check '())
+       #f)
+      ("convert-to-closures" ,(send compiler convert-to-closures)
+       #f)
+      ("flatten" ,(send compiler flatten #f)
+       #f)
+      ("expose allocation"
+       ,(send compiler expose-allocation)
+       #f)
+      ("uncover call live roots"
+       ,(send compiler uncover-call-live-roots)
+       #f)
+      ("instruction selection" ,(send compiler select-instructions)
+       #f)
+      ("liveness analysis" ,(send compiler uncover-live (void))
+       #f)
+      ("build interference" ,(send compiler build-interference
+                                   (void) (void))
+       #f)
+      ("build move graph" ,(send compiler
+                                 build-move-graph (void))
+       #f)
+      ("allocate registers" ,(send compiler allocate-registers)
+       #f)
+      ("lower conditionals" ,(send compiler lower-conditionals)
+       #f)
+      ("patch instructions" ,(send compiler patch-instructions)
+       #f)
       ("print x86" ,(send compiler print-x86) #f)
       )))

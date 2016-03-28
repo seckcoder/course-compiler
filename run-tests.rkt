@@ -20,14 +20,15 @@
 ;; Table associating names of compilers with the information for
 ;; running and testing them.
 (define compiler-list
-  ;; Name           Typechecker               Compiler-Passes      Valid suites
-  `(("int_exp"      #f                        ,int-exp-passes      (0))
-    ("reg_int_exp"  #f                        ,reg-int-exp-passes  (0))
-    ("conditionals" ,conditionals-typechecker ,conditionals-passes (0 1))
-    ("vectors"      ,vectors-typechecker      ,vectors-passes      (0 1 2))
-    ("functions"    ,functions-typechecker    ,functions-passes    (0 1 2 3))
-    ("lambda"       ,lambda-typechecker       ,lambda-passes       (0 1 2 3 4))
-    ("any"          ,R6-typechecker           ,R6-passes           (0 1 2 3 4 6))
+  ;; Name           Typechecker               Compiler-Passes      Use interpreter? Valid suites
+  `(("int_exp"      #f                        ,int-exp-passes      #t               (0))
+    ("reg_int_exp"  #f                        ,reg-int-exp-passes  #t               (0))
+    ("conditionals" ,conditionals-typechecker ,conditionals-passes #t               (0 1))
+    ("vectors"      ,vectors-typechecker      ,vectors-passes      #t               (0 1 2))
+    ("functions"    ,functions-typechecker    ,functions-passes    #t               (0 1 2 3))
+    ("lambda"       ,lambda-typechecker       ,lambda-passes       #t               (0 1 2 3 4))
+    ("any"          ,R6-typechecker           ,R6-passes           #t               (0 1 2 3 4 6))
+    ("dynamic"      #f                        ,R7-passes           #f               (7))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))
@@ -41,6 +42,7 @@
     (3 . ,(range 1 20))
     (4 . ,(range 0 8))
     (6 . ,(range 0 8))
+    (7 . ,(range 0 3))
     ))
 
 (define (suite-range x)
@@ -51,10 +53,11 @@
 
 ;; test-compiler runs a compiler (list of passes) with a name and
 ;; typechecker on a list of tests in a particular test-suite.
-(define (test-compiler name typechecker passes test-suite test-nums)
+(define (test-compiler name typechecker use-interp passes test-suite test-nums)
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
-  (interp-tests name typechecker passes interp-scheme test-suite test-nums)
+  (unless (not use-interp)
+    (interp-tests name typechecker passes interp-scheme test-suite test-nums))
   (compiler-tests name typechecker passes test-suite test-nums)
   (newline)(display "tests passed")(newline))
 
@@ -159,13 +162,13 @@
    (let ([info? (hash-ref compiler-table compiler #f)])
      (unless info?
        (error 'run-tests "invalid compiler: ~a" compiler))
-     (match-let ([(list tyck pass suites) info?])
+     (match-let ([(list tyck pass use-interp suites) info?])
        (for ([suite (suites-to-test)])
          (when (set-member? suites suite)
            (let* ([sname (format "s~a" suite)]
                   [test-set (set-intersect (suite-range suite) (tests-to-run))]
                   [tests (sort test-set <)])
-             (test-compiler compiler tyck pass sname tests))))))))
+             (test-compiler compiler tyck use-interp pass sname tests))))))))
 
  
 
