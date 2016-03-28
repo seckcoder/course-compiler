@@ -4,7 +4,7 @@
 (require "interp.rkt")
 (require "lambda.rkt")
 
-(provide compile-R6 R6-passes R6-typechecker)
+(provide compile-R6 R6-passes R6-typechecker R7-translator)
 
 (define compile-R6
   (class compile-R4
@@ -17,6 +17,33 @@
 		 type-predicates
 		 (set 'inject 'project)
 		 ))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; cast-insert
+    
+    (define/public (cast-insert)
+      (lambda (e)
+        (match e
+          [(? integer?) `(inject ,e Integer)]
+          [(? symbol?) e]
+          [`(read) `(inject (read) Integer)]
+          [`(+ ,e1 ,e2) `(inject (+ (project ,((cast-insert) e1) Integer) (project ,((cast-insert) e2) Integer)) Integer)]
+          [`(- ,e) `(inject (- (project ,((cast-insert) e) Integer)) Integer)]
+          [`(let ([,x ,e1]) ,e2) `(let ([,x ,((cast-insert) e1)]) ,((cast-insert) e2))]
+          [#t `(inject #t Boolean)]
+          [#t `(inject #f Boolean)]
+          [`(and ,e1 ,e2) `(inject (and (project ,((cast-insert) e1) Boolean) (project ,((cast-insert) e2) Boolean)) Boolean)]
+          [`(not ,e) `(inject (not (project ,((cast-insert) e) Boolean)) Boolean)]
+          [`(eq? ,e1 ,e2) `(inject (eq? (project ,((cast-insert) e1) Integer) (project ,((cast-insert) e2) Integer)) Boolean)] ; What about true = true?
+          [`(if ,eq ,et ,ef) `(if (project ,((cast-insert) eq) Boolean) ,((cast-insert) et) ,((cast-insert) ef))]
+          [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vectorof Any))]
+          [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) n)]
+          [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) n ,((cast-insert) e2))]
+          [`(void) `(inject (void) Void)] ; ???
+          [`(lambda (,xs ...) ,e) `(inject (lambda: (,@(map (lambda (x) `[,x : Any]) xs)) ,((cast-insert) e)) (,@(map (lambda (x) 'Any) xs) -> Any))]
+          [`(,e ,es ...) `((project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))])))
+          
+          
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check
@@ -214,6 +241,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Passes
+(define R7-translator
+  (let ([compiler (new compile-R6)])
+    (send compiler cast-insert))) 
 (define R6-typechecker
   (let ([compiler (new compile-R6)])
     (send compiler type-check '())))
