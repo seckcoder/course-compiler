@@ -1,27 +1,15 @@
-(define (hello29999) : Any (inject 24 Integer))
-(define (world30000) : Any (inject 24 Integer))
+(define (hello) : Any (inject 24 Integer))
+(define (world) : Any (inject 24 Integer))
 
-(let ((x30001
-         (inject
-          (vector (inject 0 Integer) (inject 0 Integer))
-          (Vector Any Any))))
-    (let ((y30002
-           (inject
-            (vector-set!
-             (project x30001 (Vector Any Any))
-             0
-             (
-              (project (inject hello29999 (-> Any)) (-> Any))))
-            Void)))
-      (let ((z30003
-             (inject
-              (vector-set!
-               (project x30001 (Vector Any Any))
-               1
-               (
-                (project
-                 (inject world30000 (-> Any))
-                 (-> Any))))
-              Void)))
-        (let ((a (project x30001 (Vector Any Any))))
-          (+ (- 6) (+ (project (vector-ref a 0) Integer) (project (vector-ref a 1) Integer)))))))
+(let ([x (inject (vector (inject 0 Integer) (inject 0 Integer))
+                 (Vector Any Any))])
+  (let ([y (inject (vector-set! (project x (Vector Any Any)) 0
+				((project (inject hello (-> Any)) (-> Any))))
+		   Void)])
+    (let ([z (inject (vector-set! (project x (Vector Any Any)) 1
+				  ((project (inject world (-> Any))
+					    (-> Any))))
+		     Void)])
+      (let ([a (project x (Vector Any Any))])
+	(+ (- 6) (+ (project (vector-ref a 0) Integer)
+		    (project (vector-ref a 1) Integer)))))))
