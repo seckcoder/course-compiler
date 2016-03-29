@@ -183,6 +183,14 @@
          ['eq? (lambda (v1 v2)
                  (cond [(and (fixnum? v1) (fixnum? v2)) (eq? v1 v2)]
                        [(and (boolean? v1) (boolean? v2)) (eq? v1 v2)]))]
+         ['< (lambda (v1 v2)
+	       (cond [(and (fixnum? v1) (fixnum? v2)) (< v1 v2)]))]
+         ['<= (lambda (v1 v2)
+	       (cond [(and (fixnum? v1) (fixnum? v2)) (<= v1 v2)]))]
+         ['> (lambda (v1 v2)
+	       (cond [(and (fixnum? v1) (fixnum? v2)) (> v1 v2)]))]
+         ['>= (lambda (v1 v2)
+	       (cond [(and (fixnum? v1) (fixnum? v2)) (>= v1 v2)]))]
          ['not (lambda (v) (match v [#t #f] [#f #t]))]
 	 ['and (lambda (v1 v2)
 		 (cond [(and (boolean? v1) (boolean? v2))
@@ -269,21 +277,54 @@
           [`(eq? ,e1 ,e2)
            (if (eq? ((interp-x86-exp env) e1)
                     ((interp-x86-exp env) e2))
-               1
-               0)]
+               1 0)]
+	  [`(< ,e1 ,e2)
+           (if (< ((interp-x86-exp env) e1)
+                    ((interp-x86-exp env) e2))
+               1 0)]
+	  [`(<= ,e1 ,e2)
+           (if (<= ((interp-x86-exp env) e1)
+                    ((interp-x86-exp env) e2))
+               1 0)]
+	  [`(> ,e1 ,e2)
+           (if (> ((interp-x86-exp env) e1)
+                    ((interp-x86-exp env) e2))
+               1 0)]
+	  [`(>= ,e1 ,e2)
+           (if (>= ((interp-x86-exp env) e1)
+                    ((interp-x86-exp env) e2))
+               1 0)]
           [else ((super interp-x86-exp env) ast)]
           )))
+
+    (define (eflags-status env cc)
+      (match cc
+	 ['e 
+	  (define eflags ((interp-x86-exp env) '(reg __flag)))
+	  (arithmetic-shift (bitwise-and eflags #b1000000) -6)]
+	 ['l
+          ;; Get the value of the lt flag which doesn't actually exist
+          ;; the lt flag is simulated by overflow == sign for x86
+	  (define eflags ((interp-x86-exp env) '(reg __flag)))
+	  (define overflow (bitwise-and eflags #b100000000000))
+	  (define sign     (bitwise-and eflags #b000010000000))
+	  (if (= overflow sign) 1 0)]
+	 ['le
+	  (or (eflags-status env 'e) (eflags-status env 'l))]
+	 ['g
+	  (not (eflags-status env 'le))]
+	 ['ge
+	  (not (eflags-status env 'l))]))
     
     (define/override (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)
           (vomit "R1/interp-x86" (car ast) env))
         (match ast
-          [`((sete ,d) . ,ss)
-           (define eflags ((interp-x86-exp env) '(reg __flag)))
-           (define zero   (arithmetic-shift (bitwise-and eflags #b1000000) -6))
+          [`((set ,cc ,d) . ,ss)
            (define name (get-name d))
-           ((interp-x86 (cons (cons name zero) env)) ss)]
+	   (define val (eflags-status env cc))
+           ((interp-x86 (cons (cons name val) env)) ss)]
           ;; if's are present before patch-instructions
           [(or `((if ,cnd ,thn ,els) . ,ss)
                `((if ,cnd ,thn ,_ ,els ,_) . ,ss))
@@ -305,14 +346,13 @@
            ((interp-x86 (cons (cons x v) env)) ss)]
           [`((jmp ,label) . ,ss)
            ((interp-x86 env) (goto-label label (program)))]
-          [`((je ,label) . ,ss)
+          [`((jmp-if e ,label) . ,ss)
            (let* ([eflags (lookup '__flag env)]
                   [zero   (bitwise-and #b1000000 eflags)]
                   [zero?  (i2b (arithmetic-shift zero -6))])
              (cond [zero? 
                     ((interp-x86 env) (goto-label label (program)))]
                    [else ((interp-x86 env) ss)]))]
-
 	   [`(program ,xs (type ,ty) ,ss ...)
             (display-by-type ty ((interp-x86 env) `(program ,xs ,@ss)) env)]
 	   [`(program ,xs ,ss ...)
@@ -585,15 +625,6 @@
         (when (pair? ast)
           (vomit "R2/interp-x86" (car ast) env))
 	(match ast
-          ;; Get the value of the lt flag which doesn't actually exist
-          ;; the lt flag is simulated by overflow == sign for x86
-          [`((setl ,d) . ,ss)
-           (define eflags ((interp-x86-exp env) '(reg __flag)))
-           (define overflow (bitwise-and eflags #b100000000000))
-           (define sign     (bitwise-and eflags #b000010000000))
-           (define lt       (if (= overflow sign) 1 0))
-           (define new-env ((interp-x86-store env) d lt))
-           ((interp-x86 new-env) ss)]
           ;; cmpq performs a subq operation and examimines the state
           ;; of the result, this is done without overiting the second
           ;; register. -andre

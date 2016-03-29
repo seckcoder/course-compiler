@@ -12,9 +12,13 @@
 
     (inherit liveness-ss first-offset variable-size in-memory?)
 
+    (define/public (comparison-ops)
+      (set 'eq? '< '<= '> '>=))
+
     (define/override (primitives)
       (set-union (super primitives) 
-		 (set 'eq? 'and 'or 'not)))
+		 (comparison-ops)
+		 (set 'and 'or 'not)))
 
     (define/public (insert-type-node node ty)
       (match node
@@ -24,6 +28,39 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S1 -> S1 (new pass)
+
+    (define/public (binary-op-types)
+      '((+ . ((Integer Integer) . Integer))
+	(- . ((Integer Integer) . Integer))
+	(* . ((Integer Integer) . Integer))
+	(and . ((Boolean Boolean) . Boolean))
+	(or . ((Boolean Boolean) . Boolean))
+	(< . ((Integer Integer) . Boolean))
+	(<= . ((Integer Integer) . Boolean))
+	(> . ((Integer Integer) . Boolean))
+	(>= . ((Integer Integer) . Boolean))
+	))
+
+    (define/public (unary-op-types)
+      '((- . ((Integer) . Integer))
+	(not . ((Boolean) . Boolean))))
+
+    (define/public (nullary-op-types)
+      '((read . (() . Integer))))
+
+    (define/public (type-check-op op ts)
+      (define table
+	(cond
+	 [(eq? 2 (length ts)) (binary-op-types)]
+	 [(eq? 1 (length ts)) (unary-op-types)]
+	 [else (nullary-op-types)]))
+      (let ([pts (car (cdr (assq op table)))]
+	    [ret (cdr (cdr (assq op table)))])
+	(unless (equal? ts pts)
+		(error "argument type does not match parameter type"
+		       (list ts pts)))
+	ret))
+    
     (define/public (type-check env)
       (lambda (e)
         (vomit "conditionals/type-check" e env)
@@ -59,30 +96,7 @@
 	  [`(,op ,es ...) #:when (set-member? (primitives) op)
             (define-values (new-es ts)
               (for/lists (exprs types) ([e es]) ((type-check env) e)))
-            (define binary-ops
-              '((+ . ((Integer Integer) . Integer))
-                (- . ((Integer Integer) . Integer))
-                (* . ((Integer Integer) . Integer))
-                (and . ((Boolean Boolean) . Boolean))
-                (or . ((Boolean Boolean) . Boolean))
-                (eq? . ((Integer Integer) . Boolean))))
-	      (define unary-ops
-                '((- . ((Integer) . Integer))
-		  (not . ((Boolean) . Boolean))))
-	      (define nullary-ops
-		'((read . (() . Integer))))
-            (define (check op ts table)
-              (let ([pts (car (cdr (assq op table)))]
-                    [ret (cdr (cdr (assq op table)))])
-                (unless (equal? ts pts)
-                  (error "argument type does not match parameter type"
-                         (list ts pts)))
-                ret))
-            (define t-ret
-              (cond
-                [(eq? 2 (length ts)) (check op ts binary-ops)]
-                [(eq? 1 (length ts)) (check op ts unary-ops)]
-                [else (check op ts nullary-ops)]))
+	    (define t-ret (type-check-op op ts))
             (values `(has-type (,op ,@new-es) ,t-ret) t-ret)]
           [else
 	    (error "type-check couldn't match" e)])))
@@ -136,7 +150,8 @@
                               body-ss))]
              [`(not ,cnd) #:when optimize-if
               ((flatten-if new-els els-ss new-thn thn-ss) cnd)]
-             [`(eq? ,e1 ,e2) #:when optimize-if
+             [`(,cmp ,e1 ,e2) 
+	      #:when (and optimize-if (set-member? (comparison-ops) cmp))
               (define-values (new-e1 e1-ss) ((flatten #t) e1))
               (define-values (new-e2 e2-ss) ((flatten #t) e2))
               (define tmp (gensym 'if))
@@ -144,11 +159,12 @@
               (define els-ret `(assign ,tmp ,new-els))
               (values `(has-type ,tmp ,t)
                       (append e1-ss e2-ss 
-                              `((if (eq? ,new-e1 ,new-e2)
+                              `((if (,cmp ,new-e1 ,new-e2)
                                     ,(append thn-ss (list thn-ret))
                                     ,(append els-ss (list els-ret))))))]
              [else
-              (let-values ([(new-cnd cnd-ss) ((flatten #t) `(has-type ,cnd ,t))])
+              (let-values ([(new-cnd cnd-ss)
+			    ((flatten #t) `(has-type ,cnd ,t))])
                 (define tmp (gensym 'if))
                 (define thn-ret `(assign ,tmp ,new-thn))
                 (define els-ret `(assign ,tmp ,new-els))
@@ -207,11 +223,13 @@
           [`(program ,e)
               (define-values (new-e ss) ((flatten #t) e))
               (define xs (append* (map (collect-locals) ss)))
-              `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
+              `(program ,(remove-duplicates xs)
+			,@(append ss `((return ,new-e))))]
           [`(program (type ,ty) ,e)
            (define-values (new-e ss) ((flatten #t) e))
            (define xs (append* (map (collect-locals) ss)))
-           `(program ,(remove-duplicates xs) (type ,ty) ,@(append ss `((return ,new-e))))]
+           `(program ,(remove-duplicates xs) (type ,ty)
+		     ,@(append ss `((return ,new-e))))]
           [else ((super flatten need-atomic) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -219,7 +237,7 @@
 
     (define/override (instructions)
       (set-union (super instructions)
-		 (set 'cmpq 'sete 'andq 'orq 'xorq 'notq 'movzbq)))
+		 (set 'cmpq 'set 'andq 'orq 'xorq 'notq 'movzbq)))
 
     (define/override (binary-op->inst op)
       (match op
@@ -232,6 +250,17 @@
       (match e
          [`(int ,n) #t]
 	 [else #f]))
+
+    (define/public (compare->cc cmp)
+      (match cmp
+	 ['eq? 'e]
+	 ['< 'l]
+	 ['<= 'le]
+	 ['> 'g]
+	 ['>= 'ge]
+	 [else (error 'compare->cc "unmatched ~a" cmp)]
+	 ))
+	 
 
     (define/override (select-instructions)
       (lambda (e)
@@ -252,7 +281,8 @@
                   `((xorq (int 1) ,new-lhs))]
                  [else `((movq ,new-e ,new-lhs) 
                          (xorq (int 1) ,new-lhs))])]
-          [`(assign ,lhs (eq? ,e1 ,e2))
+          [`(assign ,lhs (,cmp ,e1 ,e2))
+	   #:when (set-member? (comparison-ops) cmp)
            (define new-lhs ((select-instructions) lhs))
            (define new-e1 ((select-instructions) e1))
            (define new-e2 ((select-instructions) e2))
@@ -267,7 +297,7 @@
                     `((cmpq ,new-e1 ,new-e2))]))
             ;; This works because movzbq %al, %rax is a valid instruction
            (append comparison
-                   `((sete (byte-reg al))
+                   `((set ,(compare->cc cmp) (byte-reg al))
                      (movzbq (byte-reg al) ,new-lhs))
                    )]
           ;; Keep the if statement to simplify register allocation
@@ -306,7 +336,7 @@
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d))
          (set-union (free-vars s) (free-vars d))]
 	[`(notq ,d) (free-vars d)]
-        [`(sete ,d) (set)]
+        [`(set ,cc ,d) (set)]
         [else (super read-vars instr)]))
     
     (define/override (write-vars instr)
@@ -316,7 +346,7 @@
         [(or `(andq ,s ,d) `(orq ,s ,d) `(xorq ,s ,d)) 
          (free-vars d)]
 	[`(notq ,d) (free-vars d)]
-        [`(sete ,d) (free-vars d)]
+        [`(set ,cc ,d) (free-vars d)]
         [else (super write-vars instr)]))
 
     (define/override (uncover-live live-after)
@@ -332,7 +362,8 @@
 					 [else (car thn-lives)]))
 	    (define live-after-els (cond [(null? els-lives) live-after]
 					 [else (car els-lives)]))
-	    (values `(if ,cnd ,new-thn-ss ,(cdr thn-lives) ,new-els-ss ,(cdr els-lives))
+	    (values `(if ,cnd ,new-thn-ss ,(cdr thn-lives) 
+			 ,new-els-ss ,(cdr els-lives))
 		    (set-union live-after-thn live-after-els
 			       (free-vars cnd)))]
 	   [else ((super uncover-live live-after) ast)]
@@ -365,9 +396,12 @@
     (define/override (assign-homes homes)
       (lambda (e)
 	(match e
+           ;; condition codes, bit of a hack here.
+	   ['e 'e] ['l 'l] ['le 'le] ['g 'g] ['ge 'ge]
 	   [`(byte-reg ,r) `(byte-reg ,r)]
-	   [`(eq? ,e1 ,e2) `(eq? ,((assign-homes homes) e1)
-				 ,((assign-homes homes) e2))]
+	   [`(,cmp ,e1 ,e2) #:when (set-member? (comparison-ops) cmp)
+	    `(,cmp ,((assign-homes homes) e1)
+		   ,((assign-homes homes) e2))]
 	   [`(if ,cnd ,thn-ss ,els-ss)
 	    (let ([cnd ((assign-homes homes) cnd)]
 		  [thn-ss (map (assign-homes homes) thn-ss)]
@@ -400,13 +434,14 @@
 	   [`(deref ,r ,n) `(deref ,r ,n)] 
 	   [`(int ,n) `(int ,n)]
 	   [`(reg ,r) `(reg ,r)]
-           [`(if (eq? ,a1 ,a2) ,thn-ss ,els-ss)
+           [`(if (,cmp ,a1 ,a2) ,thn-ss ,els-ss)
 	    (let ([thn-ss (append* (map (lower-conditionals) thn-ss))]
 		  [els-ss (append* (map (lower-conditionals) els-ss))]
 		  [thn-label (gensym 'then)]
 		  [end-label (gensym 'if_end)])
 	      (append `((cmpq ,a1 ,a2)) 
-		      `((je ,thn-label)) els-ss `((jmp ,end-label))
+		      `((jmp-if ,(compare->cc cmp) ,thn-label)) 
+		      els-ss `((jmp ,end-label))
 		      `((label ,thn-label)) thn-ss `((label ,end-label))
 	       ))]
 	   [`(callq ,f) `((callq ,f))]
@@ -424,7 +459,7 @@
       (define (mem? x) (in-memory? x))
       (lambda (e)
 	(match e
-	   [`(je ,label) `((je ,label))]
+	   [`(jmp-if ,cc ,label) `((jmp-if ,cc ,label))]
 	   [`(jmp ,label) `((jmp ,label))]
 	   [`(label ,label) `((label ,label))]
 	   [`(cmpq ,a1 ,a2)
@@ -455,11 +490,11 @@
       (lambda (e)
 	(match e
 	   [`(byte-reg ,r) (format "%~a" r)]
-	   [`(sete ,d) (format "\tsete\t~a\n" ((print-x86) d))]
+	   [`(set ,cc ,d) (format "\tset~a\t~a\n" cc ((print-x86) d))]
            [`(cmpq ,s1 ,s2) 
 	    (format "\tcmpq\t~a, ~a\n" ((print-x86) s1)
 		    ((print-x86) s2))]
-	   [`(je ,label) (format "\tje ~a\n" label)]
+	   [`(jmp-if ,cc ,label) (format "\tj~a ~a\n" cc label)]
 	   [`(jmp ,label) (format "\tjmp ~a\n" label)]
 	   [`(label ,l) (format "~a:\n" l)]
 	   [`(program ,spill-space (type ,ty) ,ss ...)
