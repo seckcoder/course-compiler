@@ -366,6 +366,7 @@
         ['Boolean (if val #t #f)]
         ['Integer val]
         ['Void (void)]
+        ['Any `(inject ,(arithmetic-shift val -2) Integer)]
         [else (error (format "don't know how to display type ~a" ty))]))
 
     ));; class interp-R1

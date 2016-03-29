@@ -318,7 +318,8 @@
          (define new-e-vec ((select-instructions) e-vec))
          (define new-e-arg ((select-instructions) e-arg))
          `((movq ,new-e-vec (reg r11))
-	   (movq ,new-e-arg (deref r11 ,(* (add1 i) 8))))]
+	   (movq ,new-e-arg (deref r11 ,(* (add1 i) 8)))
+           (movq (int 0) ,new-lhs))]
         ;; If has to be overridden because it needs to propagate
         [`(if ,cnd ,thn-ss ,els-ss)
          (let ([cnd ((select-instructions) cnd)]

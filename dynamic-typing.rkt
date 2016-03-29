@@ -286,10 +286,10 @@
                                    ,((cast-insert) e2))))]
           [`(not ,e) `(inject (not (project ,((cast-insert) e) Boolean)) Boolean)]
           [`(eq? ,e1 ,e2) `(inject (eq? ,((cast-insert) e1),((cast-insert) e2)) Boolean)]
-          [`(if ,eq ,et ,ef) `(if (eq? ,((cast-insert) eq) (inject #t Boolean)) ,((cast-insert) et) ,((cast-insert) ef))]
+          [`(if ,eq ,et ,ef) `(if (eq? ,((cast-insert) eq) (inject #f Boolean)) ,((cast-insert) ef) ,((cast-insert) et))]
           [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vector ,@(map (lambda (x) 'Any) es)))]
           [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) ,n)]
-          [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) ,n ,((cast-insert) e2))]
+          [`(vector-set! ,e1 ,n ,e2) `(inject (vector-set! (project ,((cast-insert) e1) (Vectorof Any)) ,n ,((cast-insert) e2)) Void)]
           [`(void) `(inject (void) Void)] ; ???
           [`(lambda (,xs ...) ,e) `(inject (lambda: (,@(map (lambda (x) `[,x : Any]) xs)) : Any ,((cast-insert) e)) (,@(map (lambda (x) 'Any) xs) -> Any))]
           [`(app ,e ,es ...) `(app (project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))]
