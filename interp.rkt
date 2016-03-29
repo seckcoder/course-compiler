@@ -888,6 +888,15 @@
 	 [else (super interp-op op)]
 	 ))
 
+    (define/public (tyeq? t1 t2)
+ ;;     (display t1) (display " ") (display t2) (newline) (flush-output)
+      (match `(,t1 ,t2)
+        [`((Vectorof ,t1) (Vector ,t2s ...))
+         (foldr (lambda (x y) (and x y)) #t (map (lambda (x) (tyeq? t1 x)) t2s))] ;; wtf racket, why cant i just pass and?
+        [`((Vector ,t1s ...) (Vectorof ,t2))
+         (foldr (lambda (x y) (and x y)) #t (map (lambda (x) (tyeq? t2 x)) t1s))]
+        [else (equal? t1 t2)]))
+
     (define/override (interp-scheme env)
       (lambda (ast)
         (verbose "R6/interp-scheme" ast)
@@ -898,7 +907,7 @@
 	   (define v ((interp-scheme env) e))
 	   (match v
 	      [`(inject ,v1 ,t1)
-	       (cond [(equal? t1 t2)
+	       (cond [(tyeq? t1 t2)
 		      v1]
 		     [else
 		      (error "in project, type mismatch" t1 t2)])]
@@ -918,7 +927,7 @@
 	   (define v ((interp-C env) e))
 	   (match v
 	      [`(inject ,v1 ,t1)
-	       (cond [(equal? t1 t2)
+	       (cond [(tyeq? t1 t2)
 		      v1]
 		     [else
 		      (error "in project, type mismatch" t1 t2)])]
