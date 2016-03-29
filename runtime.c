@@ -459,6 +459,7 @@ int any_tag(int64_t any) {
   return any & ANY_TAG_MASK;
 }
 
+/* to do: need to cycle detection. -Jeremy */
 void print_any(int64_t any) {
   switch (any_tag(any)) {
   case ANY_TAG_INT:

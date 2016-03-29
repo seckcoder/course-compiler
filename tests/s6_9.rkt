@@ -1,4 +1,3 @@
-
 (define (world) : Any (inject 42 Integer))
 
 ; Allocate a vector of 1 any, initialized with an injected 0, and then inject it
@@ -10,7 +9,6 @@
     (let ([y (vector-set! (project x (Vector Any)) 0 (world))])
       (let ((a (project x (Vector Any))))
         (project (vector-ref a 0) Integer))))
-
 
 ;; ;; Works
 
@@ -45,3 +43,4 @@
 ;;     (let ([y (vector-set! (project x (Vector Any)) 0 (inject (world) Integer))])
 ;;       (let ((a (project x (Vector Any))))
 ;;         (project (vector-ref a 0) Integer))))
+
