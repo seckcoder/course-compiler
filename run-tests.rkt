@@ -8,6 +8,7 @@
 (require "lambda.rkt")
 (require "dynamic-typing.rkt")
 (require "interp.rkt")
+(require "dynamic-interp.rkt")
 (require "runtime-config.rkt")
 
 ;; I have made the original run-tests more programmatic so that we
@@ -20,15 +21,15 @@
 ;; Table associating names of compilers with the information for
 ;; running and testing them.
 (define compiler-list
-  ;; Name           Typechecker               Compiler-Passes      Use interpreter? Valid suites
-  `(("int_exp"      #f                        ,int-exp-passes      #t               (0))
-    ("reg_int_exp"  #f                        ,reg-int-exp-passes  #t               (0))
-    ("conditionals" ,conditionals-typechecker ,conditionals-passes #t               (0 1))
-    ("vectors"      ,vectors-typechecker      ,vectors-passes      #t               (0 1 2))
-    ("functions"    ,functions-typechecker    ,functions-passes    #t               (0 1 2 3))
-    ("lambda"       ,lambda-typechecker       ,lambda-passes       #t               (0 1 2 3 4))
-    ("any"          ,R6-typechecker           ,R6-passes           #t               (0 1 2 3 4 6))
-    ("dynamic"      #f                        ,R7-passes           #f               (7))
+  ;; Name           Typechecker               Compiler-Passes      Initial interpreter  Valid suites
+  `(("int_exp"      #f                        ,int-exp-passes      ,interp-scheme       (0))
+    ("reg_int_exp"  #f                        ,reg-int-exp-passes  ,interp-scheme       (0))
+    ("conditionals" ,conditionals-typechecker ,conditionals-passes ,interp-scheme       (0 1))
+    ("vectors"      ,vectors-typechecker      ,vectors-passes      ,interp-scheme       (0 1 2))
+    ("functions"    ,functions-typechecker    ,functions-passes    ,interp-scheme       (0 1 2 3))
+    ("lambda"       ,lambda-typechecker       ,lambda-passes       ,interp-scheme       (0 1 2 3 4))
+    ("any"          ,R6-typechecker           ,R6-passes           ,interp-scheme       (0 1 2 3 4 6))
+    ("dynamic"      #f                        ,R7-passes           ,(interp-r7 '())     (7))
     ))
 
 (define compiler-table (make-immutable-hash compiler-list))
@@ -56,8 +57,7 @@
 (define (test-compiler name typechecker use-interp passes test-suite test-nums)
   (display "------------------------------------------------------")(newline)
   (display "testing compiler ")(display name)(newline)
-  (unless (not use-interp)
-    (interp-tests name typechecker passes interp-scheme test-suite test-nums))
+  (interp-tests name typechecker passes use-interp test-suite test-nums)
   (compiler-tests name typechecker passes test-suite test-nums)
   (newline)(display "tests passed")(newline))
 
