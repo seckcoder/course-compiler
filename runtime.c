@@ -15,7 +15,7 @@ static int64_t* tospace_end;
 static int initialized = 0;
 
 /*
-  Object Tag (64 bits)
+  Tuple Tag (64 bits)
   #b|- 7 bit unused -|- 50 bit field [50, 0] -| 6 bits length -| 1 bit isNotForwarding Pointer  
   * If the bottom-most bit is zero, the tag is really a forwarding pointer.
   * Otherwise, its an object tag. In that case, the next 
@@ -448,6 +448,42 @@ void print_ellipsis() {
   printf("#(...)");
 }
 
+static const int ANY_TAG_MASK = 3;
+static const int ANY_TAG_LEN = 2;
+static const int ANY_TAG_INT = 0;
+static const int ANY_TAG_BOOL = 1;
+static const int ANY_TAG_VEC = 2;
+static const int ANY_TAG_FUN = 3;
+
+int any_tag(int64_t any) {
+  return any & ANY_TAG_MASK;
+}
+
 void print_any(int64_t any) {
-  printf("%" PRId64, any >> 2);
+  switch (any_tag(any)) {
+  case ANY_TAG_INT:
+    printf("%" PRId64, any >> ANY_TAG_LEN);
+    break;
+  case ANY_TAG_BOOL:
+    if (any >> ANY_TAG_LEN) {
+      printf("#t");
+    } else {
+      printf("#f");
+    }
+    break;
+  case ANY_TAG_VEC: {
+    int64_t* vector_ptr = (int64_t*) (any & ~ANY_TAG_MASK);
+    int64_t tag = vector_ptr[0];
+    unsigned char len = get_length(tag);
+    printf("#(");
+    for (int i = 0; i != len; ++i) {
+      print_any(vector_ptr[i + 1]);
+    }
+    printf(")");
+    break;
+  }
+  case ANY_TAG_FUN:
+    printf("#<procedure>");
+    break;
+  }
 }

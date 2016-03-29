@@ -1,5 +1,5 @@
-(define (app [f : (Integer -> Integer)] [x : Integer])
+(define (app1 [f : (Integer -> Integer)] [x : Integer])
   : Integer
   (f x))
 
-(app (lambda: ([x : Integer]) : Integer x) 42)
+(app1 (lambda: ([x : Integer]) : Integer x) 42)
