@@ -14,7 +14,7 @@
 
     (define/public (non-apply-ast)
       (set-union (primitives)
-		 (set 'if 'let 'define 'program)))
+		 (set 'if 'let 'define 'program 'void)))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; type-check : env -> S3 -> S3 (for programs)

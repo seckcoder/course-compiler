@@ -21,6 +21,7 @@
       (lambda (e)
         (vomit "vectors/type-check" e env)
 	(match e
+          ['(void) (values '(has-type (void) Void) 'Void)]
           [`(vector ,(app (type-check env) e* t*) ...)
            (let ([t `(Vector ,@t*)])
              (values `(has-type (vector ,@e*) ,t) t))]
@@ -62,8 +63,12 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniqueify : S1 -> C1-expr x (C1-stmt list)
 
+
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S1 -> C1-expr x (C1-stmt list)
+
+    
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; expose allocation : C1 -> ?
@@ -165,6 +170,7 @@
     (define/public (uncover-call-live-roots-exp e)
       (vomit "uncover-call-live-roots-exp" e)
       (match e
+        [`(has-type (void) ,t) (set)]
         [`(has-type ,(? symbol? x) ,t)
          (if (root-type? t)
              (set x)
@@ -239,6 +245,7 @@
     (lambda (x)
       (vomit "select instructions" x)
       (match x
+        [`(void) `(int 0)]
         [`(assign ,lhs (has-type (allocate ,length) (Vector ,ts ...)))
          (define lhs^ ((select-instructions) lhs))
          ;; Add one quad word for the meta info tag

@@ -24,6 +24,45 @@
     (define/override (type-check env)
       (lambda (e)
         (match e
+          [`(vector-ref ,(app (type-check env) e t) ,i)
+           (match t
+             [`(Vector ,ts ...)
+              (unless (and (exact-nonnegative-integer? i)
+                           (i . < . (length ts)))
+                (error 'type-check "invalid index ~a" i))
+              (let ([t (list-ref ts i)])
+                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t))]
+             [`(Vectorof ,t)
+              (unless (exact-nonnegative-integer? i)
+                (error 'type-check "invalid index ~a" i))
+              (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t)]
+             [else (error "expected a vector in vector-ref, not" t)])]
+          [`(vector-set! ,e-vec ,i ,e-arg) 
+           (define-values (e-vec^ t-vec) ((type-check env) e-vec))
+           (define-values (e-arg^ t-arg) ((type-check env) e-arg))
+           (match t-vec
+             [`(Vector ,ts ...)
+              (unless (and (exact-nonnegative-integer? i)
+                           (i . < . (length ts)))
+                (error 'type-check "invalid index ~a" i))
+              (unless (equal? (list-ref ts i) t-arg)
+                (error 'type-check "type mismatch in vector-set! ~a ~a" 
+                       (list-ref ts i) t-arg))
+              (values `(has-type (vector-set! ,e-vec^
+                                              (has-type ,i Integer)
+                                              ,e-arg^) Void) 'Void)]
+             [`(Vectorof ,t)
+              (unless (exact-nonnegative-integer? i)
+                (error 'type-check "invalid index ~a" i))
+              (unless (equal? t t-arg)
+                (error 'type-check "type mismatch in vector-set! ~a ~a" 
+                       t t-arg))
+              (values `(has-type (vector-set! ,e-vec^
+                                              (has-type ,i Integer)
+                                              ,e-arg^) Void) 'Void)]
+             [else (error 'type-check
+                          "expected a vector in vector-set!, not ~a"
+                          t-vec)])]
           [`(inject ,e ,ty)
 	   (define-values (new-e e-ty) ((type-check env) e))
 	   (cond
@@ -127,6 +166,7 @@
     (define (any-tag ty)
       (match ty
 	 ['Integer 0]
+	 ['Void 0]
 	 ['Boolean 1]
 	 [`(Vector ,ts ...) 2]
 	 [`(Vectorof ,t) 2]
@@ -238,7 +278,7 @@
           [`(- ,e) `(inject (- (project ,((cast-insert) e) Integer)) Integer)]
           [`(let ([,x ,e1]) ,e2) `(let ([,x ,((cast-insert) e1)]) ,((cast-insert) e2))]
           [#t `(inject #t Boolean)]
-          [#t `(inject #f Boolean)]
+          [#f `(inject #f Boolean)]
           [`(and ,e1 ,e2) (let ([gen (gensym)])
                             `(let ([,gen ,((cast-insert) e1)])
                                (if (eq? ,gen (inject #f Boolean))
@@ -247,9 +287,9 @@
           [`(not ,e) `(inject (not (project ,((cast-insert) e) Boolean)) Boolean)]
           [`(eq? ,e1 ,e2) `(inject (eq? ,((cast-insert) e1),((cast-insert) e2)) Boolean)]
           [`(if ,eq ,et ,ef) `(if (eq? ,((cast-insert) eq) (inject #t Boolean)) ,((cast-insert) et) ,((cast-insert) ef))]
-          [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vectorof Any))]
-          [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) n)]
-          [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) n ,((cast-insert) e2))]
+          [`(vector ,es ...) `(inject (vector ,@(map (cast-insert) es)) (Vector ,@(map (lambda (x) 'Any) es)))]
+          [`(vector-ref ,e1 ,n) `(vector-ref (project ,((cast-insert) e1) (Vectorof Any)) ,n)]
+          [`(vector-set! ,e1 ,n ,e2) `(vector-set! (project ,((cast-insert) e1) (Vectorof Any)) ,n ,((cast-insert) e2))]
           [`(void) `(inject (void) Void)] ; ???
           [`(lambda (,xs ...) ,e) `(inject (lambda: (,@(map (lambda (x) `[,x : Any]) xs)) : Any ,((cast-insert) e)) (,@(map (lambda (x) 'Any) xs) -> Any))]
           [`(app ,e ,es ...) `(app (project ,((cast-insert) e) (,@(map (lambda (x) 'Any) es) -> Any)) ,@(map (cast-insert) es))]
@@ -335,6 +375,7 @@
            (cond
             [(lookup e funs #f) `(function-ref ,e ,(lookup e funs))]
             [else e])]
+          ['(void) '(void)]
           [`(program ,ds ... ,body) #:when (or (null? ds) (not (eq? (caar ds) 'type)))
            (define funs 
              (for/list ([d ds]) 

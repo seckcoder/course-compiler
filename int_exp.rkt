@@ -18,18 +18,19 @@
       (lambda (e)
 	(define recur (uniquify env))
 	(match e
-	   [(? symbol?) (cdr (assq e env))]
-	   [(? integer?) e]
-	   [`(let ([,x ,e]) ,body)
-	    (define new-x (gensym (racket-id->c-id x)))
-	    (define new-e (recur e))
-	    `(let ([,new-x ,new-e])
+          ['(void) '(void)]
+          [(? symbol?) (cdr (assq e env))]
+          [(? integer?) e]
+          [`(let ([,x ,e]) ,body)
+           (define new-x (gensym (racket-id->c-id x)))
+           (define new-e (recur e))
+           `(let ([,new-x ,new-e])
 	       ,((uniquify (cons (cons x new-x) env)) body))]
-	   [`(program ,body)
-	    `(program ,(recur body))]
-	   [`(,op ,es ...) #:when (set-member? (primitives) op)
-	    `(,op ,@(map recur es))]
-	   [else (error "uniquify couldn't match" e)])))
+          [`(program ,body)
+           `(program ,(recur body))]
+          [`(,op ,es ...) #:when (set-member? (primitives) op)
+           `(,op ,@(map recur es))]
+          [else (error "uniquify couldn't match" e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : Bool -> S0 -> C0-expr x (C0-stmt list)

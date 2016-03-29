@@ -164,6 +164,8 @@
         (verbose "flatten" e)
 	(match e
 	  ;; For atomic stuff, we keep the has-type annotation. -Jeremy
+	  [`(has-type (void) ,t)
+	   (values `(has-type (void) ,t) '())]
 	  [`(has-type ,e ,t) #:when (or (symbol? e) (integer? e) (boolean? e))
 	   (values `(has-type ,e ,t) '())]
 
