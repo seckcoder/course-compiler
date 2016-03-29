@@ -557,7 +557,7 @@
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
-       ,(send interp interp-scheme '()))
+       ,(send interp interp-F '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("expose allocation"
