@@ -1,27 +1,34 @@
-(define (hello29999) : Any (inject 24 Integer))
-(define (world30000) : Any (inject 24 Integer))
 
-(let ((x30001
-         (inject
-          (vector (inject 0 Integer) (inject 0 Integer))
-          (Vector Any Any))))
-    (let ((y30002
-           (inject
-            (vector-set!
-             (project x30001 (Vector Any Any))
-             0
-             (
-              (project (inject hello29999 (-> Any)) (-> Any))))
-            Void)))
-      (let ((z30003
-             (inject
-              (vector-set!
-               (project x30001 (Vector Any Any))
-               1
-               (
-                (project
-                 (inject world30000 (-> Any))
-                 (-> Any))))
-              Void)))
-        (let ((a (project x30001 (Vector Any Any))))
-          (+ (- 6) (+ (project (vector-ref a 0) Integer) (project (vector-ref a 1) Integer)))))))
+(define (world) : Any (inject 42 Integer))
+
+(let ((x (inject (vector (inject 0 Integer)) (Vector Any))))
+    (let ([y (vector-set! (project x (Vector Any)) 0 (world))])
+      (let ((a (project x (Vector Any))))
+        (project (vector-ref a 0) Integer))))
+
+
+;; ;; Works
+;; (define (world) : Any (inject 42 Integer))
+;; (let ((x (inject (vector (inject 0 Integer)) (Vector Any))))
+;;   (let ((a (project x (Vector Any))))
+;;     (let ([y (vector-set! a 0 (world))])
+;;         (project (vector-ref a 0) Integer))))
+
+;; ;; Works
+;; (define (world) : Any (inject 42 Integer))
+;; (let ((x (vector (inject 0 Integer))))
+;;     (let ([y (vector-set! x 0 (world))])
+;;       (project (vector-ref x 0) Integer)))
+
+;; ;; Works:
+;; (let ((x (inject (vector (inject 0 Integer)) (Vector Any))))
+;;     (let ([y (vector-set! (project x (Vector Any)) 0 (inject 42 Integer))])
+;;       (let ((a (project x (Vector Any))))
+;;         (project (vector-ref a 0) Integer))))
+
+;; ;; Does not work
+;; (define (world) : Integer 42)
+;; (let ((x (inject (vector (inject 0 Integer)) (Vector Any))))
+;;     (let ([y (vector-set! (project x (Vector Any)) 0 (inject (world) Integer))])
+;;       (let ((a (project x (Vector Any))))
+;;         (project (vector-ref a 0) Integer))))
