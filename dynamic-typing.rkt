@@ -189,7 +189,7 @@
 	   `((movq ,new-e ,new-lhs)
 	     (andq (int ,any-mask) ,new-lhs)
 	     (cmpq (int ,(pred->tag pred)) ,new-lhs)
-	     (sete (byte-reg al))
+	     (set e (byte-reg al))
 	     (movzbq (byte-reg al) ,new-lhs))]
 	  [else ((super select-instructions) e)]
 	  )))

@@ -296,7 +296,7 @@
          `((movq (global-value free_ptr) (var ,data))
            (addq (int ,size) (var ,data))
            (cmpq (global-value fromspace_end) (var ,data))
-           (setl (byte-reg al))
+           (set l (byte-reg al))
            (movzbq (byte-reg al) (var ,lt))
            ;; (not (< end-data fromspace_end)) implies collection-need? 
            (if (eq? (int 0) (var ,lt)) ,cs^ ,as^))]
@@ -335,13 +335,13 @@
   (define/override (write-vars x)
     (match x
       ;[`(movq ,s (offset ,d ,i)) (set)]
-      [`(setl ,d) (free-vars d)]
+      [`(set l ,d) (free-vars d)]
       [else (super write-vars x)]))
   
   (define/override (read-vars x)
     (match x
       ;[`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
-      [`(setl ,d) (set)]
+      [`(set l ,d) (set)]
       [else (super read-vars x)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -353,9 +353,9 @@
           #;[`(offset ,e ,i)
            (define new-e ((assign-homes homes) e))
            `(offset ,new-e ,i)]
-          [`(setl ,e)
+          [`(set l ,e)
            (define new-e ((assign-homes homes) e))
-           `(setl ,new-e)]
+           `(set l ,new-e)]
           [else ((super assign-homes homes) e)])))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -367,7 +367,7 @@
     [`(global-value ,l) #t]
     [else (super in-memory? a)]))
 
-(define/override (instructions)
+#;(define/override (instructions)
   (set-add (super instructions) 'setl))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -383,7 +383,7 @@
        (format "~a(~a)" i ((print-x86) e))]
       [`(global-value ,label)
        (format "~a(%rip)" (label-name (symbol->string label)))]
-      [`(setl ,d) (format "\tsetl\t~a\n" ((print-x86) d))]
+      #;[`(setl ,d) (format "\tsetl\t~a\n" ((print-x86) d))]
       [else ((super print-x86) e)]
       )))));; compile-R2
 
