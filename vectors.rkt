@@ -30,13 +30,13 @@
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
                            (i . < . (length ts)))
-                (error 'type-check "invalid index ~a" i))
+		      (error 'type-check "invalid index ~a" i))
               (let ([t (list-ref ts i)])
-                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t))]
+                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) 
+			t))]
              [else (error "expected a vector in vector-ref, not" t)])]
-          [`(vector-set! ,e-vec ,i ,e-arg) 
-           (define-values (e-vec^ t-vec) ((type-check env) e-vec))
-           (define-values (e-arg^ t-arg) ((type-check env) e-arg))
+          [`(vector-set! ,(app (type-check env) e-vec^ t-vec) ,i 
+			 ,(app (type-check env) e-arg^ t-arg)) 
            (match t-vec
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
@@ -51,13 +51,11 @@
              [else (error 'type-check
                           "expected a vector in vector-set!, not ~a"
                           t-vec)])]
-          [`(eq? ,e1 ,e2)
-           (let-values ([(e1 t1) ((type-check env) e1)]
-                        [(e2 t2) ((type-check env) e2)])
-             (match* (t1 t2)
-               [(`(Vector ,ts1 ...) `(Vector ,ts2 ...))
-                (values `(has-type (eq? ,e1 ,e2) Boolean) 'Boolean)]
-               [(other wise) ((super type-check env) e)]))]
+          [`(eq? ,(app (type-check env) e1 t1) ,(app (type-check env) e2 t2))
+           (match* (t1 t2)
+             [(`(Vector ,ts1 ...) `(Vector ,ts2 ...))
+              (values `(has-type (eq? ,e1 ,e2) Boolean) 'Boolean)]
+             [(other wise) ((super type-check env) e)])]
           [else ((super type-check env) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

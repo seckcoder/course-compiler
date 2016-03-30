@@ -20,12 +20,13 @@ March
 
 14 Spring Break
 21 due: Lambda (1 week)
-28
+28 Lecture topic: inlining
+30 Lecture topic: polymorphism
 
 April
 ---------------------------------------------
 4 due: Type Dynamic, Dynamic Typing (2 weeks)
-
+  Lecture topic: ??
 
 
 
@@ -39,7 +40,7 @@ Student Projects
   * lazy evaluation
   * gradual typing
   * self hosting
-  * tail call optimization
+  * tail call optimization (Michael lecture April 11)
   * I/O
   * foreign function interface
   * quasi-quote and unquote
