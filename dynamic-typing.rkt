@@ -32,7 +32,8 @@
                            (i . < . (length ts)))
                 (error 'type-check "invalid index ~a" i))
               (let ([t (list-ref ts i)])
-                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t))]
+                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) 
+			t))]
              [`(Vectorof ,t)
               (unless (exact-nonnegative-integer? i)
                 (error 'type-check "invalid index ~a" i))
@@ -401,6 +402,7 @@
 (define R6-typechecker
   (let ([compiler (new compile-R6)])
     (send compiler type-check '())))
+
 (define R6-passes
   (let ([compiler (new compile-R6)]
         [interp (new interp-R6)])
@@ -410,9 +412,9 @@
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
-       ,(send interp interp-scheme '()))
+       ,(send interp interp-F '()))
       ("convert-to-closures" ,(send compiler convert-to-closures)
-       ,(send interp interp-scheme '()))
+       ,(send interp interp-F '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("expose allocation"
@@ -448,9 +450,9 @@
        ,(interp-r7 '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
        ,(interp-r7 '()))
-      ("translate" ,(send compiler cast-insert)
+      ("cast-insert" ,(send compiler cast-insert)
        ,(send interp interp-scheme '()))
-      ("inserthastype" ,(send compiler type-check '())
+      ("type-check" ,(send compiler type-check '())
        ,(send interp interp-scheme '()))
       ("convert-to-closures" ,(send compiler convert-to-closures)
        ,(send interp interp-scheme '()))

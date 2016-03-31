@@ -47,12 +47,12 @@
            [(? symbol?)
 	    (lookup ast env)]
 	   [(? integer?) ast]
-	   [`(let ([,x ,e]) ,body)
-	    (let ([v ((interp-scheme env) e)])
-	      ((interp-scheme (cons (cons x v) env)) body))]
+	   [`(let ([,x ,(app (interp-scheme env) v)]) ,body)
+	    ((interp-scheme (cons (cons x v) env)) body)]
 	   [`(program ,e) ((interp-scheme '()) e)]
-	   [`(,op ,args ...) #:when (set-member? (primitives) op)
-	    (apply (interp-op op) (map (interp-scheme env) args))]
+	   [`(,op ,(app (interp-scheme env) args) ...)
+	    #:when (set-member? (primitives) op)
+	    (apply (interp-op op) args)]
 	   [else
 	    (error (format "no match in interp-scheme S0 for ~a" ast))]
 	   )))
@@ -979,21 +979,34 @@
     (define/override (interp-scheme env)
       (lambda (ast)
         (verbose "R6/interp-scheme" ast)
+	(define recur (interp-scheme env))
 	(match ast
-          [`(inject ,e ,t)
-	   `(tagged ,((interp-scheme env) e) ,t)]
-	  [`(project ,e ,t2)
-	   (define v ((interp-scheme env) e))
+          [`(inject ,(app recur v) ,t)
+	   `(tagged ,v ,t)]
+	  [`(project ,(app recur v) ,t2)
 	   (match v
 	      [`(tagged ,v1 ,t1)
-	       (cond [(tyeq? t1 t2)
-		      v1]
-		     [else
-		      (error "in project, type mismatch" t1 t2)])]
-	      [else
-	       (error "in project, expected injected value" v)])]
+	       (cond [(tyeq? t1 t2) v1]
+		     [else (error "in project, type mismatch" t1 t2)])]
+	      [else (error "in project, expected injected value" v)])]
 	  [else 
 	   ((super interp-scheme env) ast)]
+	  )))
+
+    (define/override (interp-F env)
+      (lambda (ast)
+        (verbose "R6/interp-F" ast)
+	(define recur (interp-F env))
+        (match ast
+          [`(inject ,(app recur v) ,t)
+	   `(tagged ,v ,t)]
+	  [`(project ,(app recur v) ,t2)
+	   (match v
+	      [`(tagged ,v1 ,t1)
+	       (cond [(tyeq? t1 t2) v1]
+		     [else (error "in project, type mismatch" t1 t2)])]
+	      [else (error "in project, expected injected value" v)])]
+          [else ((super interp-F env) ast)]
 	  )))
 
     (define/override (interp-C env)
