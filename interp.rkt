@@ -520,6 +520,14 @@
         ['vector-set! vector-set!]
         [else (super interp-op op)]))
     
+    (define/override (interp-scheme env)
+      (lambda (ast)
+        (verbose "R2/interp-scheme" ast)
+	(match ast
+          [`(void) (void)]
+          [else ((super interp-scheme env) ast)]
+          )))
+
     (define (mem-error message expr)
       (lambda (who fmt . args)
         (error who "~a in ~a raise error:\n~a"
@@ -546,6 +554,7 @@
       (lambda (ast)
         (vomit "R2/interp-C" ast)
         (match ast
+          [`(void) (void)]
           ;; I should do better than make these noops - andre
           [`(initialize ,s ,h)
            (unless (and (exact-nonnegative-integer? s)
@@ -690,7 +699,7 @@
 
     (define/public (non-apply-ast)
       (set-union (primitives)
-		 (set 'if 'let 'define 'program 'has-type)))
+		 (set 'if 'let 'define 'program 'has-type 'void)))
 
     (define/override (interp-scheme env)
       (lambda (ast)
@@ -719,7 +728,7 @@
         (verbose "R3/interp-F" ast)
 	(define result
         (match ast
-	  ;; For R3
+	  ;; For R4
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
            (cons f `(lambda ,xs ,body))]
           [`(function-ref ,f)
@@ -737,7 +746,9 @@
           [`(program ,ds ... ,body)
            (let ([top-level (map  (interp-F '()) ds)])
 	      ((interp-F top-level) body))]
-           ;; For R2
+	  ;; For R3
+          [`(void) (void)]
+          ;; For R2
           [`(has-type ,e ,t) ((interp-F env) e)]
           [#t #t]
           [#f #f]

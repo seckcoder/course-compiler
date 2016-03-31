@@ -243,7 +243,9 @@
     (lambda (x)
       (vomit "select instructions" x)
       (match x
-        [`(void) `(int 0)]
+        ;[`(void) `(int 0)]   I don't think this line is needed. -Jeremy
+	[`(assign ,(app (select-instructions) lhs^) (void))
+	 `((movq (int 0) ,lhs^))]
         [`(assign ,lhs (has-type (allocate ,length) (Vector ,ts ...)))
          (define lhs^ ((select-instructions) lhs))
          ;; Add one quad word for the meta info tag

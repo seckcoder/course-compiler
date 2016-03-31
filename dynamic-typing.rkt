@@ -24,8 +24,9 @@
 
     (define/override (type-check env)
       (lambda (e)
+	(define recur (type-check env))
         (match e
-          [`(vector-ref ,(app (type-check env) e t) ,i)
+          [`(vector-ref ,(app recur e t) ,i)
            (match t
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
@@ -39,9 +40,8 @@
                 (error 'type-check "invalid index ~a" i))
               (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t)]
              [else (error "expected a vector in vector-ref, not" t)])]
-          [`(vector-set! ,e-vec ,i ,e-arg) 
-           (define-values (e-vec^ t-vec) ((type-check env) e-vec))
-           (define-values (e-arg^ t-arg) ((type-check env) e-arg))
+          [`(vector-set! ,(app recur e-vec^ t-vec) ,i 
+			 ,(app recur e-arg^ t-arg) )
            (match t-vec
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
@@ -65,22 +65,20 @@
              [else (error 'type-check
                           "expected a vector in vector-set!, not ~a"
                           t-vec)])]
-          [`(inject ,e ,ty)
-	   (define-values (new-e e-ty) ((type-check env) e))
+          [`(inject ,(app recur new-e e-ty) ,ty)
 	   (cond
 	    [(equal? e-ty ty)
 	     (values `(has-type (inject ,new-e ,ty) Any) 'Any)]
 	    [else
 	     (error "injected expression does not have expected type" e ty)])]
-	  [`(project ,e ,ty)
-	   (define-values (new-e e-ty) ((type-check env) e))
+	  [`(project ,(app recur new-e e-ty) ,ty)
 	   (cond
 	    [(equal? e-ty 'Any)
 	     (values `(has-type (project ,new-e ,ty) ,ty) ty)]
 	    [else
 	     (error "project expression does not have type Any" e)])]
 	  [`(,pred ,e) #:when (set-member? type-predicates pred)
-	   (define-values (new-e e-ty) ((type-check env) e))
+	   (define-values (new-e e-ty) (recur e))
 	   (cond
 	    [(equal? e-ty 'Any)
 	     (values `(has-type (,pred ,new-e) Boolean) 'Boolean)]
@@ -451,11 +449,11 @@
       ("reveal-functions" ,(send compiler reveal-functions '())
        ,(interp-r7 '()))
       ("cast-insert" ,(send compiler cast-insert)
-       ,(send interp interp-scheme '()))
+       ,(send interp interp-F '()))
       ("type-check" ,(send compiler type-check '())
-       ,(send interp interp-scheme '()))
+       ,(send interp interp-F '()))
       ("convert-to-closures" ,(send compiler convert-to-closures)
-       ,(send interp interp-scheme '()))
+       ,(send interp interp-F '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("expose allocation"
