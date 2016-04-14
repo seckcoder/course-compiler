@@ -128,7 +128,7 @@
                    (append* (map (collect-locals) els)))]
           [else ((super collect-locals) ast)])))
 
-    (define optimize-if #t)
+    (define optimize-if #f)
 
     (define/public (flatten-if new-thn thn-ss new-els els-ss)
       (lambda (cnd)
@@ -163,16 +163,16 @@
                                     ,(append thn-ss (list thn-ret))
                                     ,(append els-ss (list els-ret))))))]
              [else
-              (let-values ([(new-cnd cnd-ss)
-			    ((flatten #t) `(has-type ,cnd ,t))])
-                (define tmp (gensym 'if))
-                (define thn-ret `(assign ,tmp ,new-thn))
-                (define els-ret `(assign ,tmp ,new-els))
-                (values `(has-type ,tmp ,t)
-                        (append cnd-ss
-                                `((if (eq? (has-type #t Boolean) ,new-cnd)
-                                      ,(append thn-ss (list thn-ret))
-                                      ,(append els-ss (list els-ret)))))))])]
+              (define-values (new-cnd cnd-ss) ((flatten #t)
+					       `(has-type ,cnd ,t)))
+	      (define tmp (gensym 'if))
+	      (define thn-ret `(assign ,tmp ,new-thn))
+	      (define els-ret `(assign ,tmp ,new-els))
+	      (values `(has-type ,tmp ,t)
+		      (append cnd-ss
+			      `((if (eq? (has-type #t Boolean) ,new-cnd)
+				    ,(append thn-ss (list thn-ret))
+				    ,(append els-ss (list els-ret))))))])]
           [other (error 'flatten-if "unmatched ~a" other)])))
     
     (define/override (flatten need-atomic)

@@ -1,0 +1,269 @@
+Lecture noted addendum: The one thing we discussed that's not in the
+lecture notes is how to do stack arguments for tail calls: it turns
+out that the recursive caller has to write the stack arguments into
+its caller's stack argument zone. This gets hairier when you have
+non-self-recursive tail calls, because then the original caller needs
+to allocate stack space for arguments that it never writes to: for
+example, if A non-tail-calls B (which has 3 arguments), and B
+tail-calls C (which has 10 arguments), A has to allocate stack space
+for 4 stack arguments even though it itself never calls anything that
+uses stack arguments.
+
+
+Today I wanted to talk about one important optimization in compilers:
+tail call optimization.  
+
+This might end up being a pretty quick lecture because the
+optimization itself is pretty straightforward, but this is an
+optimization important enough that it's actually explicit in the
+Racket specification: you don't technically have a "Racket
+implementation" until you have this. To see what this is about, let's
+take a look at the "same" program written in two languages. First of
+all, Racket:
+
+[pull up racket_infinite_loop.rkt]
+(define (f)
+  (f))
+(f)
+
+So, this is obviously an infinite loop, right? That's cool, we're down
+with infinite loops.  Let's run this program. [do so] And look at
+that, it's looping infinitely.
+
+Now, compare this with another program, that looks identical and
+should behave identical in theory, except this time, it's written in
+Python.
+
+[pull up python_infinite_loop.py]
+def f():
+    f()
+f()
+
+Let's run this version. [do so] And this time, the program
+explodes. The difference is that while Racket performs tail call
+optimization, Python somewhat famously doesn't. And while we might not
+be too concerned about this program in particular, there are lots of
+functions that are invoked recursively many times before eventually
+returning a result --- we don't want to have to worry bout our program
+dying if a function loops more than an arbitrary number of times.
+
+So specifically, the thing that causes Python to die here is that
+every time a recursive call is that every time the function is
+recursively applied, a new stack frame is allocated, and eventually,
+the stack just takes up so much space that the execution is
+automatically halted. Python, of course, is an interpreted language
+(as is regular Racket), but basically the same principle holds in our
+compiled code: every time a recursive call happens, the prelude of of
+the program is going to push all the caller-save registers and move
+the stack pointers to create enough space for spilled
+variables. Eventually, this is going to result in a segfault as the
+stack space used by the program exceeds that which is provided to it
+by the OS (or at least that's my understanding).
+
+The answer that tail call elimination provides is that in some
+circumstances we can simply reuse the current stack frame. We can only
+do this if the recursive call that would be generating the new frame
+is the very last thing that happens in this particular iteration of
+the function call. So, given this program, we can achieve efficiency
+by changing the callq instruction generated for the recursive call
+into a straight, unconditional jump the the beginning of the procedure
+code. There's some subtleties that I'll get into, but that's really
+the core of it.
+
+To implement this, the first step is to mark which recursive calls can
+be eliminated. I reccomend doing this as part of reveal-functions,
+because when the program is still in Racket form it's very clear which
+calls are in tail position and which aren't. For now, we're only
+talking about eliminating recursive tail calls, so only calls inside
+(define)'d functions can be eliminated
+
+So given a program like this:  
+
+(define (times n m)
+  (if (eq? n 0)
+    0
+    (+ m (times (- n 1) m))))
+
+we will do our normal revealing of functions:
+
+(define (times n m)
+  (if (eq? n 0)
+    0
+    (+ m (app (function-ref times) (- n 1) m))))
+
+since the addition happens after the recursive call, we can't reuse
+the stack frame for the call: there are still things happening within
+the current frame after the call returns. But if we change the program like so:
+
+(define (times-iter n m prod)
+  (if (eq? n 0)
+    c
+    (times-iter (- n 1) m (+ prod m))))
+
+we can see that the recursive call is at the end of one path through
+the function, so we can change it to
+
+(define (times-iter n m prod)
+  (if (eq? n 0)
+    c
+    (tailcall (function-ref times-iter) (- n 1) m (+ prod m))))
+
+The downside of introducing a new AST form this early, of course, is
+that we have to propagate it all the way through the rest of our
+passes. Once we get into the C language, I reccomend treating tailcall
+as a new statement, just like assign and return. This is because it
+really is more like the return statement than anything else: it's not
+going to write a result to the LHS, like an assign would, its just
+going to do a jump and then relinquish control over returning the
+result to the callee. You'll have to propagate this statement through
+all the C passes, but it's very straightforward to do so, with one
+exception.
+
+The one pass that is interesting among the C passes is
+uncover-call-live-roots. Remember, one of the things that this pass
+does is, when it sees a function call:
+
+(assign lhs (app (function-ref f) y z))
+
+Given the set '(somevector someclosure) of live heap values, we have
+to compile this to
+
+(call-live-roots (somevector someclosure) (assign lhs (app (function-ref f) y z)))
+
+And this will in turn get compiled into instructions that push
+somevector and someclosure onto the root stack and then pop them off
+afterwards, so that they dont get garbage collected while the
+recursive call is executing.
+
+But this seems like a really bad thing for tail calls, right? We can't
+do anything after a tail call, because we've wiped out this stack
+frame and we'll never return to it.
+
+QUESTION: what's the solution here?
+
+ANSWER: Actually, there isn't a problem at all! Like I said, we're
+never returning to this stack frame, so everything in the frame is
+dead at the point that we make the tail call, except for the arguments
+to the function. And the callee won't collect those if they're alive
+when it executes. So in fact, we don't need to insert a
+call-live-roots around tailcalls.
+
+When I said that this pass was interesting, I meant that it's
+interesting for what we _don't_ have to do, rather than what we do.
+
+Now, like regular apps, tailcalls go away when we perform instruction
+selection. Recall that when we did instruction selection on regular
+apps, we turned them into "indirect callq"s
+
+(indirect-callq (reg rax))
+
+which eventually we print out as
+
+callq   *%rax
+
+It shouldn't be surprising that there's an analagous form for indirect
+jumps: we'll introduce 
+
+(indirect-jmp (reg rax))
+
+into our pseudo-x86 language and then print it out as 
+
+jmp    *%rax
+
+So our times function will end up looking something like this
+
+
+  .globl times
+times:
+  push %rbp
+  movq %rsp, %rbp
+  pushq %r14
+  pushq %r13
+  pushq %r12
+  pushq %rbx
+  subq $16, %rsp
+  
+  movq %rdi, n
+  movq %rsi, m
+  mocq %rdx, prod
+  
+  ... do stuff ...
+
+  leaq times(%rip), %r12
+  ... closure stuff ...
+  
+  movq n, %rdi
+  movq m, %rsi
+  movq prod, %rdx
+  jmp *%r12
+  
+  ... other cases ...
+
+And then we're cool, right? Except ---
+
+QUESTION: Can anybody spot what the problem is here?
+
+ANSWER: We're jumping to _before_ the function prelude, so for every
+iteration, we're still doing some of the work to allocate a new frame:
+pushing the base pointer, allocating stack space, etc. That's bad!
+
+The way that I solved this, which perhaps isn't the cleverest, is to
+introduce a new label that marks the end of the prelude and the
+beginning of the function's body. I then used that as the indirect-jmp
+target:
+
+  .globl times
+times:
+  ... prelude ...
+  
+times_body:
+  movq %rdi, n
+  movq %rsi, m
+  mocq %rdx, prod
+  
+  ... do stuff ...
+
+  leaq times_body(%rip), %r12
+  ... stuff ...
+
+Then allllll the way back in the modified version of reveal-functions,
+I change function-refs within tailcalls to append "body" to the target
+label. Maybe a better way to do this, though is to make sure that the
+prelude is always of constant length and then jump to an offset from
+the function entry label.
+
+So, that's the story for recursive tail calls. What about tail calls
+to other functions, or mutually recursive tail calls? For example,
+
+(define (odd n)
+  (if (eq? n 0)
+    #f
+    (even (- n 1))))
+(define (even n)
+  (if (eq? n 0)
+    #t
+    (odd (- n 1))))
+
+The recursive calls to even and odd are in tail position, so we want
+to eliminate them too. We can do so, but in general this requires a
+bit of care, because now we are going to reuse the same stack frame
+for calls to different functions. So when we select instructions for a
+function with tail calls to other functions, we need to make sure that
+the frame has enough space for the spilled locals and arguments for
+_every_ function that can get tailcalled, transitively: if function A
+tailcalls function B which tailcalls function C, then function A's
+stack frame needs to be the max of what A,B, and C alone would need. 
+
+Alternatively, we can roll back the stack space and jump to after
+saving the locals but before allocating stack space.
+
+This also means that we have to have this information to perform a
+tailcall; if we don't have it, we have to fall back to normal calls. For example,
+
+(define (foo fn)
+  (fn 42))
+
+The call to fn is in tail position here, but fn is an arbitrary
+function value, and we have no way of knowing how much stack space is
+needed for it. For that reason, we have to fall back to regular calls.
+

@@ -26,7 +26,13 @@ March
 April
 ---------------------------------------------
 4 due: Type Dynamic, Dynamic Typing (2 weeks)
-  Lecture topic: ??
+  Lecture topic: expose basic blocks
+
+6 Lecture topic: objects
+
+11 Lecture topic: tail call opt. (Michael)
+13 Lecture topic: set! (Chris)
+
 
 
 
@@ -49,6 +55,8 @@ Student Projects
   * alternative register allocator
   * parametric polymorphism
   * type classes (perhaps too difficulty?)
+  * loops and loop optimization
+  * object-oriented features
 
 
 25 projects due
