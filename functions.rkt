@@ -111,6 +111,8 @@
                 [else e])]
 	     [`(let ([,x ,e]) ,body)
 	      `(let ([,x ,(recur e)]) ,(recur body))]
+	     [`(void)
+	     `(void)]
 	     [#t #t]
 	     [#f #f]
 	     [`(if ,cnd ,thn ,els)
