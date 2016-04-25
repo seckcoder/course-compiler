@@ -33,8 +33,8 @@ April
 11 Lecture topic: tail call opt. (Michael)
 13 Lecture topic: set! (Chris)
 
-18 Lecture topic:
-20 Lecture topic:
+18 Lecture topic: present reference compiler (through vectors and GC)
+20 Lecture topic: present reference compiler (functions to dynamic)
 
 Student Projects
 
@@ -59,5 +59,5 @@ Student Projects
   * object-oriented features
 
 
-25 projects due
+29 projects due
 25-29: Student Presentations

@@ -166,7 +166,7 @@
     (define (any-tag ty)
       (match ty
 	 ['Integer 0]
-	 ['Void 0]
+	 ['Void 0]  ;; the back has 4, but Rajan thinks 0 is better :)
 	 ['Boolean 1]
 	 [`(Vector ,ts ...) 2]
 	 [`(Vectorof ,t) 2]
@@ -222,6 +222,7 @@
 		      ((movq ,new-e ,new-lhs)
 		       (sarq (int 2) ,new-lhs))
 		      ))
+		 ;; shouldn't we push the status code? -Jeremy
 		 ((callq ,(string->symbol (label-name 'exit))))))]
 	  [`(assign ,lhs (,pred ,e)) #:when (set-member? type-predicates pred)
            (define new-lhs (recur lhs))

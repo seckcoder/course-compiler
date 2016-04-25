@@ -161,7 +161,6 @@
     (define largest-color 0)
 
     ;; Choose the first available color
-    ;; To do: move biasing -Jeremy
     (define (choose-color v unavail-colors move-related)
       (define n (vector-length registers-for-alloc))
       (define biased-selection
@@ -214,8 +213,10 @@
                (list->set (filter (lambda (x) (>= x 0)) 
                                   (map (lambda (k) (hash-ref color k -1)) 
                                        (set->list (adjacent MG v))))))
-	     (define c (choose-color v (hash-ref unavail-colors v) move-related))
-	     (cond [(> c largest-color) (set! largest-color c)])
+	     (define c (choose-color v (hash-ref unavail-colors v)
+				     move-related))
+	     (cond [(> c largest-color)
+		    (set! largest-color c)])
 	     (hash-set! color v c)
 	     (debug "coloring" (cons v c))
 	     (for ([u (adjacent IG v)])

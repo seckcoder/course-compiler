@@ -36,11 +36,9 @@
         (vomit "type-check" e)
         (match e
           [`(,e ,es ...) #:when (not (set-member? (non-apply-ast) e))
-           (define-values (e* ty*)
-             (for/lists (e* ty*) ([e (in-list es)])
-               ((type-check env) e)))
-           (define-values (e^ ty)
-             ((type-check env) e))
+           (define-values (e* ty*) (for/lists (e* ty*) ([e (in-list es)])
+                                      ((type-check env) e)))
+           (define-values (e^ ty) ((type-check env) e))
            (match ty
              [`(,ty^* ... -> ,rt)
               (unless (equal? ty* ty^*)
@@ -49,22 +47,21 @@
               (values `(has-type (,e^ ,@e*) ,rt) rt)]
              [else (error "expected a function, not" ty)])]
           [`(define (,f ,(and p:t* `[,xs : ,ps]) ...) : ,rt ,body)
-           (let-values ([(body^ ty^) ((type-check (append (map cons xs ps) env)) body)])
-             (unless (equal? ty^ rt)
-               (error "body type and declared return type mismatch for function" e))
-             `(define (,f ,@p:t*) : ,rt ,body^))]
+	   (define new-env (append (map cons xs ps) env))
+           (define-values (body^ ty^) ((type-check new-env) body))
+           (unless (equal? ty^ rt)
+             (error "body type and return type mismatch for function" e))
+	   `(define (,f ,@p:t*) : ,rt ,body^)]
           [`(program ,ds ... ,body)
-           (define new-env
-             (for/list ([d ds]) 
-               (cons (fun-def-name d) (fun-def-type d))))
-           (define ds^
-             (for/list ([d ds])
-               ((type-check new-env) d)))
-           (define-values (body^ ty)
-             ((type-check new-env) body))
+           (define new-env (for/list ([d ds]) 
+			      (cons (fun-def-name d) (fun-def-type d))))
+           (define ds^ (for/list ([d ds])
+		          ((type-check new-env) d)))
+           (define-values (body^ ty) ((type-check new-env) body))
            (vomit "prog" ty ds^ body^)
            `(program (type ,ty) ,@ds^ ,body^)]
           [else ((super type-check env) e)])))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S3 -> S3
 
@@ -291,6 +288,7 @@
 	 (define mov-regs
 	   (for/list ([arg first-args] [r arg-registers])
 		     `(movq ,arg (reg ,r))))
+	 ;; replace stack-arg with deref -Jeremy
 	 (define mov-stack
 	   (for/list ([arg last-args] [i (in-range 0 (length last-args))])
 		     `(movq ,arg (stack-arg ,(* i 8)))))

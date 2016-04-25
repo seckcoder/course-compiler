@@ -16,7 +16,8 @@
       (lambda (e)
         (match e
           [`(lambda: ,(and bnd `([,xs : ,Ts] ...)) : ,rT ,body)
-           (define-values (new-body bodyT) ((type-check (append (map cons xs Ts) env)) body))
+           (define-values (new-body bodyT) 
+	     ((type-check (append (map cons xs Ts) env)) body))
 	   (define ty `(,@Ts -> ,rT))
 	   (cond
 	    [(equal? rT bodyT)
@@ -102,11 +103,13 @@
               (values
                `(has-type
                  (let ([,tmp ,new-e])
-                   (has-type (app (has-type (vector-ref (has-type ,tmp ,t^) (has-type 0 Integer)) _)
+                   (has-type (app (has-type (vector-ref (has-type ,tmp ,t^) 
+							(has-type 0 Integer)) _)
                                   (has-type ,tmp ,t^) ,@new-es) ,t))
                  ,t)
                (append e-fs (apply append es-fss)))]
-             [else (error 'convert-to-closures (format "I assume this shouldn't happen ~a" new-e))])]
+             [else (error 'convert-to-closures
+			  (format "I assume this shouldn't happen ~a" new-e))])]
           [`(has-type (lambda: ([,xs : ,Ts] ...) : ,rT ,body) ,t)
            (define-values (new-body body-fs) (recur body))
            (let* ([fun-name (gensym 'lambda)]

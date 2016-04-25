@@ -947,6 +947,8 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for R6: type Any and inject/project
+
+;; to do: support eq? on two things of type Any -Jeremy
  
 (define interp-R6
   (class interp-R4

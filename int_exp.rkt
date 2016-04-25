@@ -21,13 +21,12 @@
           ['(void) '(void)]
           [(? symbol?) (cdr (assq e env))]
           [(? integer?) e]
-          [`(let ([,x ,e]) ,body)
+          [`(let ([,x ,(app recur new-e)]) ,body)
            (define new-x (gensym (racket-id->c-id x)))
-           (define new-e (recur e))
            `(let ([,new-x ,new-e])
 	       ,((uniquify (cons (cons x new-x) env)) body))]
-          [`(program ,body)
-           `(program ,(recur body))]
+          [`(program ,(app recur new-body))
+           `(program ,new-body)]
           [`(,op ,es ...) #:when (set-member? (primitives) op)
            `(,op ,@(map recur es))]
           [else (error "uniquify couldn't match" e)])))
@@ -241,11 +240,10 @@
 	(match e
 	   [`(deref ,reg ,i)
 	    (format "~a(%~a)" i reg)]
-           #;[`(stack ,n) 
-	    (format "~a(%rbp)" (- n))]
 	   [`(int ,n) (format "$~a" n)]
 	   [`(reg ,r) (format "%~a" r)]
-	   [`(callq ,f) (format "\tcallq\t~a\n" (label-name (symbol->string f)))]
+	   [`(callq ,f)
+	    (format "\tcallq\t~a\n" (label-name (symbol->string f)))]
 	   [`(program ,stack-space ,ss ...)
 	    (string-append
 	     (format "\t.globl ~a\n" (label-name "main"))
