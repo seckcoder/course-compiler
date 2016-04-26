@@ -26,27 +26,25 @@
       (lambda (e)
 	(define recur (type-check env))
         (match e
-          [`(vector-ref ,(app recur e t) ,i)
+          [`(vector-ref ,(app recur e t) ,(app recur i it))
            (match t
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
                            (i . < . (length ts)))
-                (error 'type-check "invalid index ~a" i))
+                (error 'type-check "invalid index ~a in ~a" i e))
               (let ([t (list-ref ts i)])
                 (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) 
 			t))]
              [`(Vectorof ,t)
-              (unless (exact-nonnegative-integer? i)
-                (error 'type-check "invalid index ~a" i))
-              (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) t)]
+              (values `(has-type (vector-ref ,e ,i) ,t) t)]
              [else (error "expected a vector in vector-ref, not" t)])]
-          [`(vector-set! ,(app recur e-vec^ t-vec) ,i 
-			 ,(app recur e-arg^ t-arg) )
+          [`(vector-set! ,(app recur e-vec^ t-vec) ,(app recur i it) 
+			 ,(app recur e-arg^ t-arg))
            (match t-vec
              [`(Vector ,ts ...)
               (unless (and (exact-nonnegative-integer? i)
                            (i . < . (length ts)))
-                (error 'type-check "invalid index ~a" i))
+                (error 'type-check "invalid index ~a in ~a" i e))
               (unless (equal? (list-ref ts i) t-arg)
                 (error 'type-check "type mismatch in vector-set! ~a ~a" 
                        (list-ref ts i) t-arg))
@@ -54,16 +52,11 @@
                                               (has-type ,i Integer)
                                               ,e-arg^) Void) 'Void)]
              [`(Vectorof ,t)
-              (unless (exact-nonnegative-integer? i)
-                (error 'type-check "invalid index ~a" i))
               (unless (equal? t t-arg)
                 (error 'type-check "type mismatch in vector-set! ~a ~a" 
                        t t-arg))
-              (values `(has-type (vector-set! ,e-vec^
-                                              (has-type ,i Integer)
-                                              ,e-arg^) Void) 'Void)]
-             [else (error 'type-check
-                          "expected a vector in vector-set!, not ~a"
+              (values `(has-type (vector-set! ,e-vec^ ,i ,e-arg^) Void) 'Void)]
+             [else (error 'type-check "expected a vector in vector-set!, not ~a"
                           t-vec)])]
           [`(inject ,(app recur new-e e-ty) ,ty)
 	   (cond
@@ -427,10 +420,38 @@
           [else ((super reveal-functions funs) e)])))
 
 
-    ))
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; select-instructions : C -> psuedo-x86
 
+  (define/override (select-instructions)
+    (lambda (x)
+      (vomit "select instructions" x)
+      (match x
+        [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer))) 
+	 #:when (not (number? i))
+         (define lhs^ ((select-instructions) lhs))
+         (define e-vec^ ((select-instructions) e-vec))
+         (define i^ ((select-instructions) i))
+         `((movq ,i^ (reg r11))
+	   (addq (int 1) (reg r11))
+	   (imulq (int 8) (reg r11))
+	   (addq ,e-vec^ (reg r11))
+	   (movq (deref r11 0) ,lhs^))]
+        [`(assign ,lhs (vector-set! ,e-vec (has-type ,i ,Integer) ,e-arg))
+	 #:when (not (number? i))
+         (define lhs^ ((select-instructions) lhs))
+         (define e-vec^ ((select-instructions) e-vec))
+         (define e-arg^ ((select-instructions) e-arg))
+         (define i^ ((select-instructions) i))
+         `((movq ,i^ (reg r11))
+	   (addq (int 1) (reg r11))
+	   (imulq (int 8) (reg r11))
+	   (addq ,e-vec^ (reg r11))
+	   (movq ,e-arg^ (deref r11 0))
+           (movq (int 0) ,lhs^))]
+        [else ((super select-instructions) x)])))
 
-
+  ));; compile-R7
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

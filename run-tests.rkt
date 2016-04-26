@@ -43,7 +43,7 @@
     (3 . ,(range 1 20))
     (4 . ,(range 0 8))
     (6 . ,(range 0 10))
-    (7 . ,(range 0 8))
+    (7 . ,(range 0 9))
     ))
 
 (define (suite-range x)

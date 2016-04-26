@@ -111,6 +111,7 @@
 
     (field [x86-ops (make-immutable-hash
                      `((addq 2 ,+)
+		       (imulq 2 ,*)
                        (subq 2 ,(lambda (s d) (- d s)))
                        (negq 1 ,-)))])
     
@@ -948,8 +949,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interpreters for R6: type Any and inject/project
 
-;; to do: support eq? on two things of type Any -Jeremy
- 
 (define interp-R6
   (class interp-R4
     (super-new)
@@ -977,6 +976,15 @@
 		      (match v
 			 [`(tagged ,v1 (,ts ... -> ,rt)) #t]
 			 [else #f]))]
+	 ['eq? (lambda (v1 v2)
+		 (match (list v1 v2)
+ 		   [`((tagged ,v1^ ,ty1) (tagged ,v2^ ,ty2))
+		    (and (eq? v1^ v2^) (equal? ty1 ty2))]
+		   [else
+		    (cond [(or (and (fixnum? v1) (fixnum? v2)) 
+			       (and (boolean? v1) (boolean? v2))
+			       (and (vector? v1) (vector? v2)))
+			   (eq? v1 v2)])]))]
 	 [else (super interp-op op)]
 	 ))
 
@@ -1050,3 +1058,4 @@
 		   ))
 
     )) ;; interp-R6
+

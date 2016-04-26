@@ -97,9 +97,10 @@
 	      (for/list ([e (in-list e*)]
 			 [n (in-naturals)])
 			(let ([v (unique-var 'void)])
-			  `(assign ,v (has-type
-				       (vector-set! ,vec (has-type ,n Integer) ,e)
-				       Void)))))
+			  `(assign ,v
+				   (has-type
+				    (vector-set! ,vec (has-type ,n Integer) ,e)
+				    Void)))))
 	    `((if (has-type (collection-needed? ,size) Boolean)
 		  ((collect ,size))
 		  ())
@@ -243,7 +244,7 @@
     (lambda (x)
       (vomit "select instructions" x)
       (match x
-        ;[`(void) `(int 0)]   I don't think this line is needed. -Jeremy
+        [`(void) `(int 0)]
 	[`(assign ,(app (select-instructions) lhs^) (void))
 	 `((movq (int 0) ,lhs^))]
         [`(assign ,lhs (has-type (allocate ,length) (Vector ,ts ...)))

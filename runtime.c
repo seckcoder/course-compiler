@@ -486,5 +486,8 @@ void print_any(int64_t any) {
   case ANY_TAG_FUN:
     printf("#<procedure>");
     break;
+  default:
+    printf("unrecognized!");
+    exit(-1);
   }
 }

@@ -5,9 +5,6 @@ Compiler Course
 
 ## To do:
 * Write Grammars for intermediate languages
-* Implement anonymous functions: `lambda.rkt`
-* Do: Look through S3 tests and think of more tests.
-* Read: `functions.rkt` for help with `lambda.rkt`
 
 Notes for work:
 
@@ -27,3 +24,5 @@ Notes for work:
 * Look in utilities for System V
 * Look in utilities for Debugging stuff (`check-passes`)
 
+Coding guidelines:
+* No more than 80 columns per line.

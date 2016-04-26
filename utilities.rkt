@@ -396,6 +396,8 @@
          (control-fun 'wait)
          (cond [(eq? (control-fun 'status) 'done-ok)
                 (let ([result (read-line (car progout))])
+		  (unless (not (eq? result eof))
+			  (error "error: program did not produce output"))
                   (if (eq? (string->symbol result) (string->symbol output))
                       (begin (display test-name)(display " ")(flush-output))
                       (error (format "test ~a failed, output: ~a, expected ~a" 

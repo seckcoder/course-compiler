@@ -61,18 +61,19 @@
        (let* ([elts (map recur es)]
               [tys (map get-tagged-type elts)])
          `(tagged ,(apply vector (map recur es)) (Vector ,@tys)))]
-      [`(vector-set! ,e1 ,n ,e2)
-       (let ([e1^ (recur e1)]
-             [e2^ (recur e2)])
-         (match e1^ 
-           [`(tagged ,vec ,ty) 
-            (vector-set! vec n e2^)
-            `(tagged (void) Void)]))]
-      [`(vector-ref ,e ,n)
-       (let ([e^ (recur e)])
-         (match e^ 
-           [`(tagged ,vec ,ty) 
-            (vector-ref vec n)]))]
+      [`(vector-set! ,(app recur e1^) ,(app recur n^) ,(app recur e2^))
+       (match e1^ 
+	 [`(tagged ,vec ,ty) 
+	  (match n^
+	    [`(tagged ,n ,ty)
+	     (vector-set! vec n e2^)
+	     `(tagged (void) Void)])])]
+      [`(vector-ref ,(app recur e^) ,(app recur n^))
+       (match e^ 
+	 [`(tagged ,vec ,ty) 
+	  (match n^
+	    [`(tagged ,n ,ty)
+	     (vector-ref vec n)])])]
       [`(let ([,x ,e]) ,body)
        (let ([v (recur e)])
          ((interp-r7 (cons (cons x v) env)) body))]
@@ -101,3 +102,5 @@
             (define new-env (append (map cons xs new-args) lam-env))
             ((interp-r7 new-env) body)]
            [else (error "interp-r7, expected function, not" f-val)]))])))
+
+
