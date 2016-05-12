@@ -271,8 +271,8 @@
                                          (display "in program")(newline)
                                          (pretty-print new-p)(newline)
                                          (error 'check-passes
-                                                "differing results in compiler '~a' pass '~a', expected ~a, not ~a"
-                                                name pass-name result
+                                                "differing results in compiler '~a' on test '~a' pass '~a', expected ~a, not ~a"
+                                                name test-name pass-name result
                                                 new-result
                                                 )])]
                                  [else ;; no result to check yet

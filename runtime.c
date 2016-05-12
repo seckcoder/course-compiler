@@ -4,7 +4,9 @@
 #include <assert.h>
 #include "runtime.h"
 
-// Often misunderstood static global variables in C are not
+// To do: we need to account for the "any" type. -Jeremy
+
+// Often misunderstood: static global variables in C are not
 // accessible to code outside of the module.
 // No one besides the collector ever needs to know tospace exists.
 static int64_t* tospace_begin;
@@ -42,6 +44,36 @@ static inline int get_length(int64_t tag){
 static inline int64_t get_ptr_bitfield(int64_t tag){
   return tag >> TAG_PTR_BITFIELD_RSHIFT;
 }
+
+// The following needs to stay in sync with the any-tag function
+// in dynamic-typing.rkt.  -Jeremy
+static const int ANY_TAG_MASK = 7;
+static const int ANY_TAG_LEN = 3;
+static const int ANY_TAG_INT = 1;
+static const int ANY_TAG_BOOL = 4;
+static const int ANY_TAG_VEC = 2;
+static const int ANY_TAG_FUN = 3;
+static const int ANY_TAG_VOID = 5;
+static const int ANY_TAG_PTR = 0; // not an any, a raw pointer
+
+int any_tag(int64_t any) {
+  return any & ANY_TAG_MASK;
+}
+
+int is_ptr(int64_t* p) {
+  int64_t q = (int64_t)p;
+  int t = any_tag(q);
+  return t == ANY_TAG_PTR || t == ANY_TAG_VEC;
+}
+
+int64_t* to_ptr(int64_t* p) {
+  int64_t q = (int64_t)p;
+  if (any_tag(q) == ANY_TAG_PTR)
+    return p;
+  else
+    return (int64_t*)(q & ~ANY_TAG_MASK);
+}
+
 
 // initialize the state of the collector so that allocations can occur
 void initialize(uint64_t rootstack_size, uint64_t heap_size)
@@ -87,6 +119,8 @@ static void cheney(int64_t** rootstack_ptr);
 
 void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
 {
+  //printf("collecting, need %lld\n", bytes_requested);
+
   // 1. Check our assumptions about the world
   assert(initialized);
   assert(rootstack_ptr >= rootstack_begin);
@@ -94,9 +128,12 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
   
 #ifndef NDEBUG  
   // All pointers in the rootstack point to fromspace
-  for(unsigned int i = 0; rootstack_begin + i < rootstack_ptr; i++){
-    int64_t* a_root = rootstack_begin[i];
-    assert(fromspace_begin <= a_root && a_root < fromspace_end);
+  for (unsigned int i = 0; rootstack_begin + i < rootstack_ptr; i++){
+    int64_t* root = rootstack_begin[i];
+    if (is_ptr(root)) {
+      int64_t* a_root = to_ptr(root);
+      assert(fromspace_begin <= a_root && a_root < fromspace_end);
+    }
   }
 #endif
   
@@ -105,6 +142,7 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
   
   // 3. Check if collection freed enough space in order to allocate
   if (sizeof(int64_t) * (fromspace_end - free_ptr) < bytes_requested){
+    //printf("resizing the heap\n");
     /* 
        If there is not enough room left for the bytes_requested,
        allocate larger tospace and fromspace.
@@ -167,30 +205,42 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
   assert(free_ptr >= fromspace_begin);
 #ifndef NDEBUG
   // All pointers in the rootstack point to fromspace
-  for(unsigned long i = 0; rootstack_begin + i < rootstack_ptr; i++){
-    int64_t* a_root = rootstack_begin[i];
-    assert(fromspace_begin <= a_root && a_root < fromspace_end);
+  for (unsigned long i = 0; rootstack_begin + i < rootstack_ptr; i++){
+    int64_t* root = rootstack_begin[i];
+    if (is_ptr(root)) {
+      int64_t* a_root = to_ptr(root);
+      assert(fromspace_begin <= a_root && a_root < fromspace_end);
+    }
   }
   // All pointers in fromspace point to fromspace
+  /*printf("validating pointers in fromspace [%lld, %lld)\n", 
+    (int64_t)fromspace_begin, (int64_t)fromspace_end);*/
   int64_t* scan_ptr = fromspace_begin;
-  while(scan_ptr != free_ptr){
+  while (scan_ptr != free_ptr){
     int64_t tag = *scan_ptr;
     unsigned char len = get_length(tag);
+    //printf("\tlen %d\n", (int)len);
     int64_t isPtrBits = get_ptr_bitfield(tag);
     int64_t* data = scan_ptr + 1;
     scan_ptr = scan_ptr + len + 1;
-    for(unsigned char i = 0; i < len; i++){
+    for (unsigned char i = 0; i != len; i++){
       if ((isPtrBits >> i) & 1){
         int64_t* ptr = (int64_t*) data[i];
-        assert(ptr < fromspace_end);
-        assert(ptr >= fromspace_begin);
+	if (is_ptr(ptr)) {
+	  /*printf("\ti: %d, ptr: %lld, to_ptr: %lld", i, 
+		 (int64_t)ptr,
+		 (int64_t)to_ptr(ptr));*/
+	  int64_t* real_ptr = to_ptr(ptr);
+	  assert(real_ptr < fromspace_end);
+	  assert(real_ptr >= fromspace_begin);
+	}
       }
     }
   }
 #endif
 
-  
-}
+  // printf("finished collecting\n\n");
+} // collect
 
 // copy_vector is responsible for doing a pointer oblivious
 // move of vector data and updating the vector pointer with
@@ -233,6 +283,7 @@ static void copy_vector(int64_t** vector_ptr_loc);
 
 void cheney(int64_t** rootstack_ptr)
 {
+  //printf("cheney: starting copy\n");
   int64_t* scan_ptr = tospace_begin;
   free_ptr = tospace_begin;
   
@@ -302,6 +353,7 @@ void cheney(int64_t** rootstack_ptr)
   tospace_end = fromspace_end;
   fromspace_begin = tmp_begin;
   fromspace_end = tmp_end;
+  //printf("cheney: finished copy\n");
 }
 
 
@@ -357,21 +409,30 @@ void cheney(int64_t** rootstack_ptr)
 */
 void copy_vector(int64_t** vector_ptr_loc)
 {
-  
+  //printf("copy_vector %lld\n", (int64_t)*vector_ptr_loc);
+
   int64_t* old_vector_ptr = *vector_ptr_loc;
+  int old_tag = any_tag((int64_t)old_vector_ptr);
+
+  if (! is_ptr(old_vector_ptr))
+    return;
+  old_vector_ptr = to_ptr(old_vector_ptr);
+  
   int64_t tag = old_vector_ptr[0];
    
   // If our search has already moved the vector then we
   //  would have left a forwarding pointer.
 
   if (is_forwarding(tag)) {
-    // Since we left a forwarding pointer the we have already
+    //printf("\talready copied to %lld\n", tag);
+    // Since we left a forwarding pointer, we have already
     // moved this vector. All we need to do is update the pointer
-    // that was pointing to the old vector. To point we the
-    // forwarding pointer says the new copy is.
-    *vector_ptr_loc = (int64_t*) tag;
+    // that was pointing to the old vector. The
+    // forwarding pointer says where the new copy is.
+    *vector_ptr_loc = (int64_t*) (tag | old_tag);
     
   } else {
+    //printf("\tfirst time copy\n");
     // This is the first time we have followed this pointer.
     
     // Since we are about to jumble all the pointers around lets
@@ -380,15 +441,17 @@ void copy_vector(int64_t** vector_ptr_loc)
     // The tag we grabbed earlier contains some usefull info for
     // forwarding copying the vector.
     int length = get_length(tag);
+    //printf("\tlen: %d\n", length);
     
     // The new vector is going to be where the free int64_t pointer
     // currently points.
     int64_t* new_vector_ptr = free_ptr;
+    //printf("\tto address: %lld\n", (int64_t)new_vector_ptr);
 
-    // Just perform a straight-forward copy from old to new.
-    // The length is a bit of a lie because including the
-    // meta information the actual length is len + 1;
-    for (int i = 0; i < length + 1; i++){
+    // Copy the old vector to the new one.
+    // The "length" is the number of elements, so to include the
+    // tag, we need to iterate from 0 to length + 1;
+    for (int i = 0; i != length + 1; i++){
       new_vector_ptr[i] = old_vector_ptr[i];
     }
         
@@ -400,8 +463,8 @@ void copy_vector(int64_t** vector_ptr_loc)
 
     // And where we found the old vector we need to update the
     // pointer to point to the new vector
+    new_vector_ptr = (int64_t*)((int64_t)new_vector_ptr | old_tag);
     *vector_ptr_loc = new_vector_ptr;
-    
   }
 }
 
@@ -448,17 +511,6 @@ void print_ellipsis() {
   printf("#(...)");
 }
 
-static const int ANY_TAG_MASK = 3;
-static const int ANY_TAG_LEN = 2;
-static const int ANY_TAG_INT = 0;
-static const int ANY_TAG_BOOL = 1;
-static const int ANY_TAG_VEC = 2;
-static const int ANY_TAG_FUN = 3;
-
-int any_tag(int64_t any) {
-  return any & ANY_TAG_MASK;
-}
-
 /* to do: need to cycle detection. -Jeremy */
 void print_any(int64_t any) {
   switch (any_tag(any)) {
@@ -485,6 +537,9 @@ void print_any(int64_t any) {
   }
   case ANY_TAG_FUN:
     printf("#<procedure>");
+    break;
+  case ANY_TAG_VOID:
+    printf("#<void>");
     break;
   default:
     printf("unrecognized!");

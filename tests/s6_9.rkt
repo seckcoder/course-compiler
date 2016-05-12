@@ -6,7 +6,7 @@
 ; Read out the 0th element and project it to integer.
 
 (let ((x (inject (vector (inject 0 Integer)) (Vector Any))))
-    (let ([y (vector-set! (project x (Vector Any)) 0 (world))])
+    (let ([voidy (vector-set! (project x (Vector Any)) 0 (world))])
       (let ((a (project x (Vector Any))))
         (project (vector-ref a 0) Integer))))
 

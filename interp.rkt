@@ -137,7 +137,7 @@
     (define/public (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)
-          (vomit "R0/interp-x86" (car ast) env))
+          (vomit "R0/interp-x86" (car ast)))
         (match ast
 	   ['() env]
 	   [`((callq read_int) . ,ss) 
@@ -320,7 +320,7 @@
     (define/override (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)
-          (vomit "R1/interp-x86" (car ast) env))
+	      (vomit "R1/interp-x86" (car ast)))
         (match ast
           [`((set ,cc ,d) . ,ss)
            (define name (get-name d))
@@ -355,19 +355,17 @@
                     ((interp-x86 env) (goto-label label (program)))]
                    [else ((interp-x86 env) ss)]))]
 	   [`(program ,xs (type ,ty) ,ss ...)
-            (display-by-type ty ((interp-x86 env) `(program ,xs ,@ss)) env)]
+            (display-by-type ty ((interp-x86 env) `(program ,xs ,@ss)))]
 	   [`(program ,xs ,ss ...)
 	    (parameterize ([program ss])
 	     ((super interp-x86 '()) ast))]
 	   [else ((super interp-x86 env) ast)]
 	   )))
 
-    (define/public (display-by-type ty val env)
+    (define/public (display-by-type ty val)
       (match ty
         ['Boolean (if val #t #f)]
         ['Integer val]
-        ['Void (void)]
-        ['Any `(tagged ,(arithmetic-shift val -2) Integer)]
         [else (error (format "don't know how to display type ~a" ty))]))
 
     ));; class interp-R1
@@ -381,11 +379,16 @@
     (inherit get-name seq-C interp-x86-op)
     (inherit-field x86-ops)
 
-    (define/override (display-by-type ty val env)
+    (define/override (display-by-type ty val)
       (match ty
+        ['Void (void)]
         [`(Vector ,tys ...)
-         (list->vector (map (lambda (ty index) (display-by-type ty ((memory-read) (+ val 8 (* 8 index))) env)) tys (range (length tys))))]
-        [else (super display-by-type ty val env)]))
+         (list->vector
+	  (map (lambda (ty index) 
+		 (display-by-type ty ((memory-read)
+				      (+ val 8 (* 8 index)))))
+	       tys (range (length tys))))]
+        [else (super display-by-type ty val)]))
 
 
     ;; The simulated global state of the program 
@@ -587,7 +590,8 @@
           [`(allocate ,l) (build-vector l (lambda a uninitialized))]
           ;; Analysis information making introduce rootstack easier
           [`(call-live-roots (,xs ...) ,ss ...)
-           (for ([x (in-list xs)])
+	   ;; roots can also be any's -Jeremy
+           #;(for ([x (in-list xs)])
              (unless (vector? (lookup x env))
                (error 'interp-C
                       "call-live-roots stores non-root ~a in ~a" x ast)))
@@ -634,7 +638,7 @@
     (define/override (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)
-          (vomit "R2/interp-x86" (car ast) env))
+          (vomit "R2/interp-x86" (car ast)))
 	(match ast
           ;; cmpq performs a subq operation and examimines the state
           ;; of the result, this is done without overiting the second
@@ -850,7 +854,7 @@
     (define/override (interp-x86 env)
       (lambda (ast)
         (when (pair? ast)
-          (verbose "R3/interp-x86" (car ast) env))
+          (verbose "R3/interp-x86" (car ast)))
 	(match ast
 	   [`(define (,f) ,n ,extra ,ss ...)
 	    (cons f `(lambda ,n ,@ss))]
@@ -866,7 +870,7 @@
 	    (call-function (lookup f env) ss env)]
            [`(program ,extra (type ,ty) (defines ,ds ...) ,ss ...)
             (display-by-type ty ((interp-x86 env)
-				 `(program ,extra (defines ,@ds) ,@ss)) env)]
+				 `(program ,extra (defines ,@ds) ,@ss)))]
 	   [`(program ,extra (defines ,ds ...) ,ss ...)
             (parameterize ([program ss])
 	       (define env (map (interp-x86 '()) ds))
@@ -1049,6 +1053,26 @@
 	  [else 
 	   ((super interp-C env) ast)]
 	  )))
+
+    (define/override (display-by-type ty val)
+      (match ty
+        ['Any
+	 (define tag (bitwise-and val 7))
+	 (cond [(eq? tag 1) ;; integer
+		`(tagged ,(arithmetic-shift val (- 3)) Integer)]
+	       [(eq? tag 4) ;; boolean
+		(if (eq? 0 (arithmetic-shift val (- 3)))
+		    `(tagged #f Boolean)
+		    `(tagged #t Boolean))]
+	       [(eq? tag 2) ;; vector
+		;; This needs work. I need to find out how to get the
+		;; length of the vector from in memory. -Jeremy
+		`(tagged vector (Vectorof Any))]
+	       [(eq? tag 3) ;; procedure (represented by a closure)
+		`(tagged procedure ,ty)]
+	       [(eq? tag 5) ;; void
+		`(tagged void Void)])]
+        [else (super display-by-type ty val)]))
 
     (inherit-field x86-ops)
     (set! x86-ops (hash-set* x86-ops

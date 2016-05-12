@@ -26,32 +26,32 @@
       (lambda (e)
 	(define recur (type-check env))
         (match e
-          [`(vector-ref ,(app recur e t) ,(app recur i it))
-           (match t
-             [`(Vector ,ts ...)
-              (unless (and (exact-nonnegative-integer? i)
-                           (i . < . (length ts)))
-                (error 'type-check "invalid index ~a in ~a" i e))
-              (let ([t (list-ref ts i)])
-                (values `(has-type (vector-ref ,e (has-type ,i Integer)) ,t) 
+          [`(vector-ref ,(app recur e^ t) ,(app recur i it))
+           (match (list t i)
+             [`((Vector ,ts ...) (has-type ,i^ Integer))
+              (unless (and (exact-nonnegative-integer? i^)
+                           (i^ . < . (length ts)))
+                (error 'type-check "invalid index ~a in ~a" i^ e))
+              (let ([t (list-ref ts i^)])
+                (values `(has-type (vector-ref ,e^ (has-type ,i^ Integer)) ,t) 
 			t))]
-             [`(Vectorof ,t)
-              (values `(has-type (vector-ref ,e ,i) ,t) t)]
+             [`((Vectorof ,t) ,i)
+              (values `(has-type (vector-ref ,e^ ,i) ,t) t)]
              [else (error "expected a vector in vector-ref, not" t)])]
           [`(vector-set! ,(app recur e-vec^ t-vec) ,(app recur i it) 
 			 ,(app recur e-arg^ t-arg))
-           (match t-vec
-             [`(Vector ,ts ...)
-              (unless (and (exact-nonnegative-integer? i)
-                           (i . < . (length ts)))
-                (error 'type-check "invalid index ~a in ~a" i e))
-              (unless (equal? (list-ref ts i) t-arg)
+           (match (list t-vec i)
+             [`((Vector ,ts ...) (has-type ,i^ Integer))
+              (unless (and (exact-nonnegative-integer? i^)
+                           (i^ . < . (length ts)))
+                (error 'type-check "invalid index ~a in ~a" i^ e))
+              (unless (equal? (list-ref ts i^) t-arg)
                 (error 'type-check "type mismatch in vector-set! ~a ~a" 
-                       (list-ref ts i) t-arg))
+                       (list-ref ts i^) t-arg))
               (values `(has-type (vector-set! ,e-vec^
-                                              (has-type ,i Integer)
+                                              (has-type ,i^ Integer)
                                               ,e-arg^) Void) 'Void)]
-             [`(Vectorof ,t)
+             [`((Vectorof ,t) ,i)
               (unless (equal? t t-arg)
                 (error 'type-check "type mismatch in vector-set! ~a ~a" 
                        t t-arg))
@@ -146,6 +146,11 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots
 
+    (define/override (root-type? t)
+      (match t
+	 [`Any #t]
+	 [else (super root-type? t)]))
+
     (define/override (uncover-call-live-roots-exp e)
       (vomit "any/uncover-call-live-roots-exp" e)
       (match e 
@@ -158,27 +163,29 @@
 
     (define (any-tag ty)
       (match ty
-	 ['Integer 0]
-	 ['Void 0]  ;; the back has 4, but Rajan thinks 0 is better :)
-	 ['Boolean 1]
-	 [`(Vector ,ts ...) 2]
+	 ['Integer 1]           ;; 001
+	 ['Boolean 4]           ;; 100
+	 [`(Vector ,ts ...) 2]  ;; 010
 	 [`(Vectorof ,t) 2]
-	 [`(,ts ... -> ,rt) 3]
+	 [`(,ts ... -> ,rt) 3]  ;; 011
+	 ['Void 5]              ;; 101
 	 [else (error "in any-tag, unrecognized type" ty)]
 	 ))
 
     (define pred->tag
       (lambda (pred)
 	(match pred
-	   ['integer? 0]
-	   ['boolean? 1]
-	   ['vector? 2]
-	   ['procedure? 3]
+	   ['integer? (any-tag 'Integer)]
+	   ['boolean? (any-tag 'Boolean)]
+	   ['vector? (any-tag '(Vectorof Any))]
+	   ['procedure? (any-tag '(Any -> Any))]
+	   ['void? (any-tag 'Void)]
 	   [else (error "in pred->tag, unrecognized predicate" pred)]
 	   )))
 
-    (define any-mask 3)
-    (define pointer-mask 2)
+    (define any-mask 7)     ;; 111
+    (define pointer-mask 2) ;; 010, to detect a vector or procedure
+    (define tag-len 3)     ;; number of bits in the tag
 
     (define/override (instructions)
       (set-union (super instructions)
@@ -193,7 +200,7 @@
 	   (define new-e (recur e))
 	   (cond [(or (equal? ty 'Integer) (equal? ty 'Boolean))
 		  `((movq ,new-e ,new-lhs)
-		    (salq (int 2) ,new-lhs)
+		    (salq (int ,tag-len) ,new-lhs)
 		    (orq (int ,(any-tag ty)) ,new-lhs))]
 		 [else
 		  `((movq ,new-e ,new-lhs)
@@ -213,7 +220,7 @@
 		       (andq  ,new-e ,new-lhs))
 		      ;; booleans and integers
 		      ((movq ,new-e ,new-lhs)
-		       (sarq (int 2) ,new-lhs))
+		       (sarq (int ,tag-len) ,new-lhs))
 		      ))
 		 ;; shouldn't we push the status code? -Jeremy
 		 ((callq ,(string->symbol (label-name 'exit))))))]

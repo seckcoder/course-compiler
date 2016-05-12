@@ -36,7 +36,7 @@
               (type Integer)
               (assign foo (vector 777))
               (assign bar (vector foo foo))
-              (assing _   (vector-set! foo 0 42))
+              (assign _   (vector-set! foo 0 42))
               (assign baz (vector-ref bar 1))
               (assign bam (vector-ref baz 0))
               (return bam)))

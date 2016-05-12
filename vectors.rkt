@@ -183,9 +183,12 @@
         [`(,(? primitive? op) ,(app uncover-call-live-roots-exp clr**) ...)
          (set-union* clr**)]
         [else (error 'vectors/uncover-call-live-roots-exp "unmatched ~a" e)]))
-  
+
     (define/public (root-type? t)
-      (and (pair? t) (eq? (car t) 'Vector)))
+      (match t
+        [`(Vector ,T ...)
+	 #t]
+	[else #f]))
     
     ;; Merge two hash tables that do not have contradictory key/value pairs
     (define/public (env-merge e1 e2)
