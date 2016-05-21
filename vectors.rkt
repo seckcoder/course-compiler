@@ -127,8 +127,8 @@
            `(program ,(append xs (reset-vars)) ,ty ,@ss)]
           [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
     
-    ;; This is a foldr with two accumulator values, curried for ease of use with
-    ;; pattern matching
+    ;; This is a foldr with two accumulator values, curried for ease
+    ;; of use with pattern matching
     ;; uclr-seq : (set id) -> (listof stmt) -> (values (listof stmt) (set id))
     (define/public (uncover-call-live-roots-seq clr*)
       (lambda (x)
@@ -136,10 +136,13 @@
         (cond
           [(null? x) (values '() clr*)]
           [(pair? x)           
-           (let*-values ([(ss clr*) ((uncover-call-live-roots-seq clr*) (cdr x))]
-                         [(s  clr*) (uncover-call-live-roots-stmt (car x) clr*)])
-             (values `(,s . ,ss) clr*))]
-          [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)])))
+           (define-values (ss clr*)
+	     ((uncover-call-live-roots-seq clr*) (cdr x)))
+	   (define-values (s  clr*) 
+	     (uncover-call-live-roots-stmt (car x) clr*))
+	   (values `(,s . ,ss) clr*)]
+          [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)]
+	  )))
   
     ;; uclr-stmt : stmt (set id) -> (values stmt (set id))
     (define/public (uncover-call-live-roots-stmt stmt clr*)
@@ -155,8 +158,9 @@
          ;; I am not sure what the grammar says ,t should be. -Andre
          (values `(if ,t ,c* ,a*) (set-union c-clr* a-clr* t-clr*))]
         [`(return ,(app uncover-call-live-roots-exp e-clr*))
-         ;; Applying some meta reasoning here there shouldn't be any call-live roots
-         ;; after a return therefore just e-clr* and not (set-union clr* e-clr*)
+         ;; Applying some meta reasoning here there shouldn't be any
+         ;; call-live roots after a return therefore just e-clr* and
+         ;; not (set-union clr* e-clr*)
          (values stmt e-clr*)]
         [`(initialize ,stack ,heap)
          (unless (set-empty? clr*)
@@ -302,7 +306,10 @@
          (define lt   (unique-var 'lt))
          ;;cmp arg2, arg1 GAS Syntax
          
-         ;;Note that the GAS/AT&T syntax can be rather confusing, as for example cmp $0, %rax followed by jl branch will branch if %rax < 0 (and not the opposite as might be expected from the order of the operands).
+         ;;Note that the GAS/AT&T syntax can be rather confusing, as
+         ;;for example cmp $0, %rax followed by jl branch will branch
+         ;;if %rax < 0 (and not the opposite as might be expected from
+         ;;the order of the operands).
 
          `((movq (global-value free_ptr) (var ,data))
            (addq (int ,size) (var ,data))
