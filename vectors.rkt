@@ -136,11 +136,11 @@
         (cond
           [(null? x) (values '() clr*)]
           [(pair? x)           
-           (define-values (ss clr*)
+           (define-values (ss clr1*)
 	     ((uncover-call-live-roots-seq clr*) (cdr x)))
-	   (define-values (s  clr*) 
-	     (uncover-call-live-roots-stmt (car x) clr*))
-	   (values `(,s . ,ss) clr*)]
+	   (define-values (s  clr2*) 
+	     (uncover-call-live-roots-stmt (car x) clr1*))
+	   (values `(,s . ,ss) clr2*)]
           [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)]
 	  )))
   
