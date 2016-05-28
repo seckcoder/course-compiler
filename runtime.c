@@ -26,9 +26,17 @@ static int initialized = 0;
     A '1' is a pointer, a '0' is not a pointer.
 */
 static const int TAG_IS_NOT_FORWARD_MASK = 1;
-static const int TAG_LENGTH_MASK = 126;
+static const int TAG_LENGTH_MASK = 126; // 1111110
 static const int TAG_LENGTH_RSHIFT = 1;
 static const int TAG_PTR_BITFIELD_RSHIFT = 7;
+
+static void print_vector(int64_t* vector_ptr);
+static void print_heap(int64_t** rootstack_ptr);
+
+// cheney implements cheney's copying collection algorithm
+// There is a stub and explaination below.
+static void cheney(int64_t** rootstack_ptr);
+
 
 // Check to see if a tag is actually a forwarding pointer.
 static inline int is_forwarding(int64_t tag) {
@@ -49,11 +57,11 @@ static inline int64_t get_ptr_bitfield(int64_t tag){
 // in dynamic-typing.rkt.  -Jeremy
 static const int ANY_TAG_MASK = 7;
 static const int ANY_TAG_LEN = 3;
-static const int ANY_TAG_INT = 1;
-static const int ANY_TAG_BOOL = 4;
-static const int ANY_TAG_VEC = 2;
-static const int ANY_TAG_FUN = 3;
-static const int ANY_TAG_VOID = 5;
+static const int ANY_TAG_INT = 1;    // 001
+static const int ANY_TAG_BOOL = 4;   // 100
+static const int ANY_TAG_VEC = 2;    // 010
+static const int ANY_TAG_FUN = 3;    // 011
+static const int ANY_TAG_VOID = 5;   // 101
 static const int ANY_TAG_PTR = 0; // not an any, a raw pointer
 
 int any_tag(int64_t any) {
@@ -113,13 +121,12 @@ void initialize(uint64_t rootstack_size, uint64_t heap_size)
 
 }
 
-// cheney implements cheney's copying collection algorithm
-// There is a stub and explaination below.
-static void cheney(int64_t** rootstack_ptr);
-
 void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
 {
-  //printf("collecting, need %lld\n", bytes_requested);
+#if 0
+  printf("collecting, need %lld\n", bytes_requested);
+  print_heap(rootstack_ptr);
+#endif
 
   // 1. Check our assumptions about the world
   assert(initialized);
@@ -169,8 +176,15 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
     unsigned long old_len = fromspace_end - fromspace_begin;
     unsigned long old_bytes = old_len * sizeof(int64_t);
     unsigned long new_bytes = old_bytes;
-    
-    while (new_bytes < needed_bytes) new_bytes = 2 * new_bytes;
+
+#if 1
+    while (new_bytes < needed_bytes) {
+      new_bytes = 2 * new_bytes;
+    }
+#else
+    // this version is good for debugging purposes -Jeremy
+    new_bytes = needed_bytes;
+#endif
 
     // Free and allocate a new tospace of size new_bytes
     free(tospace_begin);
@@ -239,7 +253,11 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
   }
 #endif
 
-  // printf("finished collecting\n\n");
+#if 0
+  printf("finished collecting\n");
+  print_heap(rootstack_ptr);
+  printf("---------------------------------------\n");
+#endif
 } // collect
 
 // copy_vector is responsible for doing a pointer oblivious
@@ -409,7 +427,6 @@ void cheney(int64_t** rootstack_ptr)
 */
 void copy_vector(int64_t** vector_ptr_loc)
 {
-  //printf("copy_vector %lld\n", (int64_t)*vector_ptr_loc);
 
   int64_t* old_vector_ptr = *vector_ptr_loc;
   int old_tag = any_tag((int64_t)old_vector_ptr);
@@ -417,6 +434,9 @@ void copy_vector(int64_t** vector_ptr_loc)
   if (! is_ptr(old_vector_ptr))
     return;
   old_vector_ptr = to_ptr(old_vector_ptr);
+#if 0
+  printf("copy_vector %lld\n", (int64_t)old_vector_ptr);
+#endif
   
   int64_t tag = old_vector_ptr[0];
    
@@ -432,7 +452,9 @@ void copy_vector(int64_t** vector_ptr_loc)
     *vector_ptr_loc = (int64_t*) (tag | old_tag);
     
   } else {
-    //printf("\tfirst time copy\n");
+#if 0
+    printf("\tfirst time copy\n");
+#endif
     // This is the first time we have followed this pointer.
     
     // Since we are about to jumble all the pointers around lets
@@ -441,12 +463,16 @@ void copy_vector(int64_t** vector_ptr_loc)
     // The tag we grabbed earlier contains some usefull info for
     // forwarding copying the vector.
     int length = get_length(tag);
-    //printf("\tlen: %d\n", length);
+#if 0
+    printf("\tlen: %d\n", length);
+#endif
     
     // The new vector is going to be where the free int64_t pointer
     // currently points.
     int64_t* new_vector_ptr = free_ptr;
-    //printf("\tto address: %lld\n", (int64_t)new_vector_ptr);
+#if 0
+    printf("\tto address: %lld\n", (int64_t)new_vector_ptr);
+#endif
 
     // Copy the old vector to the new one.
     // The "length" is the number of elements, so to include the
@@ -530,7 +556,7 @@ void print_any(int64_t any) {
     unsigned char len = get_length(tag);
     printf("#(");
     for (int i = 0; i != len; ++i) {
-      print_any(vector_ptr[i + 1]);
+      print_any(vector_ptr[i + 1]); // this is wrong -Jeremy
     }
     printf(")");
     break;
@@ -545,4 +571,45 @@ void print_any(int64_t any) {
     printf("unrecognized!");
     exit(-1);
   }
+}
+
+void print_heap(int64_t** rootstack_ptr)
+{
+  printf("rootstack len = %ld\n", rootstack_ptr - rootstack_begin);
+  for (int64_t** root_loc = rootstack_begin;
+       root_loc != rootstack_ptr;
+       ++root_loc) {
+    if (is_ptr(*root_loc)) {
+      print_vector(to_ptr(*root_loc));
+    } else {
+      printf("%lld", (int64_t)*root_loc);
+    }
+    printf("\n");
+  }
+  printf("\n");
+}
+
+void print_vector(int64_t* vector_ptr)
+{
+  int64_t tag = vector_ptr[0];
+  unsigned char len = get_length(tag);
+  int64_t* scan_ptr = vector_ptr;
+  int64_t* next_ptr = vector_ptr + len + 1;
+
+  printf("%lld=#(", (int64_t)vector_ptr);
+  scan_ptr += 1;
+  int64_t isPointerBits = get_ptr_bitfield(tag);
+  while (scan_ptr != next_ptr) {
+    if ((isPointerBits & 1) == 1 && is_ptr((int64_t*)*scan_ptr)) {
+      print_vector(to_ptr((int64_t*)*scan_ptr));
+    } else {
+      printf("%lld", (int64_t)*scan_ptr);
+    }
+    isPointerBits = isPointerBits >> 1;
+    scan_ptr += 1;
+    if (scan_ptr != next_ptr) {
+      printf(", ");
+    }
+  }
+  printf(")");
 }

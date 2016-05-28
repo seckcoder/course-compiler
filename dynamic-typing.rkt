@@ -149,6 +149,7 @@
     (define/override (root-type? t)
       (match t
 	 [`Any #t]
+	 [`(Vectorof ,T) #t]
 	 [else (super root-type? t)]))
 
     (define/override (uncover-call-live-roots-exp e)
@@ -165,10 +166,10 @@
       (match ty
 	 ['Integer 1]           ;; 001
 	 ['Boolean 4]           ;; 100
+	 ['Void 5]              ;; 101
 	 [`(Vector ,ts ...) 2]  ;; 010
 	 [`(Vectorof ,t) 2]
 	 [`(,ts ... -> ,rt) 3]  ;; 011
-	 ['Void 5]              ;; 101
 	 [else (error "in any-tag, unrecognized type" ty)]
 	 ))
 
@@ -232,7 +233,7 @@
 	     (andq (int ,any-mask) ,new-lhs)
 	     (if (eq? ,new-lhs (int ,(any-tag ty)))
 		 ,(match ty
-		    [(or 'Integer 'Boolean)
+		    [(or 'Integer 'Boolean 'Void)
 		     ;; booleans and integers
 		     `((movq ,new-e ,new-lhs)
 		       (sarq (int ,tag-len) ,new-lhs))]
