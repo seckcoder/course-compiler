@@ -205,23 +205,44 @@
 		 [else
 		  `((movq ,new-e ,new-lhs)
 		    (orq (int ,(any-tag ty)) ,new-lhs))])]
+	  ;; Old inefficient version of project. -Jeremy
+          ;; [`(assign ,lhs (project ,e ,ty))
+          ;;  (define new-lhs (recur lhs))
+	  ;;  (define new-e (recur e))
+	  ;;  `((movq ,new-e ,new-lhs)
+	  ;;    (andq (int ,any-mask) ,new-lhs)
+	  ;;    (if (eq? ,new-lhs (int ,(any-tag ty)))
+	  ;; 	 ((andq (int ,pointer-mask) ,new-lhs)
+	  ;; 	  (if (eq? ,new-lhs (int ,pointer-mask))
+	  ;; 	      ;; vectors and procedures.
+	  ;; 	      ;; To do: check length of vector, arity of procedure. -Jeremy
+	  ;; 	      ((movq (int ,any-mask) ,new-lhs)
+	  ;; 	       (notq ,new-lhs)
+	  ;; 	       (andq  ,new-e ,new-lhs))
+	  ;; 	      ;; booleans and integers
+	  ;; 	      ((movq ,new-e ,new-lhs)
+	  ;; 	       (sarq (int ,tag-len) ,new-lhs))
+	  ;; 	      ))
+	  ;; 	 ;; shouldn't we push the status code? -Jeremy
+	  ;; 	 ((callq ,(string->symbol (label-name 'exit))))))]
           [`(assign ,lhs (project ,e ,ty))
            (define new-lhs (recur lhs))
 	   (define new-e (recur e))
 	   `((movq ,new-e ,new-lhs)
 	     (andq (int ,any-mask) ,new-lhs)
 	     (if (eq? ,new-lhs (int ,(any-tag ty)))
-		 ((andq (int ,pointer-mask) ,new-lhs)
-		  (if (eq? ,new-lhs (int ,pointer-mask))
-		      ;; vectors and procedures.
-		      ;; To do: check length of vector, arity of procedure. -Jeremy
-		      ((movq (int ,any-mask) ,new-lhs)
+		 ,(match ty
+		    [(or 'Integer 'Boolean)
+		     ;; booleans and integers
+		     `((movq ,new-e ,new-lhs)
+		       (sarq (int ,tag-len) ,new-lhs))]
+		    [else ;; vectors and procedures (pointers)
+		     ;; vectors and procedures.
+		     ;; To do: check length of vector, arity of procedure. -Jeremy
+		     `((movq (int ,any-mask) ,new-lhs)
 		       (notq ,new-lhs)
 		       (andq  ,new-e ,new-lhs))
-		      ;; booleans and integers
-		      ((movq ,new-e ,new-lhs)
-		       (sarq (int ,tag-len) ,new-lhs))
-		      ))
+		     ])
 		 ;; shouldn't we push the status code? -Jeremy
 		 ((callq ,(string->symbol (label-name 'exit))))))]
 	  [`(assign ,lhs (,pred ,e)) #:when (set-member? type-predicates pred)

@@ -213,6 +213,15 @@
 ;; raises an error using the (error) function when it encounters a
 ;; type error, or returns #f when it encounters a type error. 
 
+(define (strip-has-type e)
+  (match e 
+    [`(has-type ,e ,T)
+     (strip-has-type e)]
+    [`(,(app strip-has-type e*) ...)
+      `(,@e*)]
+    [else
+     e]))
+
 (define (check-passes name typechecker passes initial-interp)
   (lambda (test-name)
     (debug "** compiler " name)
@@ -247,12 +256,12 @@
                   (let ([input p])
                     (debug (string-append "running pass: " pass-name
 					  " on test: " test-name)
-                           input))
+                           (strip-has-type input)))
                   (define new-p (pass p))
                   (let ([output new-p])
                     (trace (string-append "running pass: " pass-name
 					  " on test: " test-name)
-                           output))
+                           (strip-has-type output)))
                   (cond [interp
                          (let ([new-result
                                 ;; if there is an input file with the same name
@@ -313,7 +322,7 @@
                                    (let ([new-p (pass p)])
 				     (trace (string-append "running pass: "
 							   name)
-					    new-p)
+					    (strip-has-type new-p))
                                      (loop (cdr passes) new-p)
                                      )])]))])
               (cond [(string? x86)
