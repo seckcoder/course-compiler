@@ -2,7 +2,7 @@
 (require racket/pretty)
 (require (for-syntax racket))
 (provide debug-level at-debug-level? debug verbose vomit
-         map2 b2i i2b
+         map2 map3 b2i i2b
          racket-id->c-id
          hash-union set-union*
          fix while 
@@ -116,6 +116,14 @@
          (let-values ([(x1 x2) (f (car ls))]
                       [(ls1 ls2) (map2 f (cdr ls))])
            (values (cons x1 ls1) (cons x2 ls2)))]))
+
+(define (map3 f ls)
+  (cond [(null? ls)
+         (values '() '() '())]
+        [else
+         (let-values ([(x1 x2 x3) (f (car ls))]
+                      [(ls1 ls2 ls3) (map3 f (cdr ls))])
+           (values (cons x1 ls1) (cons x2 ls2) (cons x3 ls3)))]))
 
 ;; set-union* takes a list of sets and unions them all together.
 (define (set-union* ls)
@@ -256,12 +264,12 @@
                   (let ([input p])
                     (debug (string-append "running pass: " pass-name
 					  " on test: " test-name)
-                           (strip-has-type input)))
+                           input))
                   (define new-p (pass p))
                   (let ([output new-p])
                     (trace (string-append "running pass: " pass-name
 					  " on test: " test-name)
-                           (strip-has-type output)))
+                           output))
                   (cond [interp
                          (let ([new-result
                                 ;; if there is an input file with the same name

@@ -32,40 +32,35 @@
           [else (error "uniquify couldn't match" e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; flatten : Bool -> S0 -> C0-expr x (C0-stmt list)
-    (define/public (collect-locals)
-      (lambda (ast)
-	(match ast
-	   [`(assign ,x ,e) (list x)]
-	   [`(return ,e) '()]
-	   [else
-	    (error "unmatched in collect-locals S0" ast)]
-	   )))
+    ;; flatten : Bool -> S0 -> C0-expr x (C0-stmt list) x var list
 
     (define/public (flatten need-atomic)
       (lambda (e)
         (verbose "flatten" e)
         (match e
-           [(? symbol?) (values e '())]
-	   [(? integer?) (values e '())]
-	   [`(let ([,x ,e]) ,body)
-	    (define-values (new-e e-ss) ((flatten #f) e))
-	    (define-values (new-body body-ss)
-	      ((flatten need-atomic) body))
-	    (values new-body (append e-ss `((assign ,x ,new-e)) body-ss))]
-	   [`(,op ,es ...) #:when (set-member? (primitives) op)
-	    (define-values (new-es sss) (map2 (flatten #t) es))
+           [(? symbol?) (values e '() '())]
+	   [(? integer?) (values e '() '())]
+	   [`(let ([,x ,rhs]) ,body)
+	    (define-values (new-rhs rhs-ss xs1) ((flatten #f) rhs))
+	    (define-values (new-body body-ss xs2) ((flatten need-atomic) body))
+	    (values new-body 
+		    (append rhs-ss `((assign ,x ,new-rhs)) body-ss)
+		    (cons x (append xs1 xs2)))]
+	   [`(,op ,(app (flatten #t) new-es sss xss) ...) 
+	    #:when (set-member? (primitives) op)
 	    (define ss (append* sss))
+	    (define xs (append* xss))
 	    (define prim-apply `(,op ,@new-es))
 	    (cond [need-atomic
 		   (define tmp (gensym 'tmp))
-		   (values tmp (append ss `((assign ,tmp ,prim-apply))))]
-		  [else (values prim-apply ss)])]
+		   (values tmp (append ss `((assign ,tmp ,prim-apply))) 
+			   (cons tmp xs))]
+		  [else (values prim-apply ss xs)])]
 	   [`(program ,e)
-	    (define-values (new-e ss) ((flatten #t) e))
-	    (define xs (append* (map (collect-locals) ss)))
-	    `(program ,(remove-duplicates xs) ,@(append ss `((return ,new-e))))]
-           [else (error "flatten could not match" e)]
+	    (define-values (new-e ss xs) ((flatten #t) e))
+	    `(program ,xs ,@(append ss `((return ,new-e))))]
+           [else
+	    (error "flatten could not match" e)]
 	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

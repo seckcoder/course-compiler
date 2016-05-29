@@ -7,11 +7,11 @@
 
 (provide reg-int-exp-passes compile-reg-R0)
 
-(define use-move-biasing #f)
-
 (define compile-reg-R0
   (class compile-R0
     (super-new)
+
+    (field [use-move-biasing #f])
 
     (inherit assign-homes)
 
@@ -127,7 +127,7 @@
                 '())
 	    ast]
            [`(program (,xs ,IG) (type ,ty) ,ss ...)
-            (define MG (make-graph xs))
+            (define MG (make-graph xs)) ;; JGS
             (define new-ss
               (if use-move-biasing
                   (let ([nss 
@@ -138,7 +138,7 @@
                   ss))
             `(program (,xs ,IG ,MG) (type ,ty) ,@new-ss)]
            [`(program (,xs ,IG) ,ss ...)
-            (define MG (make-graph xs))
+            (define MG (make-graph xs)) ;; JGS
             (define new-ss
               (if use-move-biasing
                   (let ([nss 

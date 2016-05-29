@@ -11,6 +11,9 @@
   (class compile-R1
     (super-new)
     
+    (inherit-field use-move-biasing optimize-if)
+    (inherit allocate-homes comparison-ops)
+    
     (define/override (primitives)
       (set-union (super primitives) 
 		 (set 'vector 'vector-ref 'vector-set!)))
@@ -64,9 +67,102 @@
 
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; flatten : S1 -> C1-expr x (C1-stmt list)
+    ;; flatten : S1 -> C1-expr x (C1-stmt list) x ((var x type) list)
 
-    
+    (define/override (flatten-if if-type new-thn thn-ss new-els els-ss xs)
+      (lambda (cnd)
+        (vomit "flatten-if" cnd)
+	(match cnd
+          [`(has-type ,cnd ,t)
+           (match cnd
+             [#t #:when optimize-if
+                 (values new-thn thn-ss xs)]
+             [#f #:when optimize-if
+                 (values new-els els-ss xs)]
+             [`(let ([,x ,e]) ,body) #:when optimize-if
+              (define-values (new-e e-ss xs1) ((flatten #f) e))
+              (define-values (new-body body-ss xs2)
+                ((flatten-if if-type new-thn thn-ss new-els els-ss xs) body))
+              (values new-body
+                      (append e-ss
+                              `((assign ,x ,new-e))
+                              body-ss)
+		      (append xs1 xs2))]
+             [`(not ,cnd) #:when optimize-if
+              ((flatten-if if-type new-els els-ss new-thn thn-ss xs) cnd)]
+             [`(,cmp ,e1 ,e2) 
+	      #:when (and optimize-if (set-member? (comparison-ops) cmp))
+              (define-values (new-e1 e1-ss xs1) ((flatten #t) e1))
+              (define-values (new-e2 e2-ss xs2) ((flatten #t) e2))
+              (define tmp (gensym 'if))
+              (define thn-ret `(assign ,tmp ,new-thn))
+              (define els-ret `(assign ,tmp ,new-els))
+              (values `(has-type ,tmp ,if-type)
+                      (append e1-ss e2-ss 
+                              `((if (,cmp ,new-e1 ,new-e2)
+                                    ,(append thn-ss (list thn-ret))
+                                    ,(append els-ss (list els-ret)))))
+		      (cons (cons tmp if-type) (append xs1 xs2 xs))
+		      )]
+             [else
+              (define-values (new-cnd cnd-ss xs1) 
+		((flatten #t) `(has-type ,cnd ,t)))
+	      (define tmp (gensym 'if))
+	      (define thn-ret `(assign ,tmp ,new-thn))
+	      (define els-ret `(assign ,tmp ,new-els))
+	      (values `(has-type ,tmp ,if-type)
+		      (append cnd-ss
+			      `((if (eq? (has-type #t Boolean) ,new-cnd)
+				    ,(append thn-ss (list thn-ret))
+				    ,(append els-ss (list els-ret)))))
+		      (cons (cons tmp if-type) (append xs1 xs))
+		      )])]
+          [other (error 'flatten-if "unmatched ~a" other)])))    
+
+    (define/override (flatten need-atomic)
+      (lambda (e)
+        (verbose "flatten" e)
+	(match e
+	  [`(has-type (and ,e1 ,e2) ,t)
+	   (define-values (new-e1 e1-ss xs1) ((flatten #t) e1))
+	   (define-values (new-e2 e2-ss xs2) ((flatten #f) e2))
+	   (define tmp (gensym 'and))
+	   (values `(has-type ,tmp ,t)
+		   (append e1-ss
+			   `((if (eq? (has-type #t Boolean) ,new-e1)
+				 ,(append e2-ss `((assign ,tmp ,new-e2)))
+				 ((assign ,tmp (has-type #f Boolean))))))
+		   (cons (cons tmp t) (append xs1 xs2))
+		   )]
+
+          [`(has-type (,op ,es ...) ,t) #:when (set-member? (primitives) op)
+	   (define-values (new-es sss xss) (map3 (flatten #t) es))
+	   (define ss (append* sss))
+	   (define xs (append* xss))
+	   (define prim-apply `(,op ,@new-es))
+	   (cond
+	    [need-atomic
+	     (define tmp (gensym 'tmp))
+	     (values `(has-type ,tmp ,t)
+		     (append ss `((assign ,tmp (has-type ,prim-apply ,t))))
+		     (cons (cons tmp t) xs) )]
+	    [else (values `(has-type ,prim-apply ,t) ss xs)])]
+
+	   [`(let ([,x (has-type ,rhs ,rhs-t)]) ,body)
+	    (define-values (new-rhs rhs-ss xs1)
+	      ((flatten #f) `(has-type ,rhs ,rhs-t)))
+	    (define-values (new-body body-ss xs2) ((flatten need-atomic) body))
+	    (values new-body 
+		    (append rhs-ss `((assign ,x ,new-rhs)) body-ss)
+		    (cons (cons x rhs-t) (append xs1 xs2)))]
+
+	  [`(has-type (if ,cnd ,thn ,els) ,if-type)
+	   (define-values (new-thn thn-ss xs1) ((flatten #t) thn))
+	   (define-values (new-els els-ss xs2) ((flatten #t) els))
+	   ((flatten-if if-type new-thn thn-ss new-els els-ss (append xs1 xs2)) cnd)]
+
+          [else
+	   ((super flatten need-atomic) e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; expose allocation : C1 -> ?
@@ -75,7 +171,9 @@
       (lambda (x)
         (match x
           [`(program (,xs ...) (type ,ty) . ,(app expose-allocation-seq ss))
-           `(program ,(append xs (reset-vars)) (type ,ty)
+	   (define vs (reset-vars))
+	   (debug "expose-allocation reset-vars" vs)
+           `(program ,(append xs vs) (type ,ty)
                      (initialize ,(rootstack-size) ,(heap-size))
                      ,@ss)]
           [else (error 'expose-allocation "umatched ~a" x)])))
@@ -96,7 +194,7 @@
 	    (define-values (inits)
 	      (for/list ([e (in-list e*)]
 			 [n (in-naturals)])
-			(let ([v (unique-var 'void)])
+			(let ([v (unique-var 'void 'Void)])
 			  `(assign ,v
 				   (has-type
 				    (vector-set! ,vec (has-type ,n Integer) ,e)
@@ -104,7 +202,7 @@
 	    `((if (has-type (collection-needed? ,size) Boolean)
 		  ((collect ,size))
 		  ())
-	      (assign ,lhs (has-type (allocate ,len) ,t))
+	      (assign ,lhs (allocate ,len ,t))
 	      ,@inits)]
            [else (list stmt)])]
         [`(if ,t ,(app expose-allocation-seq c) ,(app expose-allocation-seq a))
@@ -119,45 +217,47 @@
       (lambda (x)
         (vomit "uncover call live roots" x)
         (match x
-          [`(program ,xs ,ty
-                     . ,(app (uncover-call-live-roots-seq (set)) ss clr*))
+          [`(program ,xs ,ty ,ss ...)
+	   (define-values (new-ss clr*)
+	     ((uncover-call-live-roots-seq (set) xs) ss))
+
            (unless (set-empty? clr*)
              (error 'uncover-call-live-roots 
                     "empty program call live roots invariant ~a" clr*))
-           `(program ,(append xs (reset-vars)) ,ty ,@ss)]
+           `(program ,(append xs (reset-vars)) ,ty ,@new-ss)]
           [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
     
     ;; This is a foldr with two accumulator values, curried for ease
     ;; of use with pattern matching
     ;; uclr-seq : (set id) -> (listof stmt) -> (values (listof stmt) (set id))
-    (define/public (uncover-call-live-roots-seq clr*)
+    (define/public (uncover-call-live-roots-seq clr* xs)
       (lambda (x)
         (vomit "uncover call live sequence" x clr*)
         (cond
           [(null? x) (values '() clr*)]
           [(pair? x)           
            (define-values (ss clr1*)
-	     ((uncover-call-live-roots-seq clr*) (cdr x)))
+	     ((uncover-call-live-roots-seq clr* xs) (cdr x)))
 	   (define-values (s  clr2*) 
-	     (uncover-call-live-roots-stmt (car x) clr1*))
-	   (values `(,s . ,ss) clr2*)]
+	     (uncover-call-live-roots-stmt (car x) clr1* xs))
+	   (values (cons s ss) clr2*)]
           [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)]
 	  )))
   
     ;; uclr-stmt : stmt (set id) -> (values stmt (set id))
-    (define/public (uncover-call-live-roots-stmt stmt clr*)
+    (define/public (uncover-call-live-roots-stmt stmt clr* xs)
       (vomit "uncover-call-live-roots-stmt" stmt clr*)
       (match stmt
         [(and x `(collect ,size))
          (values `(call-live-roots ,(set->list clr*) (collect ,size)) clr*)]
-        [`(assign ,v ,(app uncover-call-live-roots-exp e-clr*))
+        [`(assign ,v ,(app (uncover-call-live-roots-exp xs) e-clr*))
          (values stmt (set-union (set-remove clr* v) e-clr*))]
-        [`(if ,(and t (app uncover-call-live-roots-exp t-clr*))
-              ,(app (uncover-call-live-roots-seq clr*) c* c-clr*)
-              ,(app (uncover-call-live-roots-seq clr*) a* a-clr*))
+        [`(if ,(and t (app (uncover-call-live-roots-exp xs) t-clr*))
+              ,(app (uncover-call-live-roots-seq clr* xs) c* c-clr*)
+              ,(app (uncover-call-live-roots-seq clr* xs) a* a-clr*))
          ;; I am not sure what the grammar says ,t should be. -Andre
          (values `(if ,t ,c* ,a*) (set-union c-clr* a-clr* t-clr*))]
-        [`(return ,(app uncover-call-live-roots-exp e-clr*))
+        [`(return ,(app (uncover-call-live-roots-exp xs) e-clr*))
          ;; Applying some meta reasoning here there shouldn't be any
          ;; call-live roots after a return therefore just e-clr* and
          ;; not (set-union clr* e-clr*)
@@ -170,21 +270,22 @@
         [else (error 'uncover-call-live-roots-stmt "unmatched ~a" stmt)]))
 
     ;; uclr-exp : expr -> (set id)
-    (define/public (uncover-call-live-roots-exp e)
+    (define/public ((uncover-call-live-roots-exp xs) e)
       (vomit "uncover-call-live-roots-exp" e)
       (match e
         [`(has-type (void) ,t) (set)]
         [`(has-type ,(? symbol? x) ,t)
-         (if (root-type? t)
+	 (define type (lookup x xs))
+         (if (root-type? type)
              (set x)
              (set))]
         [`(has-type ,e ,t)
-         (uncover-call-live-roots-exp e)]
+         ((uncover-call-live-roots-exp xs) e)]
         [(or (? integer?) (? boolean?)
-             `(allocate ,_)
+             `(allocate ,_ ,_)
              `(collection-needed? ,_))
          (set)]
-        [`(,(? primitive? op) ,(app uncover-call-live-roots-exp clr**) ...)
+        [`(,(? primitive? op) ,(app (uncover-call-live-roots-exp xs) clr**) ...)
          (set-union* clr**)]
         [else (error 'vectors/uncover-call-live-roots-exp "unmatched ~a" e)]))
 
@@ -228,7 +329,7 @@
     (let ((x (gensym x))
           (old-vars (unbox vars)))
       (if t?
-          (set-box! vars `((,x . ,t?) ,old-vars))
+          (set-box! vars `((,x . ,t?) . ,old-vars))
           (set-box! vars `(,x . ,old-vars)))
       x))
 
@@ -254,7 +355,7 @@
         [`(void) `(int 0)]
 	[`(assign ,(app (select-instructions) lhs^) (void))
 	 `((movq (int 0) ,lhs^))]
-        [`(assign ,lhs (has-type (allocate ,length) (Vector ,ts ...)))
+        [`(assign ,lhs (allocate ,length (Vector ,ts ...)))
          (define lhs^ ((select-instructions) lhs))
          ;; Add one quad word for the meta info tag
          (define size (* (add1 length) 8))
@@ -302,8 +403,8 @@
         [`(if (has-type (collection-needed? ,size) Boolean) ,cs ,as)
          (define cs^  (append* (map (select-instructions) cs)))
          (define as^  (append* (map (select-instructions) as)))
-         (define data (unique-var 'end-data))
-         (define lt   (unique-var 'lt))
+         (define data (unique-var 'end-data 'Integer)) ;; lies -Jeremy
+         (define lt   (unique-var 'lt 'Integer))
          ;;cmp arg2, arg1 GAS Syntax
          
          ;;Note that the GAS/AT&T syntax can be rather confusing, as
@@ -364,18 +465,92 @@
       [else (super read-vars x)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+    (define/override (build-interference live-after G)
+      (lambda (ast)
+	(match ast
+           [`(program (,xs ,lives) (type ,ty) ,ss ...)
+	    (define G (make-graph (map car xs)))
+	    (define new-ss 
+	      (for/list ([inst ss] [live-after lives])
+	         ((build-interference live-after G) inst)))
+	    (print-dot G "./interfere.dot")
+	    `(program (,xs ,G) (type ,ty) ,@new-ss)]
+           [`(program (,xs ,lives) ,ss ...)
+	    (define G (make-graph (map car xs)))
+	    (define new-ss 
+	      (for/list ([inst ss] [live-after lives])
+	         ((build-interference live-after G) inst)))
+	    (print-dot G "./interfere.dot")
+	    `(program (,xs ,G) ,@new-ss)]
+	   [else
+	    ((super build-interference live-after G) ast)]
+	   )))
+
+    (define/override (build-move-graph G)
+      (lambda (ast)
+	(match ast
+           [`(program (,xs ,IG) (type ,ty) ,ss ...)
+            (define MG (make-graph (map car xs)))
+            (define new-ss
+              (if use-move-biasing
+                  (let ([nss 
+                         (for/list ([inst ss])
+                           ((build-move-graph MG) inst))])
+                    (print-dot MG "./move.dot")
+                    nss)
+                  ss))
+            `(program (,xs ,IG ,MG) (type ,ty) ,@new-ss)]
+           [`(program (,xs ,IG) ,ss ...)
+            (define MG (make-graph (map car xs)))
+            (define new-ss
+              (if use-move-biasing
+                  (let ([nss 
+                         (for/list ([inst ss])
+                           ((build-move-graph MG) inst))])
+                    (print-dot MG "./move.dot")
+                    nss)
+                  ss))
+            `(program (,xs ,IG ,MG) ,@new-ss)]
+
+	   [else
+	    ((super build-move-graph G) ast)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+    (define/override (allocate-registers)
+      (lambda (ast)
+	(match ast
+           [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
+	    (define-values (homes stk-size) 
+	      (allocate-homes IG MG (map car locals) ss))
+	    `(program ,stk-size (type ,ty)
+		      ,@(map (assign-homes homes) ss))]
+           [`(program (,locals ,IG ,MG) ,ss ...)
+	    (define-values (homes stk-size) 
+	      (allocate-homes IG MG (map car locals) ss))
+	    `(program ,stk-size 
+		      ,@(map (assign-homes homes) ss))]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
     (define/override (assign-homes homes)
       (lambda (e)
         (match e
           [`(global-value ,l) e]
-          #;[`(offset ,e ,i)
-           (define new-e ((assign-homes homes) e))
-           `(offset ,new-e ,i)]
           [`(set l ,e)
            (define new-e ((assign-homes homes) e))
            `(set l ,new-e)]
-          [else ((super assign-homes homes) e)])))
+	   [`(program ,xs (type ,ty) ,ss ...)
+	    ((super assign-homes homes)
+	     `(program ,(map car xs) (type ,ty) ,@ss))]
+	   [`(program ,xs ,ss ...)
+	    ((super assign-homes homes)
+	     `(program ,(map car xs) ,@ss))]
+          [else
+	   ((super assign-homes homes) e)])))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; patch-instructions : psuedo-x86 -> x86

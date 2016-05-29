@@ -10,7 +10,7 @@
   (class compile-R2
     (super-new)
 
-    (inherit primitives liveness-ss allocate-homes collect-locals)
+    (inherit primitives liveness-ss allocate-homes)
 
     (define/public (non-apply-ast)
       (set-union (primitives)
@@ -131,10 +131,9 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S3 -> C3-expr x (C3-stmt list)
 
-    (define (flatten-body body)
-      (define-values (new-body ss) ((flatten #t) body))
-      (define locals (append* (map (collect-locals) ss)))
-      (values (remove-duplicates locals) 
+    (define/public (flatten-body body)
+      (define-values (new-body ss locals) ((flatten #t) body))
+      (values locals
 	      (append ss `((return ,new-body)))))
 
     (define/override (flatten need-atomic)
@@ -152,19 +151,23 @@
           [`(has-type (function-ref ,f) ,t)
            (define tmp (gensym 'tmp))
            (values `(has-type ,tmp ,t)
-                   (list `(assign ,tmp (has-type (function-ref ,f) ,t))))]
+                   (list `(assign ,tmp (has-type (function-ref ,f) ,t)))
+		   (list (cons tmp t)))]
           [`(has-type (app ,f ,es ...) ,t) 
-           (define-values (new-f f-ss) ((flatten #t) f))
-           (define-values (new-es sss) (map2 (flatten #t) es))
+           (define-values (new-f f-ss xs1) ((flatten #t) f))
+           (define-values (new-es sss xss) (map3 (flatten #t) es))
            (define ss (append f-ss (append* sss)))
+	   (define xs2 (append* xss))
            (define fun-apply `(app ,new-f ,@new-es))
            (cond
              [need-atomic
               (define tmp (gensym 'tmp))
               (values `(has-type ,tmp ,t)
-                      (append ss `((assign ,tmp (has-type ,fun-apply ,t)))))]
+                      (append ss `((assign ,tmp (has-type ,fun-apply ,t))))
+		      (cons (cons tmp t) (append xs1 xs2))
+		      )]
              [else
-              (values `(has-type ,fun-apply ,t) ss)])]
+              (values `(has-type ,fun-apply ,t) ss (append xs1 xs2))])]
           [else ((super flatten need-atomic) ast)])))
     
     (inherit reset-vars unique-var root-type?)
@@ -199,13 +202,14 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
     (inherit uncover-call-live-roots-seq)
+
     (define/override (uncover-call-live-roots)
       (lambda (x)
         (vomit "uncover call live roots" x)
         (match x
           [`(program ,xs ,ty (defines ,ds ...) ,ss ...)
            (let*-values ([(ds)      (map (uncover-call-live-roots-def) ds)]
-                         [(ss clr*) ((uncover-call-live-roots-seq (set)) ss)])
+                         [(ss clr*) ((uncover-call-live-roots-seq (set) xs) ss)])
              (unless (set-empty? clr*)
                (error 'uncover-call-live-roots 
                     "empty program call live roots invariant ~a" clr*))
@@ -215,8 +219,9 @@
     ;; uncover-call-live-roots-def : define -> define
     (define/public ((uncover-call-live-roots-def) def)
       (match def
-        [`(define ,(and decl `(,f [,x* : ,_] ...)) : ,t ,l* ,ss ...)
-         (let*-values ([(ss clr*) ((uncover-call-live-roots-seq (set)) ss)]
+        [`(define ,(and decl `(,f [,x* : ,p*] ...)) : ,t ,l* ,ss ...)
+	 (define v* (append l* (map cons x* p*)))
+         (let*-values ([(ss clr*) ((uncover-call-live-roots-seq (set) v*) ss)]
                        [(clr*)    (set-subtract clr* (list->set x*))])
            (unless (set-empty? clr*)
              (error 'uncover-call-live-roots 
@@ -225,26 +230,26 @@
         [else (error 'uncover-call-live-roots-def "unmatched ~a" def)]))
 
     ;; uncover-call-live-roots-stmt : stmt (set id) -> stmt (set id) 
-    (define/override (uncover-call-live-roots-stmt stmt clr*)
+    (define/override (uncover-call-live-roots-stmt stmt clr* xs)
       (vomit "functions/uncover-call-live-roots-stmt" stmt clr*)
       (match stmt
-        [`(app ,(app uncover-call-live-roots-exp clr**) ...)
+        [`(app ,(app (uncover-call-live-roots-exp xs) clr**) ...)
          (values `(call-live-roots ,(set->list clr*) ,stmt)
                  (set-union clr* (set-union* clr**)))]
         [`(assign ,lhs (has-type (app ,e* ...) ,t))
          (let* ([clr* (set-remove clr* lhs)]
                 [stmt `(call-live-roots ,(set->list clr*) ,stmt)]
-                [clr** (for/list ([e e*]) (uncover-call-live-roots-exp e))]
+                [clr** (for/list ([e e*]) ((uncover-call-live-roots-exp xs) e))]
                 [clr* (set-union clr* (set-union* clr**))])
            (values stmt clr*))]
-        [else (super uncover-call-live-roots-stmt stmt clr*)]))
+        [else (super uncover-call-live-roots-stmt stmt clr* xs)]))
 
     ;;uncover-call-live-roots-exp : expr -> (set id)
-    (define/override (uncover-call-live-roots-exp e)
+    (define/override ((uncover-call-live-roots-exp xs) e)
       (vomit "functions/uncover-call-live-roots-exp" e)
       (match e 
         [`(function-ref ,f) (set)]
-        [else (super uncover-call-live-roots-exp e)]))
+        [else ((super uncover-call-live-roots-exp xs) e)]))
     
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S3 -> S3
@@ -272,7 +277,8 @@
 	   (append mov-stack mov-regs
 		   (append* (map (select-instructions) ss))))
 	 ;; parameters become locals
-	 `(define (,f) ,(length xs) (,(append xs (reset-vars) locals) ,max-stack)
+	 `(define (,f)
+	    ,(length xs) (,(append (map cons xs ps) (reset-vars) locals) ,max-stack)
 	    ,@new-ss)]
         [`(assign ,lhs (has-type (function-ref ,f) ,t))
          (define new-lhs ((select-instructions) lhs))
@@ -351,13 +357,13 @@
         (vomit "build-interference" ast live-after G)
 	(match ast
 	   [`(define (,f) ,n (,locals ,max-stack ,lives) ,ss ...)
-	    (define new-G (make-graph locals))
+	    (define new-G (make-graph (map car locals)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
                 ((build-interference live-after new-G) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
            [`(program (,locals ,max-stack ,lives) (type ,ty) (defines ,ds ...) ,ss ...)
-	    (define new-G (make-graph locals))
+	    (define new-G (make-graph (map car locals)))
 	    (define new-ds
               (for/list ([d ds])
                 ((build-interference (void) (void)) d)))
@@ -378,14 +384,14 @@
            [`(program (,locals ,max-stack ,IG) (type ,ty) (defines ,ds ...) ,ss ...)
 	    (define new-ds (for/list ([d ds])
                              ((build-move-graph (void)) d)))
-            (define MG (make-graph locals))
+            (define MG (make-graph (map car locals)))
             (define new-ss
               (for/list ([inst ss])
                 ((build-move-graph MG) inst)))
             (print-dot MG "./move.dot")
             `(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,@new-ds) ,@new-ss)]
 	   [`(define (,f) ,n (,locals ,max-stack ,IG) ,ss ...)
-            (define MG (make-graph locals))
+            (define MG (make-graph (map car locals)))
             (define new-ss
               (for/list ([inst ss])
                 ((build-move-graph MG) inst)))
@@ -419,14 +425,14 @@
 	(match ast
 	   [`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
 	    (define-values (homes stk-size)
-	      (allocate-homes IG MG xs ss))
+	      (allocate-homes IG MG (map car xs) ss))
 	    (define new-ss (map (assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
            [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
 		      ,ss ...)
 	    (define new-ds (map (allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
-	      (allocate-homes IG MG locals ss))
+	      (allocate-homes IG MG (map car locals) ss))
 	    (define new-ss (map (assign-homes homes) ss))
 	    `(program ,(+ stk-size (* 8 max-stack)) (type ,ty)
 		      (defines ,@new-ds) ,@new-ss)]

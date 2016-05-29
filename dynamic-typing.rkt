@@ -124,21 +124,28 @@
         (verbose "flatten" e)
 	(match e
           [`(has-type (inject ,e ,ty) ,ty2)
-	   (define-values (new-e e-ss) ((send this flatten #t) e))
+	   (define-values (new-e e-ss xs) ((send this flatten #t) e))
 	   (cond [need-atomic
 		  (define tmp (gensym 'tmp))
 		  (values `(has-type ,tmp ,ty2)
-			  (append e-ss `((assign ,tmp (has-type (inject ,new-e ,ty) ,ty2)))))]
+			  (append e-ss `((assign ,tmp 
+						 (has-type (inject ,new-e ,ty)
+							   ,ty2))))
+			  (cons (cons tmp ty2) xs)
+			  )]
 		 [else
-		  (values `(has-type (inject ,new-e ,ty) ,ty2) e-ss)])]
+		  (values `(has-type (inject ,new-e ,ty) ,ty2) e-ss xs)])]
 	  [`(has-type (project ,e ,ty) ,ty2)
-	   (define-values (new-e e-ss) ((send this flatten #t) e))
+	   (define-values (new-e e-ss xs) ((send this flatten #t) e))
 	   (cond [need-atomic
 		  (define tmp (gensym 'tmp))
 		  (values `(has-type ,tmp ,ty2)
-			  (append e-ss `((assign ,tmp (has-type (project ,new-e ,ty) ,ty2)))))]
+			  (append e-ss `((assign ,tmp
+						 (has-type (project ,new-e ,ty)
+							   ,ty2))))
+			  (cons (cons tmp ty2) xs))]
 		 [else
-		  (values `(has-type (project ,new-e ,ty) ,ty2) e-ss)])]
+		  (values `(has-type (project ,new-e ,ty) ,ty2) e-ss xs)])]
 	  [else
 	   ((super flatten need-atomic) e)]
 	  )))
@@ -152,12 +159,12 @@
 	 [`(Vectorof ,T) #t]
 	 [else (super root-type? t)]))
 
-    (define/override (uncover-call-live-roots-exp e)
+    (define/override ((uncover-call-live-roots-exp xs) e)
       (vomit "any/uncover-call-live-roots-exp" e)
       (match e 
-        [`(inject ,e ,ty) (uncover-call-live-roots-exp e)]
-        [`(project ,e ,ty) (uncover-call-live-roots-exp e)]
-        [else (super uncover-call-live-roots-exp e)]))
+        [`(inject ,e ,ty) ((uncover-call-live-roots-exp xs) e)]
+        [`(project ,e ,ty) ((uncover-call-live-roots-exp xs) e)]
+        [else ((super uncover-call-live-roots-exp xs) e)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions
