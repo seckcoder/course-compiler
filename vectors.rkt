@@ -64,7 +64,85 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniqueify : S1 -> C1-expr x (C1-stmt list)
 
+    ;; nothing to do
 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; expose-allocation
+
+    (define/public (expose-allocation)
+      (lambda (e)
+        (verbose "expose-allocation" e)
+	(match e
+           [`(has-type (vector ,(app (expose-allocation) e*) ...) ,vec-type)
+	    ;; 1. evaluate the e* and let-bind them to x*
+	    ;; 2. allocate the vector
+	    ;; 3. initialize the vector
+	    ;; (1 comes before 2 because e* may trigger GC).
+	    (define len  (length e*))
+	    (define size (* (+ len 1) 8))
+	    (define vec (gensym 'alloc))
+	    (define x* (map (lambda (e) (gensym 'vecinit)) e*))
+	    (define init-vec (foldr
+			      (lambda (x n rest)
+				(let ([v (gensym 'initret)])
+				  `(let ([,v (has-type (vector-set! ,vec ,n ,x)
+						       Void)])
+				     ,rest)))
+			      vec x* (range len)))
+	    (define voidy (gensym 'collectret))
+	    (define alloc-init-vec
+	      `(has-type 
+		(let ([,voidy
+		       (has-type
+			(if (has-type
+			     (< (has-type 
+				 (+ (has-type (global-value free_ptr) Integer)
+				    (has-type ,size Integer))
+				 Integer)
+				(has-type (global-value fromspace_end) Integer))
+			     Boolean)
+			    (has-type (void) Void)
+			    (has-type (collect ,size) Void))
+			Void)])
+		  (has-type 
+		   (let ([,vec (has-type (allocate ,len ,vec-type) ,vec-type)])
+		     ,init-vec)
+		   ,vec-type))
+		,vec-type))
+	    (foldr
+	     (lambda (x e rest)
+	       `(has-type (let ([,x ,e])
+			    ,rest)
+			  ,vec-type))
+	     alloc-init-vec x* e*)]
+	   [`(has-type ,(app (expose-allocation) e) ,t)
+	    `(has-type ,e ,t)]
+	   [(? symbol?) e]
+	   [(? integer?) e]
+	   [(? boolean?) e]
+	   [`(void) e]
+	   [`(if ,(app (expose-allocation) cnd) 
+		 ,(app (expose-allocation) thn)
+		 ,(app (expose-allocation) els))
+	    `(if ,cnd ,thn ,els)]
+	   [`(and ,(app (expose-allocation) e1)
+		  ,(app (expose-allocation) e2))
+	    `(and ,e1 ,e2)]
+	   [`(,op ,es ...) #:when (set-member? (primitives) op)
+	    (define new-es (map (expose-allocation) es))
+	    `(,op ,@new-es)]
+	   [`(let ([,x ,(app (expose-allocation) rhs)]) 
+	       ,(app (expose-allocation) body))
+	    `(let ([,x ,rhs]) ,body)]
+          [`(program (type ,ty) ,(app (expose-allocation) body))
+	   (define voidy (gensym 'initret))
+	   `(program (type ,ty) 
+		     (let ([,voidy (has-type (initialize ,(rootstack-size)
+							 ,(heap-size))
+					     Void)])
+		       ,body))]
+          [else
+	   (error "in expose-allocation, unmatched" e)])))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S1 -> C1-expr x (C1-stmt list) x ((var x type) list)
@@ -97,7 +175,7 @@
               (define tmp (gensym 'if))
               (define thn-ret `(assign ,tmp ,new-thn))
               (define els-ret `(assign ,tmp ,new-els))
-              (values `(has-type ,tmp ,if-type)
+              (values tmp
                       (append e1-ss e2-ss 
                               `((if (,cmp ,new-e1 ,new-e2)
                                     ,(append thn-ss (list thn-ret))
@@ -110,9 +188,9 @@
 	      (define tmp (gensym 'if))
 	      (define thn-ret `(assign ,tmp ,new-thn))
 	      (define els-ret `(assign ,tmp ,new-els))
-	      (values `(has-type ,tmp ,if-type)
+	      (values tmp
 		      (append cnd-ss
-			      `((if (eq? (has-type #t Boolean) ,new-cnd)
+			      `((if (eq? #t ,new-cnd)
 				    ,(append thn-ss (list thn-ret))
 				    ,(append els-ss (list els-ret)))))
 		      (cons (cons tmp if-type) (append xs1 xs))
@@ -123,15 +201,30 @@
       (lambda (e)
         (verbose "flatten" e)
 	(match e
+	  [`(void) (values '(void) '() '())]
+	  [`(collect ,size)
+	   (values '(void) `((collect ,size)) '())]
+	  [`(initialize ,stack-len ,heap-len)
+	   (values '(void) `((initialize ,stack-len ,heap-len)) '())]
+	  [`(allocate ,len ,type)
+	   (define tmp (gensym 'alloc))
+	   (values tmp
+		   `((assign ,tmp (allocate ,len ,type))) 
+		   (list (cons tmp type)))]
+	  [`(global-value ,name)
+	   (define tmp (gensym 'global))
+	   (values tmp
+		   `((assign ,tmp (global-value ,name))) 
+		   (list (cons tmp 'Integer)))]
 	  [`(has-type (and ,e1 ,e2) ,t)
 	   (define-values (new-e1 e1-ss xs1) ((flatten #t) e1))
 	   (define-values (new-e2 e2-ss xs2) ((flatten #f) e2))
 	   (define tmp (gensym 'and))
-	   (values `(has-type ,tmp ,t)
+	   (values tmp
 		   (append e1-ss
-			   `((if (eq? (has-type #t Boolean) ,new-e1)
+			   `((if (eq? #t ,new-e1)
 				 ,(append e2-ss `((assign ,tmp ,new-e2)))
-				 ((assign ,tmp (has-type #f Boolean))))))
+				 ((assign ,tmp #f)))))
 		   (cons (cons tmp t) (append xs1 xs2))
 		   )]
 
@@ -143,10 +236,10 @@
 	   (cond
 	    [need-atomic
 	     (define tmp (gensym 'tmp))
-	     (values `(has-type ,tmp ,t)
-		     (append ss `((assign ,tmp (has-type ,prim-apply ,t))))
+	     (values tmp
+		     (append ss `((assign ,tmp ,prim-apply)))
 		     (cons (cons tmp t) xs) )]
-	    [else (values `(has-type ,prim-apply ,t) ss xs)])]
+	    [else (values prim-apply ss xs)])]
 
 	   [`(let ([,x (has-type ,rhs ,rhs-t)]) ,body)
 	    (define-values (new-rhs rhs-ss xs1)
@@ -159,57 +252,15 @@
 	  [`(has-type (if ,cnd ,thn ,els) ,if-type)
 	   (define-values (new-thn thn-ss xs1) ((flatten #t) thn))
 	   (define-values (new-els els-ss xs2) ((flatten #t) els))
-	   ((flatten-if if-type new-thn thn-ss new-els els-ss (append xs1 xs2)) cnd)]
+	   ((flatten-if if-type new-thn thn-ss new-els els-ss (append xs1 xs2))
+	    cnd)]
+
+	  [`(has-type ,e ,t)
+	   ((flatten need-atomic) e)]
 
           [else
 	   ((super flatten need-atomic) e)])))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; expose allocation : C1 -> ?
-
-    (define/public (expose-allocation)
-      (lambda (x)
-        (match x
-          [`(program (,xs ...) (type ,ty) . ,(app expose-allocation-seq ss))
-	   (define vs (reset-vars))
-	   (debug "expose-allocation reset-vars" vs)
-           `(program ,(append xs vs) (type ,ty)
-                     (initialize ,(rootstack-size) ,(heap-size))
-                     ,@ss)]
-          [else (error 'expose-allocation "umatched ~a" x)])))
-    
-    ;; Follow the control flow, build the environment, and return
-    ;; expression rebuilt using types from environment.
-    (define/public (expose-allocation-seq ss)
-      (append* (map (expose-allocation-stmt) ss)))
-    
-    (define/public ((expose-allocation-stmt) stmt)
-      (match stmt
-        [`(assign ,lhs (has-type ,e ,t))
-         (match e
-           [`(vector ,e* ...)
-	    (define len  (length e*))
-	    (define size (* (+ len 1) 8))
-	    (define vec `(has-type ,lhs ,t))
-	    (define-values (inits)
-	      (for/list ([e (in-list e*)]
-			 [n (in-naturals)])
-			(let ([v (unique-var 'void 'Void)])
-			  `(assign ,v
-				   (has-type
-				    (vector-set! ,vec (has-type ,n Integer) ,e)
-				    Void)))))
-	    `((if (has-type (collection-needed? ,size) Boolean)
-		  ((collect ,size))
-		  ())
-	      (assign ,lhs (allocate ,len ,t))
-	      ,@inits)]
-           [else (list stmt)])]
-        [`(if ,t ,(app expose-allocation-seq c) ,(app expose-allocation-seq a))
-         `((if ,t ,c ,a))]
-        [`(return ,e) (list stmt)]
-        [else (error 'expose-allocation-stmt "unmatched ~a" stmt)]))
-    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uncover-call-live-roots : C1-Expr  -> C1-Expr x (set id)
 
@@ -273,18 +324,17 @@
     (define/public ((uncover-call-live-roots-exp xs) e)
       (vomit "uncover-call-live-roots-exp" e)
       (match e
-        [`(has-type (void) ,t) (set)]
-        [`(has-type ,(? symbol? x) ,t)
-	 (define type (lookup x xs))
-         (if (root-type? type)
+        [`(void) (set)]
+        [(? symbol? x)
+         (if (root-type? (lookup x xs))
              (set x)
              (set))]
-        [`(has-type ,e ,t)
-         ((uncover-call-live-roots-exp xs) e)]
         [(or (? integer?) (? boolean?)
              `(allocate ,_ ,_)
              `(collection-needed? ,_))
          (set)]
+	[`(global-value ,name)
+	 (set)]
         [`(,(? primitive? op) ,(app (uncover-call-live-roots-exp xs) clr**) ...)
          (set-union* clr**)]
         [else (error 'vectors/uncover-call-live-roots-exp "unmatched ~a" e)]))
@@ -355,6 +405,8 @@
         [`(void) `(int 0)]
 	[`(assign ,(app (select-instructions) lhs^) (void))
 	 `((movq (int 0) ,lhs^))]
+        [`(assign ,(app (select-instructions) lhs) (global-value ,name))
+	 `((movq (global-value ,name) ,lhs))]
         [`(assign ,lhs (allocate ,length (Vector ,ts ...)))
          (define lhs^ ((select-instructions) lhs))
          ;; Add one quad word for the meta info tag
@@ -400,32 +452,13 @@
          `((movq (reg ,rootstack-reg) (reg rdi))
            (movq ,((select-instructions) size) (reg rsi))
            (callq collect))]
-        [`(if (has-type (collection-needed? ,size) Boolean) ,cs ,as)
-         (define cs^  (append* (map (select-instructions) cs)))
-         (define as^  (append* (map (select-instructions) as)))
-         (define data (unique-var 'end-data 'Integer)) ;; lies -Jeremy
-         (define lt   (unique-var 'lt 'Integer))
-         ;;cmp arg2, arg1 GAS Syntax
-         
-         ;;Note that the GAS/AT&T syntax can be rather confusing, as
-         ;;for example cmp $0, %rax followed by jl branch will branch
-         ;;if %rax < 0 (and not the opposite as might be expected from
-         ;;the order of the operands).
-
-         `((movq (global-value free_ptr) (var ,data))
-           (addq (int ,size) (var ,data))
-           (cmpq (global-value fromspace_end) (var ,data))
-           (set l (byte-reg al))
-           (movzbq (byte-reg al) (var ,lt))
-           ;; (not (< end-data fromspace_end)) implies collection-need? 
-           (if (eq? (int 0) (var ,lt)) ,cs^ ,as^))]
-        [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer))) 
+        [`(assign ,lhs (vector-ref ,e-vec ,i)) 
          ;; We should try to do this in patch instructions
          (define lhs^ ((select-instructions) lhs))
          (define e-vec^ ((select-instructions) e-vec))
          `((movq ,e-vec^ (reg r11))
 	   (movq (deref r11 ,(* (add1 i) 8)) ,lhs^))]
-        [`(assign ,lhs (vector-set! ,e-vec (has-type ,i ,Integer) ,e-arg))
+        [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
          (define new-lhs ((select-instructions) lhs))
          (define new-e-vec ((select-instructions) e-vec))
          (define new-e-arg ((select-instructions) e-arg))
@@ -440,7 +473,7 @@
            `((if ,cnd ,thn-ss ,els-ss)))]
         [`(program ,xs (type ,ty) . ,ss)
          (define ss^ (append* (map (select-instructions) ss)))
-         `(program ,(append (reset-vars) xs) (type ,ty) ,@ss^)]
+         `(program ,xs (type ,ty) ,@ss^)]
         [else ((super select-instructions) x)])))
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -448,19 +481,16 @@
   (define/override (free-vars a)
     (match a
        [`(global-value ,l) (set)]
-       ;[`(offset ,e ,i) (free-vars e)]
        [else (super free-vars a)]
        ))
 
   (define/override (write-vars x)
     (match x
-      ;[`(movq ,s (offset ,d ,i)) (set)]
       [`(set l ,d) (free-vars d)]
       [else (super write-vars x)]))
   
   (define/override (read-vars x)
     (match x
-      ;[`(movq ,s (offset ,d ,i)) (set-union (free-vars s) (free-vars d))]
       [`(set l ,d) (set)]
       [else (super read-vars x)]))
 
@@ -570,14 +600,8 @@
 (define/override (print-x86)
   (lambda (e)
     (match e
-      #;[`(offset (stack ,n) ,i)
-       ;(error "offset, stack case " n)
-       (format "~a(%rbp)" (- i n))]
-      #;[`(offset ,e ,i)
-       (format "~a(~a)" i ((print-x86) e))]
       [`(global-value ,label)
        (format "~a(%rip)" (label-name (symbol->string label)))]
-      #;[`(setl ,d) (format "\tsetl\t~a\n" ((print-x86) d))]
       [else ((super print-x86) e)]
       )))));; compile-R2
 
@@ -594,10 +618,10 @@
 ;       ,(send interp interp-scheme '()))
       ("uniquify" ,(send compiler uniquify '())
        ,(send interp interp-scheme '()))
-      ("flatten" ,(send compiler flatten #f)
-       ,(send interp interp-C '()))
       ("expose allocation"
        ,(send compiler expose-allocation)
+       ,(send interp interp-scheme '()))
+      ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("uncover call live roots"
        ,(send compiler uncover-call-live-roots)

@@ -13,7 +13,7 @@
          use-minimal-set-of-registers!
 	 general-registers registers-for-alloc caller-save callee-save
 	 arg-registers rootstack-reg register->color registers align
-         byte-reg->full-reg print-by-type)
+         byte-reg->full-reg print-by-type strip-has-type)
 
 ;; debug state is a nonnegative integer.
 ;; The easiest way to increment it is passing the -d option

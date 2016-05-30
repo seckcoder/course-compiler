@@ -177,13 +177,17 @@
 
     (define/override (primitives)
       (set-union (super primitives) 
-		 (set 'eq? 'and 'or 'not)))
+		 (set 'eq? 'and 'not '< '<= '> '>=)))
 
     (define/override (interp-op op)
       (match op
          ['eq? (lambda (v1 v2)
                  (cond [(and (fixnum? v1) (fixnum? v2)) (eq? v1 v2)]
                        [(and (boolean? v1) (boolean? v2)) (eq? v1 v2)]))]
+	 ['and (lambda (v1 v2)
+		 (cond [(and (boolean? v1) (boolean? v2))
+			(and v1 v2)]))]
+         ['not (lambda (v) (match v [#t #f] [#f #t]))]
          ['< (lambda (v1 v2)
 	       (cond [(and (fixnum? v1) (fixnum? v2)) (< v1 v2)]))]
          ['<= (lambda (v1 v2)
@@ -192,10 +196,6 @@
 	       (cond [(and (fixnum? v1) (fixnum? v2)) (> v1 v2)]))]
          ['>= (lambda (v1 v2)
 	       (cond [(and (fixnum? v1) (fixnum? v2)) (>= v1 v2)]))]
-         ['not (lambda (v) (match v [#t #f] [#f #t]))]
-	 ['and (lambda (v1 v2)
-		 (cond [(and (boolean? v1) (boolean? v2))
-			(and v1 v2)]))]
 	 [else (super interp-op op)]))
 
     (define/override (interp-scheme env)
@@ -311,11 +311,15 @@
 	  (define sign     (bitwise-and eflags #b000010000000))
 	  (if (= overflow sign) 1 0)]
 	 ['le
-	  (or (eflags-status env 'e) (eflags-status env 'l))]
+	  (if (or (eq? 1 (eflags-status env 'e))
+		  (eq? 1 (eflags-status env 'l)))
+	      1 0)]
 	 ['g
-	  (not (eflags-status env 'le))]
+	  (if (not (eq? 1 (eflags-status env 'le)))
+	      1 0)]
 	 ['ge
-	  (not (eflags-status env 'l))]))
+	  (if (not (eq? 1 (eflags-status env 'l)))
+	      1 0)]))
     
     (define/override (interp-x86 env)
       (lambda (ast)
@@ -325,6 +329,7 @@
           [`((set ,cc ,d) . ,ss)
            (define name (get-name d))
 	   (define val (eflags-status env cc))
+	   (verbose "set" cc val)
            ((interp-x86 (cons (cons name val) env)) ss)]
           ;; if's are present before patch-instructions
           [(or `((if ,cnd ,thn ,els) . ,ss)
@@ -335,11 +340,22 @@
 
           [`((label ,l) . ,ss)
            ((interp-x86 env) ss)]
-          [`((cmpq ,s1 ,s2) . ,ss)
+
+          ;; cmpq performs a subq operation and examimines the state
+          ;; of the result, this is done without overwriting the second
+          ;; register. -andre
+          ;; Notice that the syntax is very confusing
+          ;; (cmpq ,s2 ,s1) (jl then) (jmp else) ...
+          ;; (if (< s1 s2) then else)
+          [`((cmpq ,s2 ,s1) . ,ss)
            (let* ([v1 ((interp-x86-exp env) s1)] 
-                  [v2 ((interp-x86-exp env) s2)]
-                  [zero   (arithmetic-shift (b2i (eq? v1 v2)) 6)]
-                  [eflags (bitwise-ior zero)])
+                  [v2 ((interp-x86-exp env) s2)] 
+                  [v3 (- v2 v1)]
+                  [zero     (arithmetic-shift (b2i (eq? v3 0)) 6)]
+                  [sign     (arithmetic-shift (b2i (< v3 0)) 7)] 
+                  ;; Our numbers do not overflow so this bit is always 0
+                  [overflow (arithmetic-shift 0 11)]
+                  [eflags (bitwise-ior overflow sign zero)])
              ((interp-x86 (cons (cons '__flag eflags) env)) ss))]
           [`((movzbq ,s ,d) . ,ss)
            (define x (get-name d))
@@ -390,6 +406,8 @@
 	       tys (range (length tys))))]
         [else (super display-by-type ty val)]))
 
+    ;; Andre, please write a paragraph or so explaining this
+    ;; design for representing the heap. -Jeremy
 
     ;; The simulated global state of the program 
     ;; define produces private fields
@@ -428,12 +446,13 @@
     
     (define/public (collect!)
       (lambda (rootset bytes-requested)
+	(verbose "collect!" bytes-requested)
         ;; after a call to collect we must guarantee there is enough
         ;; memory to allocate the requested block of memory
         (let double-heap ([hs heap-size])
           (if (< hs bytes-requested)
               (double-heap (* 2 hs))
-              (let ((h-begin (allocate! 'fromspace hs)))
+              (let ((h-begin (allocate-page! 'fromspace hs)))
                 ;; I am only advancing the end of the heap because we
                 ;; are not reclaiming memory
                 (set-box! fromspace_end   (+ h-begin hs))
@@ -441,20 +460,22 @@
 
     (define/public (initialize!)
       (lambda (stack-length heap_length)
+	(verbose "initialize!")
         (set-box! memory '())
-        (let* ([s-begin (allocate! 'rootstack stack-size)]
-               [h-begin (allocate! 'fromspace heap-size)])
+        (let* ([s-begin (allocate-page! 'rootstack stack-size)]
+               [h-begin (allocate-page! 'fromspace heap-size)])
           (set-box! rootstack_begin s-begin)
           (set-box! rootstack_end   (+ s-begin stack-size))
           (set-box! fromspace_begin h-begin)
           (set-box! fromspace_end   (+ h-begin heap-size))
           (set-box! free_ptr        h-begin))))
 
-    (define (allocate! name size)
+    (define (allocate-page! name size)
+      (verbose "allocate-page!" name size)
       (unless (and (fixnum? size)
                    (positive? size)
                    (= 0 (modulo size 8)))
-        (error 'allocate! "expected non-negative fixnum in ~a" size))
+        (error 'allocate-page! "expected non-negative fixnum in ~a" size))
       ;; Find the last address
       (define max-addr 
         (for/fold ([next 8])
@@ -463,12 +484,13 @@
             (max next stop))))
       ;; Allocate with a small pad 100 words so that it isn't likely to
       ;; accidentally use another region.
-      ;; The randomness is to dispell any reliance on interp always allocating the
-      ;; same way. -Andre
+      ;; The randomness is to dispell any reliance on interp always allocating
+      ;; the same way. -Andre
       (define start-addr (+ max-addr 800))
       ;; The range is of valid addresses in memory are [start, stop)
       (define stop-addr (+ start-addr size))
       (define vect (make-vector (arithmetic-shift size -3) uninitialized))
+      (verbose "allocated" name start-addr stop-addr)
       (set-box! memory (cons `(page ,start-addr ,stop-addr ,name ,vect)
                              (unbox memory)))
       start-addr)
@@ -529,6 +551,20 @@
         (verbose "R2/interp-scheme" ast)
 	(match ast
           [`(void) (void)]
+	  [`(global-value free_ptr)
+	   (unbox free_ptr)]
+	  [`(global-value fromspace_end)
+	   (unbox fromspace_end)]
+          [`(allocate ,l ,ty) (build-vector l (lambda a uninitialized))]
+          [`(collect ,size)
+           (unless (exact-nonnegative-integer? ((interp-scheme env) size))
+             (error 'interp-C "invalid argument to collect in ~a" ast)) 
+           (void)]
+          [`(program (type ,ty) ,e) 
+	   ((interp-scheme '()) e)]
+	  [`(initialize ,stack-size ,heap-size)
+	   ((initialize!) stack-size heap-size)
+	   (void)]
           [else ((super interp-scheme env) ast)]
           )))
 
@@ -559,6 +595,10 @@
         (vomit "R2/interp-C" ast)
         (match ast
           [`(void) (void)]
+	  [`(global-value free_ptr)
+	   (unbox free_ptr)]
+	  [`(global-value fromspace_end)
+	   (unbox fromspace_end)]
           ;; I should do better than make these noops - andre
           [`(initialize ,s ,h)
            (unless (and (exact-nonnegative-integer? s)
@@ -641,12 +681,12 @@
           (vomit "R2/interp-x86" (car ast)))
 	(match ast
           ;; cmpq performs a subq operation and examimines the state
-          ;; of the result, this is done without overiting the second
+          ;; of the result, this is done without overwriting the second
           ;; register. -andre
           ;; Notice that the syntax is very confusing
           ;; (cmpq ,s2 ,s1) (jl then) (jmp else) ...
           ;; (if (< s1 s2) then else)
-          [`((cmpq ,s2 ,s1) . ,ss)
+          #;[`((cmpq ,s2 ,s1) . ,ss)
            (let* ([v1 ((interp-x86-exp env) s1)] 
                   [v2 ((interp-x86-exp env) s2)] 
                   [v3 (- v2 v1)]
@@ -660,14 +700,16 @@
           [`((callq initialize) . ,ss)
            (define stack-size ((interp-x86-exp env) '(reg rdi)))
            (define heap-size ((interp-x86-exp env) '(reg rsi))) 
-           ((initialize!)  stack-size heap-size)
+           ((initialize!) stack-size heap-size)
            ((interp-x86 env) ss)]
           [`((callq malloc) . ,ss)
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
-           ((interp-x86 `((rax . ,(allocate! 'malloc num-bytes)) . ,env)) ss)]
+           ((interp-x86 `((rax . ,(allocate-page! 'malloc num-bytes)) . ,env)) 
+	    ss)]
           [`((callq alloc) . ,ss)
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
-           ((interp-x86 `((rax . ,(allocate! 'alloc num-bytes)) . ,env)) ss)]
+           ((interp-x86 `((rax . ,(allocate-page! 'alloc num-bytes)) . ,env)) 
+	    ss)]
           [`((callq collect) . ,ss)
            (define rootstack ((interp-x86-exp env) '(reg rdi)))
            (define bytes-requested ((interp-x86-exp env) '(reg rsi))) 

@@ -192,10 +192,10 @@
        ,(send interp interp-F '()))
       ("convert-to-closures" ,(send compiler convert-to-closures)
        ,(send interp interp-F '()))
-      ("flatten" ,(send compiler flatten #f)
-       ,(send interp interp-C '()))
       ("expose allocation"
        ,(send compiler expose-allocation)
+       ,(send interp interp-F '()))
+      ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("uncover call live roots"
        ,(send compiler uncover-call-live-roots)

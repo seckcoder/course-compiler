@@ -152,7 +152,7 @@
               (define tmp (gensym 'if))
               (define thn-ret `(assign ,tmp ,new-thn))
               (define els-ret `(assign ,tmp ,new-els))
-              (values `(has-type ,tmp ,t)
+              (values tmp
                       (append e1-ss e2-ss 
                               `((if (,cmp ,new-e1 ,new-e2)
                                     ,(append thn-ss (list thn-ret))
@@ -165,9 +165,9 @@
 	      (define tmp (gensym 'if))
 	      (define thn-ret `(assign ,tmp ,new-thn))
 	      (define els-ret `(assign ,tmp ,new-els))
-	      (values `(has-type ,tmp ,t)
+	      (values tmp
 		      (append cnd-ss
-			      `((if (eq? (has-type #t Boolean) ,new-cnd)
+			      `((if (eq? #t ,new-cnd)
 				    ,(append thn-ss (list thn-ret))
 				    ,(append els-ss (list els-ret)))))
 		      (cons tmp (append xs1 xs))
@@ -178,50 +178,52 @@
       (lambda (e)
         (verbose "flatten" e)
 	(match e
-	  ;; For atomic stuff, we keep the has-type annotation. -Jeremy
-	  [`(has-type (void) ,t)
-	   (values `(has-type (void) ,t) '() '())]
-	  [`(has-type ,e1 ,t)
-	   #:when (or (symbol? e1) (integer? e1) (boolean? e1))
-	   (values `(has-type ,e1 ,t) '() '())]
+	  ;; [`(has-type (void) ,t)
+	  ;;  (values `(void) '() '())]
+	  ;; [`(has-type ,e1 ,t)
+	  ;;  #:when (or (symbol? e1) (integer? e1) (boolean? e1))
+	  ;;  (values e1 '() '())]
 
-	  ;; We override 'and' to place has-type's around the #t and #f
-	  ;; in the generated code. -Jeremy
-	  [`(has-type (and ,e1 ,e2) ,t)
+	  [(? boolean?) (values e '() '())]
+
+	  [`(and ,e1 ,e2)
 	   (define-values (new-e1 e1-ss xs1) ((flatten #t) e1))
 	   (define-values (new-e2 e2-ss xs2) ((flatten #f) e2))
 	   (define tmp (gensym 'and))
-	   (values `(has-type ,tmp ,t)
+	   (values tmp
 		   (append e1-ss
-			   `((if (eq? (has-type #t Boolean) ,new-e1)
+			   `((if (eq? #t ,new-e1)
 				 ,(append e2-ss `((assign ,tmp ,new-e2)))
-				 ((assign ,tmp (has-type #f Boolean))))))
+				 ((assign ,tmp #f)))))
 		   (cons tmp (append xs1 xs2))
 		   )]
-
+	  
           ;; We override flattening for op's because we
 	  ;; need to put a has-type on the LHS of the assign. -Jeremy
-          [`(has-type (,op ,es ...) ,t) #:when (set-member? (primitives) op)
-	   (define-values (new-es sss xss) (map3 (flatten #t) es))
-	   (define ss (append* sss))
-	   (define xs (append* xss))
-	   (define prim-apply `(,op ,@new-es))
-	   (cond
-	    [need-atomic
-	     (define tmp (gensym 'tmp))
-	     (values `(has-type ,tmp ,t)
-		     (append ss `((assign ,tmp (has-type ,prim-apply ,t))))
-		     (cons tmp xs) )]
-	    [else (values `(has-type ,prim-apply ,t) ss xs)])]
+          ;; [`(has-type (,op ,es ...) ,t) #:when (set-member? (primitives) op)
+	  ;;  (define-values (new-es sss xss) (map3 (flatten #t) es))
+	  ;;  (define ss (append* sss))
+	  ;;  (define xs (append* xss))
+	  ;;  (define prim-apply `(,op ,@new-es))
+	  ;;  (cond
+	  ;;   [need-atomic
+	  ;;    (define tmp (gensym 'tmp))
+	  ;;    (values tmp
+	  ;; 	     (append ss `((assign ,tmp ,prim-apply)))
+	  ;; 	     (cons tmp xs) )]
+	  ;;   [else (values prim-apply ss xs)])]
 
 	  ;; For 'let' we just need to strip the enclosing has-type. -Jeremy
-          [`(has-type (let ([,x ,rhs]) ,body) ,t)
-	   ((flatten need-atomic) `(let ([,x ,rhs]) ,body))]
+          ;; [`(has-type (let ([,x ,rhs]) ,body) ,t)
+	  ;;  ((flatten need-atomic) `(let ([,x ,rhs]) ,body))]
 
-	  [`(has-type (if ,cnd ,thn ,els) ,t)
+	  [`(if ,cnd ,thn ,els)
 	   (define-values (new-thn thn-ss xs1) ((flatten #t) thn))
 	   (define-values (new-els els-ss xs2) ((flatten #t) els))
 	   ((flatten-if new-thn thn-ss new-els els-ss (append xs1 xs2)) cnd)]
+
+	  [`(has-type ,e1 ,t)
+	   ((flatten need-atomic) e1)]
 
           [`(program ,body)
 	   (define-values (new-body ss xs) ((flatten #t) body))
@@ -265,7 +267,6 @@
     (define/override (select-instructions)
       (lambda (e)
 	(match e
-          [`(has-type ,e ,t) ((select-instructions) e)]
           [#t `(int 1)]
           [#f `(int 0)]
           [`(assign ,lhs (has-type ,rhs ,t))
@@ -284,8 +285,9 @@
           [`(assign ,lhs (,cmp ,e1 ,e2))
 	   #:when (set-member? (comparison-ops) cmp)
            (define new-lhs ((select-instructions) lhs))
-           (define new-e1 ((select-instructions) e1))
-           (define new-e2 ((select-instructions) e2))
+	   ;; swap operands because the ordering for x86 cmpq is weird -Jeremy
+           (define new-e1 ((select-instructions) e2))
+           (define new-e2 ((select-instructions) e1))
            ;; second operand of cmpq can't be an immediate
            (define comparison
              (cond [(and (immediate? new-e1) (immediate? new-e2))
@@ -439,7 +441,8 @@
 		  [els-ss (append* (map (lower-conditionals) els-ss))]
 		  [thn-label (gensym 'then)]
 		  [end-label (gensym 'if_end)])
-	      (append `((cmpq ,a1 ,a2)) 
+	      ;; Switch ordering because x86 cmpq instruction is wierd -Jeremy
+	      (append `((cmpq ,a2 ,a1)) 
 		      `((jmp-if ,(compare->cc cmp) ,thn-label)) 
 		      els-ss `((jmp ,end-label))
 		      `((label ,thn-label)) thn-ss `((label ,end-label))

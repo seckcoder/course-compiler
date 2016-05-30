@@ -177,13 +177,13 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_requested)
     unsigned long old_bytes = old_len * sizeof(int64_t);
     unsigned long new_bytes = old_bytes;
 
-#if 1
+#if 0
+    // this version is good for debugging purposes -Jeremy
+    new_bytes = needed_bytes;
+#else
     while (new_bytes < needed_bytes) {
       new_bytes = 2 * new_bytes;
     }
-#else
-    // this version is good for debugging purposes -Jeremy
-    new_bytes = needed_bytes;
 #endif
 
     // Free and allocate a new tospace of size new_bytes

@@ -177,26 +177,25 @@
     ;; This pass has to thread a new environment through that isn't extended
     ;; This could be overcome with pointers or we could use 
 
-    (inherit expose-allocation-seq)
+;    (inherit expose-allocation-seq)
     (define/override (expose-allocation)
       (lambda (prog)
         (match prog
           [`(program (,xs ...) (type ,ty)
                      (defines ,(app expose-allocation-def ds) ...)
-                     ,ss ...)
-           (let ([ss (expose-allocation-seq ss)])
+                     ,e)
+           (let ([new-e (expose-allocation e)])
              `(program ,(append (reset-vars) xs)
                        (type ,ty)
                        (defines ,@ds)
-                       (initialize ,(rootstack-size) ,(heap-size))
-                       ,@ss))]
+                       ,new-e))]
           [else (error 'expose-allocation "unmatched ~a" prog)])))
 
     (define/public (expose-allocation-def def)
       (match def
         [`(define (,f ,p:t* ...) : ,t (,l* ...)
-            . ,(app expose-allocation-seq ss))
-         `(define (,f ,@p:t*) : ,t ,(append (reset-vars) l*) ,@ss)]
+            . ,(app expose-allocation e))
+         `(define (,f ,@p:t*) : ,t ,(append (reset-vars) l*) ,e)]
         [else (error 'expose-allocation-def "unmatched ~a" def)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -564,10 +563,10 @@
        ,(send interp interp-scheme '()))
       ("reveal-functions" ,(send compiler reveal-functions '())
        ,(send interp interp-F '()))
-      ("flatten" ,(send compiler flatten #f)
-       ,(send interp interp-C '()))
       ("expose allocation"
        ,(send compiler expose-allocation)
+       ,(send interp interp-F '()))
+      ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("uncover call live roots"
        ,(send compiler uncover-call-live-roots)
