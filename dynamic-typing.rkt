@@ -151,20 +151,12 @@
 	  )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uncover-call-live-roots
 
     (define/override (root-type? t)
       (match t
 	 [`Any #t]
 	 [`(Vectorof ,T) #t]
 	 [else (super root-type? t)]))
-
-    (define/override ((uncover-call-live-roots-exp xs) e)
-      (vomit "any/uncover-call-live-roots-exp" e)
-      (match e 
-        [`(inject ,e ,ty) ((uncover-call-live-roots-exp xs) e)]
-        [`(project ,e ,ty) ((uncover-call-live-roots-exp xs) e)]
-        [else ((super uncover-call-live-roots-exp xs) e)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions
@@ -513,9 +505,6 @@
       ("expose allocation"
        ,(send compiler expose-allocation)
        ,(send interp interp-C '()))
-      ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots)
-       ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
       ("liveness analysis" ,(send compiler uncover-live (void))
@@ -553,9 +542,6 @@
        ,(send interp interp-C '()))
       ("expose allocation"
        ,(send compiler expose-allocation)
-       ,(send interp interp-C '()))
-      ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))

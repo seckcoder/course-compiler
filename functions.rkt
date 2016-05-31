@@ -2,7 +2,6 @@
 (require "vectors.rkt")
 (require "interp.rkt")
 (require "utilities.rkt")
-(require "uncover-types.rkt")
 (require "runtime-config.rkt")
 (provide compile-R3 functions-passes functions-typechecker)
 
@@ -10,7 +9,7 @@
   (class compile-R2
     (super-new)
 
-    (inherit primitives liveness-ss allocate-homes)
+    (inherit primitives liveness-ss)
 
     (define/public (non-apply-ast)
       (set-union (primitives)
@@ -170,7 +169,7 @@
               (values `(has-type ,fun-apply ,t) ss (append xs1 xs2))])]
           [else ((super flatten need-atomic) ast)])))
     
-    (inherit reset-vars unique-var root-type?)
+    (inherit root-type?)
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; expose allocation : C1 -> ?
@@ -185,7 +184,7 @@
                      (defines ,(app expose-allocation-def ds) ...)
                      ,e)
            (let ([new-e (expose-allocation e)])
-             `(program ,(append (reset-vars) xs)
+             `(program ,xs
                        (type ,ty)
                        (defines ,@ds)
                        ,new-e))]
@@ -195,61 +194,9 @@
       (match def
         [`(define (,f ,p:t* ...) : ,t (,l* ...)
             . ,(app expose-allocation e))
-         `(define (,f ,@p:t*) : ,t ,(append (reset-vars) l*) ,e)]
+         `(define (,f ,@p:t*) : ,t ,l* ,e)]
         [else (error 'expose-allocation-def "unmatched ~a" def)]))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uncover-call-live-roots : (hashtable id type) (set id) -> C1-Expr  -> C1-Expr x (set id)
-    (inherit uncover-call-live-roots-seq)
-
-    (define/override (uncover-call-live-roots)
-      (lambda (x)
-        (vomit "uncover call live roots" x)
-        (match x
-          [`(program ,xs ,ty (defines ,ds ...) ,ss ...)
-           (let*-values ([(ds)      (map (uncover-call-live-roots-def) ds)]
-                         [(ss clr*) ((uncover-call-live-roots-seq (set) xs) ss)])
-             (unless (set-empty? clr*)
-               (error 'uncover-call-live-roots 
-                    "empty program call live roots invariant ~a" clr*))
-             `(program ,(append (reset-vars) xs) ,ty (defines ,@ds) ,@ss))] 
-          [else (error 'uncover-call-live-roots "unmatched ~a" x)])))
-
-    ;; uncover-call-live-roots-def : define -> define
-    (define/public ((uncover-call-live-roots-def) def)
-      (match def
-        [`(define ,(and decl `(,f [,x* : ,p*] ...)) : ,t ,l* ,ss ...)
-	 (define v* (append l* (map cons x* p*)))
-         (let*-values ([(ss clr*) ((uncover-call-live-roots-seq (set) v*) ss)]
-                       [(clr*)    (set-subtract clr* (list->set x*))])
-           (unless (set-empty? clr*)
-             (error 'uncover-call-live-roots 
-                    "empty define call live roots invariant ~a ~a" f clr*))
-           `(define ,decl : ,t ,l* ,@ss))]
-        [else (error 'uncover-call-live-roots-def "unmatched ~a" def)]))
-
-    ;; uncover-call-live-roots-stmt : stmt (set id) -> stmt (set id) 
-    (define/override (uncover-call-live-roots-stmt stmt clr* xs)
-      (vomit "functions/uncover-call-live-roots-stmt" stmt clr*)
-      (match stmt
-        [`(app ,(app (uncover-call-live-roots-exp xs) clr**) ...)
-         (values `(call-live-roots ,(set->list clr*) ,stmt)
-                 (set-union clr* (set-union* clr**)))]
-        [`(assign ,lhs (has-type (app ,e* ...) ,t))
-         (let* ([clr* (set-remove clr* lhs)]
-                [stmt `(call-live-roots ,(set->list clr*) ,stmt)]
-                [clr** (for/list ([e e*]) ((uncover-call-live-roots-exp xs) e))]
-                [clr* (set-union clr* (set-union* clr**))])
-           (values stmt clr*))]
-        [else (super uncover-call-live-roots-stmt stmt clr* xs)]))
-
-    ;;uncover-call-live-roots-exp : expr -> (set id)
-    (define/override ((uncover-call-live-roots-exp xs) e)
-      (vomit "functions/uncover-call-live-roots-exp" e)
-      (match e 
-        [`(function-ref ,f) (set)]
-        [else ((super uncover-call-live-roots-exp xs) e)]))
-    
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S3 -> S3
 
@@ -277,7 +224,7 @@
 		   (append* (map (select-instructions) ss))))
 	 ;; parameters become locals
 	 `(define (,f)
-	    ,(length xs) (,(append (map cons xs ps) (reset-vars) locals) ,max-stack)
+	    ,(length xs) (,(append (map cons xs ps) locals) ,max-stack)
 	    ,@new-ss)]
         [`(assign ,lhs (has-type (function-ref ,f) ,t))
          (define new-lhs ((select-instructions) lhs))
@@ -305,7 +252,7 @@
          (set! max-stack 0)
          (define new-ss (append* (map (select-instructions) ss)))
          `(program
-           (,(append (reset-vars) locals) ,max-stack)
+           (,locals ,max-stack)
            (type ,ty)
            (defines ,@new-ds)
            ,@new-ss)]
@@ -422,12 +369,14 @@
     (define/override (allocate-registers)
       (lambda (ast)
 	(match ast
-	   [`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
+	   ;; FIX ME -Jeremy
+	   #;[`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
 	    (define-values (homes stk-size)
 	      (allocate-homes IG MG (map car xs) ss))
 	    (define new-ss (map (assign-homes homes) ss))
 	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-           [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
+	   ;; FIX ME -Jeremy
+           #;[`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
 		      ,ss ...)
 	    (define new-ds (map (allocate-registers) ds)) 
 	    (define-values (homes stk-size) 
@@ -567,9 +516,6 @@
        ,(send compiler expose-allocation)
        ,(send interp interp-F '()))
       ("flatten" ,(send compiler flatten #f)
-       ,(send interp interp-C '()))
-      ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))

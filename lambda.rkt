@@ -197,9 +197,6 @@
        ,(send interp interp-F '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
-      ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots)
-       ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
       ("liveness analysis" ,(send compiler uncover-live (void))

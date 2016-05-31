@@ -406,9 +406,6 @@
 	       tys (range (length tys))))]
         [else (super display-by-type ty val)]))
 
-    ;; Andre, please write a paragraph or so explaining this
-    ;; design for representing the heap. -Jeremy
-
     ;; The simulated global state of the program 
     ;; define produces private fields
     (define memory (box '()))
@@ -561,10 +558,12 @@
              (error 'interp-C "invalid argument to collect in ~a" ast)) 
            (void)]
           [`(program (type ,ty) ,e) 
+	   ((initialize!) runtime-config:rootstack-size 
+	    runtime-config:heap-size)
 	   ((interp-scheme '()) e)]
-	  [`(initialize ,stack-size ,heap-size)
-	   ((initialize!) stack-size heap-size)
-	   (void)]
+	  ;; [`(initialize ,stack-size ,heap-size)
+	  ;;  ((initialize!) stack-size heap-size)
+	  ;;  (void)]
           [else ((super interp-scheme env) ast)]
           )))
 
@@ -600,12 +599,12 @@
 	  [`(global-value fromspace_end)
 	   (unbox fromspace_end)]
           ;; I should do better than make these noops - andre
-          [`(initialize ,s ,h)
-           (unless (and (exact-nonnegative-integer? s)
-                        (exact-nonnegative-integer? h))
-             (error "intialize must be called with literals"))
-           ((initialize!) s h)
-           env]
+          ;; [`(initialize ,s ,h)
+          ;;  (unless (and (exact-nonnegative-integer? s)
+          ;;               (exact-nonnegative-integer? h))
+          ;;    (error "intialize must be called with literals"))
+          ;;  ((initialize!) s h)
+          ;;  env]
           ;; Determine if a collection is needed.
           ;; Which it isn't because vectors stored in the environment
           ;; is the representation of the heap in the C language,
@@ -680,28 +679,6 @@
         (when (pair? ast)
           (vomit "R2/interp-x86" (car ast)))
 	(match ast
-          ;; cmpq performs a subq operation and examimines the state
-          ;; of the result, this is done without overwriting the second
-          ;; register. -andre
-          ;; Notice that the syntax is very confusing
-          ;; (cmpq ,s2 ,s1) (jl then) (jmp else) ...
-          ;; (if (< s1 s2) then else)
-          #;[`((cmpq ,s2 ,s1) . ,ss)
-           (let* ([v1 ((interp-x86-exp env) s1)] 
-                  [v2 ((interp-x86-exp env) s2)] 
-                  [v3 (- v2 v1)]
-                  [zero     (arithmetic-shift (b2i (eq? v3 0)) 6)]
-                  [sign     (arithmetic-shift (b2i (< v3 0)) 7)] 
-                  ;; Our numbers do not overflow so this bit is always 0
-                  [overflow (arithmetic-shift 0 11)]
-                  [eflags (bitwise-ior overflow sign zero)])
-             ((interp-x86 (cons (cons '__flag eflags) env)) ss))]
-          ;; Initialize the state of the "runtime"
-          [`((callq initialize) . ,ss)
-           (define stack-size ((interp-x86-exp env) '(reg rdi)))
-           (define heap-size ((interp-x86-exp env) '(reg rsi))) 
-           ((initialize!) stack-size heap-size)
-           ((interp-x86 env) ss)]
           [`((callq malloc) . ,ss)
            (define num-bytes ((interp-x86-exp env) '(reg rdi)))
            ((interp-x86 `((rax . ,(allocate-page! 'malloc num-bytes)) . ,env)) 
@@ -730,6 +707,18 @@
            (define op  (interp-x86-op unary-op))
            (define new-env ((interp-x86-store env) d (op dst)))
            ((interp-x86 new-env) ss)]
+	  [`(program (,stack-space ,root-space) (type ,ty) ,ss ...)
+	   #:when (and (integer? stack-space) (integer? root-space))
+	   (define env (cons (cons 'r15 (+ root-space (unbox rootstack_begin)))
+			     '()))
+	   (parameterize ([program ss])
+	      (let ([env^ ((interp-x86 env) ss)])
+		(display-by-type ty (lookup 'rax env^))))]
+	  [`(program ,xs (type ,ty) ,ss ...)
+	   (define env (cons (cons 'r15 (unbox rootstack_begin)) '()))
+	   (parameterize ([program ss])
+	      (let ([env^ ((interp-x86 env) ss)])
+		(display-by-type ty (lookup 'rax env^))))]
           [else ((super interp-x86 env) ast)])))
 
     ));; interp-R2
@@ -741,7 +730,7 @@
 (define interp-R3
   (class interp-R2
     (super-new)
-    (inherit primitives seq-C display-by-type interp-op)
+    (inherit primitives seq-C display-by-type interp-op initialize!)
     (inherit-field result)
 
     (define/public (non-apply-ast)
@@ -755,10 +744,9 @@
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
            (cons f `(lambda ,xs ,body))]
           [`(program (type ,ty) ,ds ... ,body)
+	   ((initialize!) runtime-config:rootstack-size 
+	    runtime-config:heap-size)
 	    ((interp-scheme env) `(program ,@ds ,body))]
-          [`(program ,ds ... ,body)
-           (let ([top-level (map  (interp-scheme '()) ds)])
-	      ((interp-scheme top-level) body))]
           [`(,fun ,args ...) #:when (not (set-member? (non-apply-ast) fun))
 	   (define new-args (map (interp-scheme env) args))
            (define fun-val ((interp-scheme env) fun))
@@ -841,11 +829,9 @@
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
            [`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
+	   ((initialize!) runtime-config:rootstack-size 
+	    runtime-config:heap-size)
             ((interp-C env) `(program ,locals (defines ,@ds) ,@ss))]
-	   [`(program ,locals (defines ,ds ...) ,ss ...)
-	    (define new-env (map (interp-C '()) ds))
-	    (define result-env ((seq-C new-env) ss))
-	    (lookup result result-env)]
 	   [else ((super interp-C env) ast)])))
 
     (define (stack-arg-name n)
@@ -911,13 +897,10 @@
 	   [`((callq ,f) . ,ss) #:when (not (set-member? (builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
            [`(program ,extra (type ,ty) (defines ,ds ...) ,ss ...)
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
             (display-by-type ty ((interp-x86 env)
 				 `(program ,extra (defines ,@ds) ,@ss)))]
-	   [`(program ,extra (defines ,ds ...) ,ss ...)
-            (parameterize ([program ss])
-	       (define env (map (interp-x86 '()) ds))
-	       (define result-env ((interp-x86 env) ss))
-	       (lookup 'rax result-env))]
 	   [else ((super interp-x86 env) ast)])))
 
     )) ;; end  interp-R3
@@ -928,7 +911,7 @@
 (define interp-R4
   (class interp-R3
     (super-new)
-    (inherit non-apply-ast)
+    (inherit non-apply-ast initialize!)
     (inherit-field result)
     
     (define/override (interp-scheme env)
@@ -940,8 +923,12 @@
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
            (mcons f `(lambda ,xs ,body))]
           [`(program (type ,ty) ,ds ... ,body)
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
            ((interp-scheme env) `(program ,@ds ,body))]
           [`(program ,ds ... ,body)
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
            (let ([top-level (map (interp-scheme '()) ds)])
              ;; Use set-cdr! on define lambda's for mutual recursion
              (for/list ([b top-level])

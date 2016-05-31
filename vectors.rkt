@@ -11,8 +11,8 @@
   (class compile-R1
     (super-new)
     
-    (inherit-field use-move-biasing optimize-if)
-    (inherit allocate-homes comparison-ops)
+    (inherit-field use-move-biasing optimize-if largest-color)
+    (inherit color-graph comparison-ops variable-size first-offset)
     
     (define/override (primitives)
       (set-union (super primitives) 
@@ -135,12 +135,7 @@
 	       ,(app (expose-allocation) body))
 	    `(let ([,x ,rhs]) ,body)]
           [`(program (type ,ty) ,(app (expose-allocation) body))
-	   (define voidy (gensym 'initret))
-	   `(program (type ,ty) 
-		     (let ([,voidy (has-type (initialize ,(rootstack-size)
-							 ,(heap-size))
-					     Void)])
-		       ,body))]
+	   `(program (type ,ty) ,body)]
           [else
 	   (error "in expose-allocation, unmatched" e)])))
 
@@ -204,13 +199,14 @@
 	  [`(void) (values '(void) '() '())]
 	  [`(collect ,size)
 	   (values '(void) `((collect ,size)) '())]
-	  [`(initialize ,stack-len ,heap-len)
-	   (values '(void) `((initialize ,stack-len ,heap-len)) '())]
 	  [`(allocate ,len ,type)
-	   (define tmp (gensym 'alloc))
-	   (values tmp
-		   `((assign ,tmp (allocate ,len ,type))) 
-		   (list (cons tmp type)))]
+	   (cond [need-atomic
+		  (define tmp (gensym 'alloc))
+		  (values tmp
+			  `((assign ,tmp (allocate ,len ,type))) 
+			  (list (cons tmp type)))]
+		 [else
+		  (values `(allocate ,len ,type) '() '())])]
 	  [`(global-value ,name)
 	   (define tmp (gensym 'global))
 	   (values tmp
@@ -261,143 +257,15 @@
           [else
 	   ((super flatten need-atomic) e)])))
 
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; uncover-call-live-roots : C1-Expr  -> C1-Expr x (set id)
-
-    (define/public (uncover-call-live-roots)
-      (lambda (x)
-        (vomit "uncover call live roots" x)
-        (match x
-          [`(program ,xs ,ty ,ss ...)
-	   (define-values (new-ss clr*)
-	     ((uncover-call-live-roots-seq (set) xs) ss))
-
-           (unless (set-empty? clr*)
-             (error 'uncover-call-live-roots 
-                    "empty program call live roots invariant ~a" clr*))
-           `(program ,(append xs (reset-vars)) ,ty ,@new-ss)]
-          [else (error 'vectors/uncover-call-live-roots "unmatched ~a" x)])))
-    
-    ;; This is a foldr with two accumulator values, curried for ease
-    ;; of use with pattern matching
-    ;; uclr-seq : (set id) -> (listof stmt) -> (values (listof stmt) (set id))
-    (define/public (uncover-call-live-roots-seq clr* xs)
-      (lambda (x)
-        (vomit "uncover call live sequence" x clr*)
-        (cond
-          [(null? x) (values '() clr*)]
-          [(pair? x)           
-           (define-values (ss clr1*)
-	     ((uncover-call-live-roots-seq clr* xs) (cdr x)))
-	   (define-values (s  clr2*) 
-	     (uncover-call-live-roots-stmt (car x) clr1* xs))
-	   (values (cons s ss) clr2*)]
-          [else (error 'vectors/uncover-call-live-root-seq "unmatched ~a" x)]
-	  )))
-  
-    ;; uclr-stmt : stmt (set id) -> (values stmt (set id))
-    (define/public (uncover-call-live-roots-stmt stmt clr* xs)
-      (vomit "uncover-call-live-roots-stmt" stmt clr*)
-      (match stmt
-        [(and x `(collect ,size))
-         (values `(call-live-roots ,(set->list clr*) (collect ,size)) clr*)]
-        [`(assign ,v ,(app (uncover-call-live-roots-exp xs) e-clr*))
-         (values stmt (set-union (set-remove clr* v) e-clr*))]
-        [`(if ,(and t (app (uncover-call-live-roots-exp xs) t-clr*))
-              ,(app (uncover-call-live-roots-seq clr* xs) c* c-clr*)
-              ,(app (uncover-call-live-roots-seq clr* xs) a* a-clr*))
-         ;; I am not sure what the grammar says ,t should be. -Andre
-         (values `(if ,t ,c* ,a*) (set-union c-clr* a-clr* t-clr*))]
-        [`(return ,(app (uncover-call-live-roots-exp xs) e-clr*))
-         ;; Applying some meta reasoning here there shouldn't be any
-         ;; call-live roots after a return therefore just e-clr* and
-         ;; not (set-union clr* e-clr*)
-         (values stmt e-clr*)]
-        [`(initialize ,stack ,heap)
-         (unless (set-empty? clr*)
-           (error 'uncover-call-live-roots
-                  "call live roots exist during initialization of rootstack"))
-         (values `(initialize ,stack ,heap) clr*)]
-        [else (error 'uncover-call-live-roots-stmt "unmatched ~a" stmt)]))
-
-    ;; uclr-exp : expr -> (set id)
-    (define/public ((uncover-call-live-roots-exp xs) e)
-      (vomit "uncover-call-live-roots-exp" e)
-      (match e
-        [`(void) (set)]
-        [(? symbol? x)
-         (if (root-type? (lookup x xs))
-             (set x)
-             (set))]
-        [(or (? integer?) (? boolean?)
-             `(allocate ,_ ,_)
-             `(collection-needed? ,_))
-         (set)]
-	[`(global-value ,name)
-	 (set)]
-        [`(,(? primitive? op) ,(app (uncover-call-live-roots-exp xs) clr**) ...)
-         (set-union* clr**)]
-        [else (error 'vectors/uncover-call-live-roots-exp "unmatched ~a" e)]))
-
-    (define/public (root-type? t)
-      (match t
-        [`(Vector ,T ...)
-	 #t]
-	[else #f]))
-    
-    ;; Merge two hash tables that do not have contradictory key/value pairs
-    (define/public (env-merge e1 e2)
-      ;; add each of the keys in e2 to e1
-    (for/fold ([e1 e1]) ([(k v) (in-hash e2)])
-      ;; but first check to see if the key already exists in e1
-      (let ([v? (hash-ref e1 k #f)])
-        (cond
-          ;; If it doesn't exist just add the key value pair
-          [(not v?) (hash-set e1 k v)]
-          ;; if it does exits make sure the values are equal?
-          [(equal? v? v) e1]
-          [else
-           (error 'env-merge "inconsistent environments ~a ~a" e1 e2)]))))
-  
-  (define/public (env-ref env x)
-    (hash-ref env x (lambda () (error 'env-ref "unmatched ~a" x))))
-  
-  (define/public (env-set env k v)
-    (let ([v? (hash-ref env k #f)])
-      (if (and v? (not (equal? v v?)))
-          (error 'env-set "~a : ~a is inconsistent with ~a" k v env)
-          (hash-set env k v))))
-
-
-  ;; vars is a private field holding freshly allocated variables that
-  ;; can be accessed throught the reset-vars, reset-vars, and unique-var
-  ;; methods.
-  (define vars (box '()))
-
-  ;; create and remember a new unique variable
-  (define/public (unique-var [x 'u] [t? #f])
-    (let ((x (gensym x))
-          (old-vars (unbox vars)))
-      (if t?
-          (set-box! vars `((,x . ,t?) . ,old-vars))
-          (set-box! vars `(,x . ,old-vars)))
-      x))
-
-  ;; look at the current state of vars
-  (define/public (get-new-vars) (unbox vars))
-
-  ;; reset and retrieve the current state of vars
-  (define/public (reset-vars)
-    (let ((tmp (unbox vars)))
-      (set-box! vars '())
-      tmp))
-  
-  (define (primitive? x)
-    (set-member? (primitives) x))
-  
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; select-instructions : C2 -> psuedo-x86
 
+  (define/public (root-type? t)
+    (match t
+       [`(Vector ,T ...)
+	#t]
+       [else #f]))
+  
   (define/override (select-instructions)
     (lambda (x)
       (vomit "select instructions" x)
@@ -426,28 +294,6 @@
            (addq (int ,size) (global-value free_ptr))
 	   (movq ,lhs^ (reg r11))
            (movq (int ,tag) (deref r11 0)))]        
-        [`(call-live-roots (,clr* ...) . ,ss)
-         (if (null? clr*)
-             (append* (map (select-instructions) ss))
-             (let ([frame-size  (* (length clr*) 8)]
-                   [pushes
-                    (for/list ([root (in-list clr*)] [i (in-naturals)])
-                      `(movq (var ,root)
-			     (deref ,rootstack-reg ,(* i 8))))]
-                   [pops
-                    (for/list ([root (in-list clr*)] [i (in-naturals)])
-                      `(movq (deref ,rootstack-reg ,(* i 8))
-			     (var ,root)))])
-               `(,@pushes
-                 (addq (int ,frame-size) (reg ,rootstack-reg))
-                 ,@(append* (map (select-instructions) ss))
-                 (subq (int ,frame-size) (reg ,rootstack-reg))		 
-                 ,@pops)))]
-        [`(initialize ,s ,h)
-         `((movq (int ,s) (reg rdi))
-           (movq (int ,h) (reg rsi))
-           (callq initialize)
-           (movq (global-value rootstack_begin) (reg ,rootstack-reg)))]
         [`(collect ,size)
          `((movq (reg ,rootstack-reg) (reg rdi))
            (movq ,((select-instructions) size) (reg rsi))
@@ -496,23 +342,40 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    (define/override (build-interference live-after G)
+    (define/override (build-interference live-after G xs)
       (lambda (ast)
 	(match ast
+	   [`(callq ,f)
+	    (for ([v live-after])
+		 (for ([u caller-save]
+		       #:when (not (equal? v u)))
+		      (add-edge G u v)))
+	    (for ([v live-after])
+		 (cond [(and (not (set-member? registers v))
+			     (root-type? (lookup v xs)))
+			(for ([u callee-save])
+			      (add-edge G u v))]))
+	    ast]
            [`(program (,xs ,lives) (type ,ty) ,ss ...)
 	    (define G (make-graph (map car xs)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-	         ((build-interference live-after G) inst)))
+	         ((build-interference live-after G xs) inst)))
 	    (print-dot G "./interfere.dot")
 	    `(program (,xs ,G) (type ,ty) ,@new-ss)]
            [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph (map car xs)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-	         ((build-interference live-after G) inst)))
+	         ((build-interference live-after G xs) inst)))
 	    (print-dot G "./interfere.dot")
 	    `(program (,xs ,G) ,@new-ss)]
+	   [`(if ,cnd ,thn-ss ,thn-lives ,els-ss ,els-lives)
+	    (define (build-inter inst live-after)
+	      ((build-interference live-after G xs) inst))
+	    (define new-thn (map build-inter thn-ss thn-lives))
+	    (define new-els (map build-inter els-ss els-lives))
+	    `(if ,cnd ,new-thn ,new-els)]
 	   [else
 	    ((super build-interference live-after G) ast)]
 	   )))
@@ -553,14 +416,36 @@
       (lambda (ast)
 	(match ast
            [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
-	    (define-values (homes stk-size) 
-	      (allocate-homes IG MG (map car locals) ss))
-	    `(program ,stk-size (type ,ty)
-		      ,@(map (assign-homes homes) ss))]
-           [`(program (,locals ,IG ,MG) ,ss ...)
-	    (define-values (homes stk-size) 
-	      (allocate-homes IG MG (map car locals) ss))
-	    `(program ,stk-size 
+	    (define color (color-graph IG MG (map car locals)))
+	    (define num-stack-spills 0)
+	    (define num-root-spills 0)
+	    (define num-regs (vector-length registers-for-alloc))	    
+	    (debug "making home assignment")
+	    (define homes
+	      (make-hash
+	       (for/list ([xt locals])
+			 (define x (car xt))
+			 (define c (hash-ref color x))
+			 (cond [(< c num-regs)
+				`(,x . (reg ,(vector-ref 
+					      registers-for-alloc c)))]
+			       [(root-type? (cdr xt))
+				(define i num-root-spills)
+				(set! num-root-spills (add1 i))
+				`(,x . (deref ,rootstack-reg
+					      ,(- (* (add1 i)
+						     (variable-size)))))]
+			       [else
+				(define i num-stack-spills)
+				(set! num-stack-spills (add1 i))
+				`(,x . (deref rbp
+					      ,(- (+ (first-offset)
+						     (* i (variable-size))))))])
+			 )))
+	    (debug "assigning homes")
+	    `(program (,(* num-stack-spills (variable-size))
+		       ,(* num-root-spills (variable-size)))
+		      (type ,ty)
 		      ,@(map (assign-homes homes) ss))]
 	   )))
 
@@ -576,23 +461,37 @@
 	   [`(program ,xs (type ,ty) ,ss ...)
 	    ((super assign-homes homes)
 	     `(program ,(map car xs) (type ,ty) ,@ss))]
-	   [`(program ,xs ,ss ...)
-	    ((super assign-homes homes)
-	     `(program ,(map car xs) ,@ss))]
           [else
 	   ((super assign-homes homes) e)])))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; lower-conditionals : psuedo-x86 -> x86
+    (define/override (lower-conditionals)
+      (lambda (e)
+	(match e
+	   [`(program ,space (type ,ty) ,ss ...)
+	    (let ([new-ss (append* (map (lower-conditionals) ss))])
+	      `(program ,space (type ,ty) ,@new-ss))]
+	   [else
+	    ((super lower-conditionals) e)]
+	   )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; patch-instructions : psuedo-x86 -> x86
 
-(define/override (in-memory? a)
-  (match a
-	 ;[`(offset ,e ,i) #t]
-    [`(global-value ,l) #t]
-    [else (super in-memory? a)]))
-
-#;(define/override (instructions)
-  (set-add (super instructions) 'setl))
+    (define/override (in-memory? a)
+      (match a
+	     [`(global-value ,l) #t]
+	     [else (super in-memory? a)]))
+    
+    (define/override (patch-instructions)
+      (lambda (e)
+	(match e
+	   [`(program ,space (type ,ty) ,ss ...)
+	    `(program ,space (type ,ty)
+		      ,@(append* (map (patch-instructions) ss)))]
+	   [else ((super patch-instructions) e)]
+	   )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; print-x86 : x86 -> string
@@ -602,6 +501,51 @@
     (match e
       [`(global-value ,label)
        (format "~a(%rip)" (label-name (symbol->string label)))]
+      [`(program (,stack-space ,root-space) (type ,ty) ,ss ...)
+       (define callee-reg (set->list callee-save))
+       (define save-callee-reg
+	 (for/list ([r callee-reg])
+		   (format "\tpushq\t%~a\n" r)))
+       (define restore-callee-reg
+	 (for/list ([r (reverse callee-reg)])
+		   (format "\tpopq\t%~a\n" r)))
+       (define callee-space (* (length (set->list callee-save))
+			       (variable-size)))
+       (define stack-adj (- (align (+ callee-space stack-space) 16)
+			    callee-space))
+       (define initialize-heaps
+	 (string-append
+	  (format "\tmovq $~a, %rdi\n" (rootstack-size))
+	  (format "\tmovq $~a, %rsi\n" (heap-size))
+	  (format "\tcallq ~a\n" (label-name "initialize"))
+	  (format "\tmovq ~a, %~a\n" 
+		  ((print-x86) '(global-value rootstack_begin))
+		  rootstack-reg)))
+       (define initialize-roots
+	 (for/list ([i (range (/ root-space (variable-size)))])
+		   (string-append 
+		    (format "\tmovq $0, (%~a)\n" rootstack-reg)
+		    (format "\taddq $~a, %~a\n" 
+			    (variable-size) rootstack-reg))))
+       (string-append
+	(format "\t.globl ~a\n" (label-name "main"))
+	(format "~a:\n" (label-name "main"))
+	(format "\tpushq\t%rbp\n")
+	(format "\tmovq\t%rsp, %rbp\n")
+	(string-append* save-callee-reg)
+	(format "\tsubq\t$~a, %rsp\n" stack-adj)
+	initialize-heaps
+	(string-append* initialize-roots)
+	"\n"
+	(string-append* (map (print-x86) ss))
+	"\n"
+	(print-by-type ty)
+	(format "\tmovq\t$0, %rax\n")
+	(format "\tsubq $~a, %~a\n" root-space rootstack-reg)
+	(format "\taddq\t$~a, %rsp\n" stack-adj)
+	(string-append* restore-callee-reg)
+	(format "\tpopq\t%rbp\n")
+	(format "\tretq\n"))]
       [else ((super print-x86) e)]
       )))));; compile-R2
 
@@ -623,16 +567,16 @@
        ,(send interp interp-scheme '()))
       ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
-      ("uncover call live roots"
-       ,(send compiler uncover-call-live-roots)
-       ,(send interp interp-C '()))
+      ;; ("uncover call live roots"
+      ;;  ,(send compiler uncover-call-live-roots)
+      ;;  ,(send interp interp-C '()))
       ("instruction selection"
        ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
       ("liveness analysis" ,(send compiler uncover-live (void))
        ,(send interp interp-x86 '()))
       ("build interference" ,(send compiler build-interference
-                                   (void) (void))
+                                   (void) (void) (void))
        ,(send interp interp-x86 '()))
       ("build move graph" ,(send compiler
                                  build-move-graph (void))

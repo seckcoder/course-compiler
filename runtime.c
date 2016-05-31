@@ -70,8 +70,12 @@ int any_tag(int64_t any) {
 
 int is_ptr(int64_t* p) {
   int64_t q = (int64_t)p;
-  int t = any_tag(q);
-  return t == ANY_TAG_PTR || t == ANY_TAG_VEC;
+  if (q == 0) {
+    return 0;
+  } else {
+    int t = any_tag(q);
+    return t == ANY_TAG_PTR || t == ANY_TAG_VEC;
+  }
 }
 
 int64_t* to_ptr(int64_t* p) {

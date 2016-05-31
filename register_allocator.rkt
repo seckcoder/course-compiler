@@ -11,7 +11,8 @@
   (class compile-R0
     (super-new)
 
-    (field [use-move-biasing #f])
+    (field [use-move-biasing #f]
+	   [largest-color 0])
 
     (inherit assign-homes)
 
@@ -158,8 +159,6 @@
     ;; using graph coloring based on Suduko heuristics.
     ;; This pass encompasses assign-homes.
 
-    (define largest-color 0)
-
     ;; Choose the first available color
     (define (choose-color v unavail-colors move-related)
       (define n (vector-length registers-for-alloc))
@@ -173,21 +172,14 @@
                    (cond [(set-member? unavail-colors c) 
                           (loop (add1 c))]
                          [else c]))])
-            (if (or (eq? biased-selection #f) (< unbiased-selection n)) unbiased-selection
+            (if (or (eq? biased-selection #f) (< unbiased-selection n))
+		unbiased-selection
                 biased-selection))
           biased-selection))
 
     (inherit variable-size first-offset)
 
-    (define (identify-home c)
-      (define n (vector-length registers-for-alloc))
-      (cond
-        [(< c n)
-         `(reg ,(vector-ref registers-for-alloc c))]
-        [else 
-         `(deref rbp ,(- (+ (first-offset) (* (- c n) (variable-size)))))]))
-
-    (define/public (allocate-homes IG MG xs ss)
+    (define/public (color-graph IG MG xs)
       (set! largest-color 0)
       (define unavail-colors (make-hash)) ;; pencil marks
       (define (compare u v) 
@@ -224,27 +216,31 @@
 			(hash-set! unavail-colors u
 				   (set-add (hash-ref unavail-colors u) c))
 			(pqueue-decrease-key! Q (hash-ref pq-node u)))))
-      ;; Create mapping from variables to their homes
-      (define homes
-	(make-hash (for/list ([x xs])
-			     (cons x (identify-home (hash-ref color x))))))
-      (define num-spills 
-	(max 0 (- (add1 largest-color) (vector-length registers-for-alloc))))
-      (define spill-space (* num-spills (variable-size)))
-      (values homes spill-space)
-      )
+      (debug "finished graph coloring")
+      color)
+
+    (define/public (identify-home c)
+      (define n (vector-length registers-for-alloc))
+      (cond
+        [(< c n)
+         `(reg ,(vector-ref registers-for-alloc c))]
+        [else 
+         `(deref rbp ,(- (+ (first-offset) (* (- c n) (variable-size)))))]))
+
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
            [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
-	    (define-values (homes stk-size) 
-	      (allocate-homes IG MG locals ss))
+	    (define color (color-graph IG MG locals))
+	    (define homes
+	      (make-hash
+	       (for/list ([x locals])
+			 (cons x (identify-home (hash-ref color x))))))
+	    (define num-spills 
+	      (max 0 (- (add1 largest-color)
+			(vector-length registers-for-alloc))))
+	    (define stk-size (* num-spills (variable-size)))
 	    `(program ,stk-size (type ,ty)
-		      ,@(map (assign-homes homes) ss))]
-           [`(program (,locals ,IG ,MG) ,ss ...)
-	    (define-values (homes stk-size) 
-	      (allocate-homes IG MG locals ss))
-	    `(program ,stk-size 
 		      ,@(map (assign-homes homes) ss))]
 	   )))
 
