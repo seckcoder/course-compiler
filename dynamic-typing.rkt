@@ -117,6 +117,21 @@
 	))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; expose-allocation
+
+    (define/override (expose-allocation)
+      (lambda (e)
+        (verbose "expose-allocation" e)
+	(match e
+           [`(inject ,(app (expose-allocation) e) ,ty)
+	    `(inject ,e ,ty)]
+           [`(project ,(app (expose-allocation) e) ,ty)
+	    `(project ,e ,ty)]
+	   [else
+	    ((super expose-allocation) e)]
+	   )))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten
 
     (define/override (flatten need-atomic)
@@ -127,25 +142,21 @@
 	   (define-values (new-e e-ss xs) ((send this flatten #t) e))
 	   (cond [need-atomic
 		  (define tmp (gensym 'tmp))
-		  (values `(has-type ,tmp ,ty2)
-			  (append e-ss `((assign ,tmp 
-						 (has-type (inject ,new-e ,ty)
-							   ,ty2))))
+		  (values tmp
+			  (append e-ss `((assign ,tmp (inject ,new-e ,ty))))
 			  (cons (cons tmp ty2) xs)
 			  )]
 		 [else
-		  (values `(has-type (inject ,new-e ,ty) ,ty2) e-ss xs)])]
+		  (values `(inject ,new-e ,ty) e-ss xs)])]
 	  [`(has-type (project ,e ,ty) ,ty2)
 	   (define-values (new-e e-ss xs) ((send this flatten #t) e))
 	   (cond [need-atomic
 		  (define tmp (gensym 'tmp))
-		  (values `(has-type ,tmp ,ty2)
-			  (append e-ss `((assign ,tmp
-						 (has-type (project ,new-e ,ty)
-							   ,ty2))))
+		  (values tmp
+			  (append e-ss `((assign ,tmp (project ,new-e ,ty))))
 			  (cons (cons tmp ty2) xs))]
 		 [else
-		  (values `(has-type (project ,new-e ,ty) ,ty2) e-ss xs)])]
+		  (values `(project ,new-e ,ty) e-ss xs)])]
 	  [else
 	   ((super flatten need-atomic) e)]
 	  )))
@@ -205,26 +216,6 @@
 		 [else
 		  `((movq ,new-e ,new-lhs)
 		    (orq (int ,(any-tag ty)) ,new-lhs))])]
-	  ;; Old inefficient version of project. -Jeremy
-          ;; [`(assign ,lhs (project ,e ,ty))
-          ;;  (define new-lhs (recur lhs))
-	  ;;  (define new-e (recur e))
-	  ;;  `((movq ,new-e ,new-lhs)
-	  ;;    (andq (int ,any-mask) ,new-lhs)
-	  ;;    (if (eq? ,new-lhs (int ,(any-tag ty)))
-	  ;; 	 ((andq (int ,pointer-mask) ,new-lhs)
-	  ;; 	  (if (eq? ,new-lhs (int ,pointer-mask))
-	  ;; 	      ;; vectors and procedures.
-	  ;; 	      ;; To do: check length of vector, arity of procedure. -Jeremy
-	  ;; 	      ((movq (int ,any-mask) ,new-lhs)
-	  ;; 	       (notq ,new-lhs)
-	  ;; 	       (andq  ,new-e ,new-lhs))
-	  ;; 	      ;; booleans and integers
-	  ;; 	      ((movq ,new-e ,new-lhs)
-	  ;; 	       (sarq (int ,tag-len) ,new-lhs))
-	  ;; 	      ))
-	  ;; 	 ;; shouldn't we push the status code? -Jeremy
-	  ;; 	 ((callq ,(string->symbol (label-name 'exit))))))]
           [`(assign ,lhs (project ,e ,ty))
            (define new-lhs (recur lhs))
 	   (define new-e (recur e))
@@ -500,10 +491,10 @@
        ,(send interp interp-F '()))
       ("convert-to-closures" ,(send compiler convert-to-closures)
        ,(send interp interp-F '()))
-      ("flatten" ,(send compiler flatten #f)
-       ,(send interp interp-C '()))
       ("expose allocation"
        ,(send compiler expose-allocation)
+       ,(send interp interp-F '()))
+      ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
@@ -538,10 +529,10 @@
        ,(send interp interp-F '()))
       ("convert-to-closures" ,(send compiler convert-to-closures)
        ,(send interp interp-F '()))
-      ("flatten" ,(send compiler flatten #f)
-       ,(send interp interp-C '()))
       ("expose allocation"
        ,(send compiler expose-allocation)
+       ,(send interp interp-F '()))
+      ("flatten" ,(send compiler flatten #f)
        ,(send interp interp-C '()))
       ("instruction selection" ,(send compiler select-instructions)
        ,(send interp interp-x86 '()))
