@@ -62,6 +62,8 @@
 
     ;; The introduction of has-type should have been done in vectors.rkt
     ;; and not here because it's not needed yet. -Jeremy
+    ;; But note that we still need the (type T) form in
+    ;; 'program' because its used for printing. -Jeremy
     (define/public (type-check env)
       (lambda (e)
         (vomit "conditionals/type-check" e env)
