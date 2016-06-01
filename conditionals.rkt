@@ -33,10 +33,7 @@
 
     (define/public (binary-op-types)
       '((+ . ((Integer Integer) . Integer))
-	(- . ((Integer Integer) . Integer))
-	(* . ((Integer Integer) . Integer))
 	(and . ((Boolean Boolean) . Boolean))
-	(or . ((Boolean Boolean) . Boolean))
 	(< . ((Integer Integer) . Boolean))
 	(<= . ((Integer Integer) . Boolean))
 	(> . ((Integer Integer) . Boolean))
