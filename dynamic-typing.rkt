@@ -442,6 +442,10 @@
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; select-instructions : C -> psuedo-x86
 
+  (define/override (instructions)
+    (set-union (super instructions)
+	       (set 'imulq)))
+
   (define/override (select-instructions)
     (lambda (x)
       (vomit "select instructions" x)
@@ -469,6 +473,23 @@
 	   (movq ,e-arg^ (deref r11 0))
            (movq (int 0) ,lhs^))]
         [else ((super select-instructions) x)])))
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; patch-instructions
+
+  (define/override (patch-instructions)
+    (lambda (e)
+      (match e
+	 ;; for imulq, destination must be a register -Jeremy
+	 [`(imulq ,s (reg ,d))
+	  `((imulq ,s (reg ,d)))]
+	 [`(imulq ,s ,d)
+	  `((movq ,d (reg rax))
+	    (imulq ,s (reg rax))
+	    (movq (reg rax) ,d))]
+	 [else
+	  ((super patch-instructions) e)]
+	 )))
 
   ));; compile-R7
 

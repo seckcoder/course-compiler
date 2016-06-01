@@ -64,7 +64,14 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniqueify : S1 -> C1-expr x (C1-stmt list)
 
-    ;; nothing to do
+    (define/override (uniquify env)
+      (lambda (e)
+	(define recur (uniquify env))
+	(match e
+           ['(void) '(void)]
+	   [else
+	    ((super uniquify env) e)]
+	   )))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; expose-allocation

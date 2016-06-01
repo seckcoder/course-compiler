@@ -10,7 +10,7 @@
     (super-new)
 
     (define/public (primitives)
-      (set '+ '- '* 'read))
+      (set '+ '- 'read))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; uniquify : env -> S0 -> S0
@@ -18,7 +18,6 @@
       (lambda (e)
 	(define recur (uniquify env))
 	(match e
-          ['(void) '(void)]
           [(? symbol?) (cdr (assq e env))]
           [(? integer?) e]
           [`(let ([,x ,(app recur new-e)]) ,body)
@@ -68,7 +67,8 @@
 
     (define/public (binary-op->inst op)
       (match op
-         ['+ 'addq] ['- 'subq] ['* 'imulq]
+         ['+ 'addq]
+	 ['- 'subq]
 	 [else (error "in binary-op->inst unmatched" op)]
 	 ))
 
@@ -79,7 +79,7 @@
 
     (define/public (commutative? op)
       (match op
-         ['+ #t] ['* #t] 
+         ['+ #t]
          [else #f]))
 
     (define/public (select-instructions)
@@ -136,7 +136,7 @@
     (define/public (first-offset) 8)
 
     (define/public (instructions)
-      (set 'addq 'subq 'imulq 'negq 'movq))
+      (set 'addq 'subq 'negq 'movq))
 
     (define/public (assign-homes homes)
       (lambda (e)
@@ -195,13 +195,6 @@
 	   [`(program ,stack-space ,ss ...)
 	    `(program ,stack-space 
 		      ,@(append* (map (patch-instructions) ss)))]
-	   ;; for imulq, destination must be a register -Jeremy
-	   [`(imulq ,s (reg ,d))
-	    `((imulq ,s (reg ,d)))]
-	   [`(imulq ,s ,d)
-	    `((movq ,d (reg rax))
-	      (imulq ,s (reg rax))
-	      (movq (reg rax) ,d))]
 	   [`(,instr-name ,s ,d)
 	    #:when (set-member? (instructions) instr-name)
 	    (cond [(and (in-memory? s) (in-memory? d))	
