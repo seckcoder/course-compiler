@@ -446,7 +446,7 @@
     (lambda (x)
       (vomit "select instructions" x)
       (match x
-        [`(assign ,lhs (vector-ref ,e-vec (has-type ,i ,Integer))) 
+        [`(assign ,lhs (vector-ref ,e-vec ,i)) 
 	 #:when (not (number? i))
          (define lhs^ ((select-instructions) lhs))
          (define e-vec^ ((select-instructions) e-vec))
@@ -456,7 +456,7 @@
 	   (imulq (int 8) (reg r11))
 	   (addq ,e-vec^ (reg r11))
 	   (movq (deref r11 0) ,lhs^))]
-        [`(assign ,lhs (vector-set! ,e-vec (has-type ,i ,Integer) ,e-arg))
+        [`(assign ,lhs (vector-set! ,e-vec ,i ,e-arg))
 	 #:when (not (number? i))
          (define lhs^ ((select-instructions) lhs))
          (define e-vec^ ((select-instructions) e-vec))

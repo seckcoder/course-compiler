@@ -20,7 +20,7 @@
 (define program (make-parameter '()))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S0: integer arithmetic and 'let'
+;; Interpreters for R0: integer arithmetic and 'let'
 
 (define interp-R0
   (class object%
@@ -166,7 +166,7 @@
     )) ;; class interp-R0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S1: Booleans and conditionals
+;; Interpreters for R1: Booleans and conditionals
 
 (define interp-R1
   (class interp-R0
@@ -387,7 +387,7 @@
     ));; class interp-R1
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S2: Vectors
+;; Interpreters for R2: Vectors
 
 (define interp-R2
   (class interp-R1
@@ -730,7 +730,7 @@
     ));; interp-R2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S3: functions
+;; Interpreters for R3: functions
 
 
 (define interp-R3
@@ -789,6 +789,8 @@
           [`(program (type ,ty) ,ds ... ,body)
 	    ((interp-F env) `(program ,@ds ,body))]
           [`(program ,ds ... ,body)
+	   ((initialize!) runtime-config:rootstack-size 
+	    runtime-config:heap-size)
            (let ([top-level (map  (interp-F '()) ds)])
 	      ((interp-F top-level) body))]
 	  ;; For R3
@@ -954,7 +956,7 @@
     )) ;; end  interp-R3
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Interpreters for S4: lambda
+;; Interpreters for R4: lambda
 
 (define interp-R4
   (class interp-R3
@@ -1006,6 +1008,8 @@
           [`(program (type ,ty) ,ds ... ,body)
            ((interp-F env) `(program ,@ds ,body))]
           [`(program ,ds ... ,body)
+	   ((initialize!) runtime-config:rootstack-size 
+	    runtime-config:heap-size)
            (let ([top-level (map (interp-F '()) ds)])
              ;; Use set-cdr! on define lambda's for mutual recursion
              (for/list ([b top-level])

@@ -62,10 +62,6 @@
     (define/public (uncover-live live-after)
       (lambda (ast)
 	(match ast
-          [`(program ,xs (type ,ty) ,ss ...)
-	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
-	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
-	    `(program (,xs ,(cdr lives)) (type ,ty) ,@new-ss)]
           [`(program ,xs ,ss ...)
 	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
 	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
@@ -95,13 +91,6 @@
 		       #:when (not (equal? v u)))
 		      (add-edge G u v)))
 	    ast]
-           [`(program (,xs ,lives) (type ,ty) ,ss ...)
-	    (define G (make-graph xs))
-	    (define new-ss 
-	      (for/list ([inst ss] [live-after lives])
-	         ((build-interference live-after G) inst)))
-	    (print-dot G "./interfere.dot")
-	    `(program (,xs ,G) (type ,ty) ,@new-ss)]
            [`(program (,xs ,lives) ,ss ...)
 	    (define G (make-graph xs))
 	    (define new-ss 
@@ -127,19 +116,8 @@
                 (add-edge G s d)
                 '())
 	    ast]
-           [`(program (,xs ,IG) (type ,ty) ,ss ...)
-            (define MG (make-graph xs)) ;; JGS
-            (define new-ss
-              (if use-move-biasing
-                  (let ([nss 
-                         (for/list ([inst ss])
-                           ((build-move-graph MG) inst))])
-                    (print-dot MG "./move.dot")
-                    nss)
-                  ss))
-            `(program (,xs ,IG ,MG) (type ,ty) ,@new-ss)]
            [`(program (,xs ,IG) ,ss ...)
-            (define MG (make-graph xs)) ;; JGS
+            (define MG (make-graph xs))
             (define new-ss
               (if use-move-biasing
                   (let ([nss 
@@ -230,7 +208,7 @@
     (define/public (allocate-registers)
       (lambda (ast)
 	(match ast
-           [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
+           [`(program (,locals ,IG ,MG) ,ss ...)
 	    (define color (color-graph IG MG locals))
 	    (define homes
 	      (make-hash
@@ -240,7 +218,7 @@
 	      (max 0 (- (add1 largest-color)
 			(vector-length registers-for-alloc))))
 	    (define stk-size (* num-spills (variable-size)))
-	    `(program ,stk-size (type ,ty)
+	    `(program ,stk-size 
 		      ,@(map (assign-homes homes) ss))]
 	   )))
 

@@ -10,7 +10,9 @@
   (class compile-reg-R0
     (super-new)
 
-    (inherit liveness-ss first-offset variable-size in-memory?)
+    (inherit liveness-ss first-offset variable-size in-memory? 
+	     color-graph identify-home)
+    (inherit-field largest-color)
 
     (define/public (comparison-ops)
       (set 'eq? '< '<= '> '>=))
@@ -368,6 +370,10 @@
 			 ,new-els-ss ,(cdr els-lives))
 		    (set-union live-after-thn live-after-els
 			       (free-vars cnd)))]
+          [`(program ,xs (type ,ty) ,ss ...)
+	    (define-values (new-ss lives) ((liveness-ss (set)) ss))
+	    (assert "lives ss size" (= (length (cdr lives)) (length new-ss)))
+	    `(program (,xs ,(cdr lives)) (type ,ty) ,@new-ss)]
 	   [else ((super uncover-live live-after) ast)]
 	   )))
 
@@ -390,9 +396,37 @@
 	      (define new-thn (map build-inter thn-ss thn-lives))
 	      (define new-els (map build-inter els-ss els-lives))
 	      `(if ,cnd ,new-thn ,new-els)]
+	     [`(program (,xs ,lives) (type ,ty) ,ss ...)
+	      (define G (make-graph xs))
+	      (define new-ss 
+		(for/list ([inst ss] [live-after lives])
+			  ((build-interference live-after G) inst)))
+	      (print-dot G "./interfere.dot")
+	      `(program (,xs ,G) (type ,ty) ,@new-ss)]
 	     [else ((super build-interference live-after G) ast)]
 	     )))
       
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; allocate-registers
+
+    (define/override (allocate-registers)
+      (lambda (ast)
+	(match ast
+	   ;; just adding the hanlding of (type ,ty) -Jeremy
+           [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
+	    (define color (color-graph IG MG locals))
+	    (define homes
+	      (make-hash
+	       (for/list ([x locals])
+			 (cons x (identify-home (hash-ref color x))))))
+	    (define num-spills 
+	      (max 0 (- (add1 largest-color)
+			(vector-length registers-for-alloc))))
+	    (define stk-size (* num-spills (variable-size)))
+	    `(program ,stk-size (type ,ty)
+		      ,@(map (assign-homes homes) ss))]
+	   )))
+
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; assign-homes : homes -> pseudo-x86 -> pseudo-x86
     (define/override (assign-homes homes)
