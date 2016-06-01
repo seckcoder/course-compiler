@@ -68,7 +68,6 @@
     (define/public (binary-op->inst op)
       (match op
          ['+ 'addq]
-	 ['- 'subq]
 	 [else (error "in binary-op->inst unmatched" op)]
 	 ))
 

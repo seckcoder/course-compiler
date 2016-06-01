@@ -3,7 +3,7 @@
       (vector v)
       (let ([junk (vector (vector 1) (vector 2)(vector 1) (vector 2)
                           (vector 1))])
-        (o (- i 1) v))))
+        (o (+ i (- 1)) v))))
 
 (define (t [v : (Vector (Vector Integer))])
   : (Vector (Vector (Vector Integer)))
