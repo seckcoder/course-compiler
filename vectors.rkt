@@ -412,37 +412,41 @@
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+    (define/public (allocate-homes locals color)
+      (define num-stack-spills 0)
+      (define num-root-spills 0)
+      (define num-regs (vector-length registers-for-alloc))	    
+      (debug "making home assignment")
+      (define homes
+	(make-hash
+	 (for/list ([xt locals])
+		   (define x (car xt))
+		   (define c (hash-ref color x))
+		   (cond [(< c num-regs)
+			  `(,x . (reg ,(vector-ref 
+					registers-for-alloc c)))]
+			 [(root-type? (cdr xt))
+			  (define i num-root-spills)
+			  (set! num-root-spills (add1 i))
+			  `(,x . (deref ,rootstack-reg
+					,(- (* (add1 i)
+					       (variable-size)))))]
+			 [else
+			  (define i num-stack-spills)
+			  (set! num-stack-spills (add1 i))
+			  `(,x . (deref rbp
+					,(- (+ (first-offset)
+					       (* i (variable-size))))))])
+		   )))
+      (values homes num-stack-spills num-root-spills))
+
     (define/override (allocate-registers)
       (lambda (ast)
 	(match ast
            [`(program (,locals ,IG ,MG) (type ,ty) ,ss ...)
 	    (define color (color-graph IG MG (map car locals)))
-	    (define num-stack-spills 0)
-	    (define num-root-spills 0)
-	    (define num-regs (vector-length registers-for-alloc))	    
-	    (debug "making home assignment")
-	    (define homes
-	      (make-hash
-	       (for/list ([xt locals])
-			 (define x (car xt))
-			 (define c (hash-ref color x))
-			 (cond [(< c num-regs)
-				`(,x . (reg ,(vector-ref 
-					      registers-for-alloc c)))]
-			       [(root-type? (cdr xt))
-				(define i num-root-spills)
-				(set! num-root-spills (add1 i))
-				`(,x . (deref ,rootstack-reg
-					      ,(- (* (add1 i)
-						     (variable-size)))))]
-			       [else
-				(define i num-stack-spills)
-				(set! num-stack-spills (add1 i))
-				`(,x . (deref rbp
-					      ,(- (+ (first-offset)
-						     (* i (variable-size))))))])
-			 )))
-	    (debug "assigning homes")
+	    (define-values (homes num-stack-spills num-root-spills)
+	      (allocate-homes locals color))
 	    `(program (,(* num-stack-spills (variable-size))
 		       ,(* num-root-spills (variable-size)))
 		      (type ,ty)

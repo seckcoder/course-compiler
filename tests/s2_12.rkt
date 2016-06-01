@@ -1,5 +1,5 @@
 
-;; This test is supose to keep everything alive int the heap
+;; This test is supose to keep everything alive in the heap
 ;; causing allocation that has to check forwarding pointers.
 
 (let ([v0 (vector 42)])

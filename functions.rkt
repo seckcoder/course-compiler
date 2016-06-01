@@ -9,7 +9,7 @@
   (class compile-R2
     (super-new)
 
-    (inherit primitives liveness-ss)
+    (inherit primitives liveness-ss allocate-homes color-graph)
 
     (define/public (non-apply-ast)
       (set-union (primitives)
@@ -128,12 +128,38 @@
 	ret)))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; expose allocation : C1 -> ?
+    ;; This pass has to thread a new environment through that isn't extended
+    ;; This could be overcome with pointers or we could use 
+
+    (define/override (expose-allocation)
+      (lambda (e)
+	(verbose "expose-allocation" e)
+        (match e
+          [`(app ,(app (expose-allocation) es) ...)
+	   `(app ,@es)]
+	  [`(function-ref ,f)
+	   `(function-ref ,f)]
+          [`(program (type ,ty) ,ds ...
+                     ,(app (expose-allocation) new-e))
+	   `(program (type ,ty) ,@(map (lambda (d) (expose-allocation-def d))
+				       ds) ,new-e)]
+          [else
+	   ((super expose-allocation) e)])))
+
+    (define/public (expose-allocation-def def)
+      (match def
+        [`(define (,f ,p:t* ...) : ,t 
+            ,(app (expose-allocation) e))
+         `(define (,f ,@p:t*) : ,t ,e)]
+        [else (error 'expose-allocation-def "unmatched ~a" def)]))
+
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S3 -> C3-expr x (C3-stmt list)
 
     (define/public (flatten-body body)
       (define-values (new-body ss locals) ((flatten #t) body))
-      (values locals
-	      (append ss `((return ,new-body)))))
+      (values locals (append ss `((return ,new-body)))))
 
     (define/override (flatten need-atomic)
       (lambda (ast)
@@ -149,8 +175,8 @@
               ,@new-body)]
           [`(has-type (function-ref ,f) ,t)
            (define tmp (gensym 'tmp))
-           (values `(has-type ,tmp ,t)
-                   (list `(assign ,tmp (has-type (function-ref ,f) ,t)))
+           (values tmp
+                   (list `(assign ,tmp (function-ref ,f)))
 		   (list (cons tmp t)))]
           [`(has-type (app ,f ,es ...) ,t) 
            (define-values (new-f f-ss xs1) ((flatten #t) f))
@@ -161,41 +187,15 @@
            (cond
              [need-atomic
               (define tmp (gensym 'tmp))
-              (values `(has-type ,tmp ,t)
-                      (append ss `((assign ,tmp (has-type ,fun-apply ,t))))
+              (values tmp
+                      (append ss `((assign ,tmp ,fun-apply)))
 		      (cons (cons tmp t) (append xs1 xs2))
 		      )]
              [else
-              (values `(has-type ,fun-apply ,t) ss (append xs1 xs2))])]
+              (values fun-apply ss (append xs1 xs2))])]
           [else ((super flatten need-atomic) ast)])))
     
     (inherit root-type?)
-
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; expose allocation : C1 -> ?
-    ;; This pass has to thread a new environment through that isn't extended
-    ;; This could be overcome with pointers or we could use 
-
-;    (inherit expose-allocation-seq)
-    (define/override (expose-allocation)
-      (lambda (prog)
-        (match prog
-          [`(program (,xs ...) (type ,ty)
-                     (defines ,(app expose-allocation-def ds) ...)
-                     ,e)
-           (let ([new-e (expose-allocation e)])
-             `(program ,xs
-                       (type ,ty)
-                       (defines ,@ds)
-                       ,new-e))]
-          [else (error 'expose-allocation "unmatched ~a" prog)])))
-
-    (define/public (expose-allocation-def def)
-      (match def
-        [`(define (,f ,p:t* ...) : ,t (,l* ...)
-            . ,(app expose-allocation e))
-         `(define (,f ,@p:t*) : ,t ,l* ,e)]
-        [else (error 'expose-allocation-def "unmatched ~a" def)]))
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; select-instructions : env -> S3 -> S3
@@ -226,10 +226,10 @@
 	 `(define (,f)
 	    ,(length xs) (,(append (map cons xs ps) locals) ,max-stack)
 	    ,@new-ss)]
-        [`(assign ,lhs (has-type (function-ref ,f) ,t))
+        [`(assign ,lhs (function-ref ,f))
          (define new-lhs ((select-instructions) lhs))
          `((leaq (function-ref ,f) ,new-lhs))]
-        [`(assign ,lhs (has-type (app ,f ,es ...) ,t))
+        [`(assign ,lhs (app ,f ,es ...))
 	 (define new-lhs ((select-instructions) lhs))
 	 (define new-f ((select-instructions) f))
 	 (define new-es (map (select-instructions) es))
@@ -298,7 +298,7 @@
     ;; build-interference : live-after x graph -> pseudo-x86* -> pseudo-x86*
     ;; *annotate program with interference graph
 
-    (define/override (build-interference live-after G)
+    (define/override (build-interference live-after G xs)
       (lambda (ast)
         (vomit "build-interference" ast live-after G)
 	(match ast
@@ -306,18 +306,20 @@
 	    (define new-G (make-graph (map car locals)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-                ((build-interference live-after new-G) inst)))
+                ((build-interference live-after new-G locals) inst)))
 	    `(define (,f) ,n (,locals ,max-stack ,new-G) ,@new-ss)]
-           [`(program (,locals ,max-stack ,lives) (type ,ty) (defines ,ds ...) ,ss ...)
+           [`(program (,locals ,max-stack ,lives) (type ,ty)
+		      (defines ,ds ...) ,ss ...)
 	    (define new-G (make-graph (map car locals)))
 	    (define new-ds
               (for/list ([d ds])
-                ((build-interference (void) (void)) d)))
+                ((build-interference (void) (void) (void)) d)))
 	    (define new-ss 
 	      (for/list ([inst ss] [live-after lives])
-                ((build-interference live-after new-G) inst)))
-	    `(program (,locals ,max-stack ,new-G) (type ,ty) (defines ,@new-ds) ,@new-ss)]
-	   [else ((super build-interference live-after G) ast)]
+                ((build-interference live-after new-G locals) inst)))
+	    `(program (,locals ,max-stack ,new-G) (type ,ty) 
+		      (defines ,@new-ds) ,@new-ss)]
+	   [else ((super build-interference live-after G xs) ast)]
 	   )))
 
    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -327,7 +329,8 @@
     (define/override (build-move-graph G)
       (lambda (ast)
 	(match ast
-           [`(program (,locals ,max-stack ,IG) (type ,ty) (defines ,ds ...) ,ss ...)
+           [`(program (,locals ,max-stack ,IG) (type ,ty) 
+		      (defines ,ds ...) ,ss ...)
 	    (define new-ds (for/list ([d ds])
                              ((build-move-graph (void)) d)))
             (define MG (make-graph (map car locals)))
@@ -335,7 +338,8 @@
               (for/list ([inst ss])
                 ((build-move-graph MG) inst)))
             (print-dot MG "./move.dot")
-            `(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,@new-ds) ,@new-ss)]
+            `(program (,locals ,max-stack ,IG ,MG) (type ,ty)
+		      (defines ,@new-ds) ,@new-ss)]
 	   [`(define (,f) ,n (,locals ,max-stack ,IG) ,ss ...)
             (define MG (make-graph (map car locals)))
             (define new-ss
@@ -355,8 +359,7 @@
     (define/override (assign-homes homes)
       (lambda (e)
 	(match e
-	   #;[`(stack ,i) `(stack ,i)]
-	   [`(stack-arg ,i) `(stack-arg ,i)]
+	   [`(stack-arg ,i) `(stack-arg ,i)] ;; obsolete?? -JGS
 	   [`(indirect-callq ,f)
 	    `(indirect-callq ,((assign-homes homes) f))]
 	   [`(function-ref ,f) `(function-ref ,f) ]
@@ -369,20 +372,29 @@
     (define/override (allocate-registers)
       (lambda (ast)
 	(match ast
-	   ;; FIX ME -Jeremy
-	   #;[`(define (,f) ,n (,xs ,max-stack ,IG ,MG) ,ss ...)
-	    (define-values (homes stk-size)
-	      (allocate-homes IG MG (map car xs) ss))
+	   [`(define (,f) ,n (,locals ,max-stack ,IG ,MG) ,ss ...)
+	    (define color (color-graph IG MG (map car locals)))
+	    (define-values (homes stack-spills root-spills)
+	      (allocate-homes locals color))
+
 	    (define new-ss (map (assign-homes homes) ss))
-	    `(define (,f) ,n ,(align (+ stk-size (* 8 max-stack)) 16) ,@new-ss)]
-	   ;; FIX ME -Jeremy
-           #;[`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
+	    (define stack-size (align (+ (* stack-spills (variable-size))
+					 (* max-stack (variable-size))) 16))
+	    (define root-size (* root-spills (variable-size)))
+	    `(define (,f) ,n (,stack-size ,root-size) ,@new-ss)]
+
+	   [`(program (,locals ,max-stack ,IG ,MG) (type ,ty) (defines ,ds ...)
 		      ,ss ...)
 	    (define new-ds (map (allocate-registers) ds)) 
-	    (define-values (homes stk-size) 
-	      (allocate-homes IG MG (map car locals) ss))
+	    (define color (color-graph IG MG (map car locals)))
+	    (define-values (homes stack-spills root-spills) 
+	      (allocate-homes locals color))
 	    (define new-ss (map (assign-homes homes) ss))
-	    `(program ,(+ stk-size (* 8 max-stack)) (type ,ty)
+
+	    (define stack-size (align (+ (* stack-spills (variable-size))
+					 (* max-stack (variable-size))) 16))
+	    (define root-size (* root-spills (variable-size)))
+	    `(program (,stack-size ,root-size) (type ,ty)
 		      (defines ,@new-ds) ,@new-ss)]
 	   )))
 
@@ -456,7 +468,7 @@
 	    (format "\tcallq\t*~a\n" ((print-x86) f))]
 	   [`(stack-arg ,i)
 	    (format "~a(%rsp)" i)]
-           [`(define (,f) ,n ,spill-space ,ss ...)
+           [`(define (,f) ,n (,spill-space ,root-space) ,ss ...)
 	    (define callee-reg (set->list callee-save))
 	    (define save-callee-reg
 	      (for/list ([r callee-reg])
@@ -468,6 +480,12 @@
 				    (variable-size)))
 	    (define stack-adj (- (align (+ callee-space spill-space) 16)
                                  callee-space))
+	    (define initialize-roots
+	      (for/list ([i (range (/ root-space (variable-size)))])
+			(string-append 
+			 (format "\tmovq $0, (%~a)\n" rootstack-reg)
+			 (format "\taddq $~a, %~a\n" 
+				 (variable-size) rootstack-reg))))
 	    (string-append
 	     (format "\t.globl ~a\n" f)
 	     (format "~a:\n" f)
@@ -475,6 +493,7 @@
              (format "\tmovq\t%rsp, %rbp\n")
              (string-append* save-callee-reg)
              (format "\tsubq\t$~a, %rsp\n" stack-adj)
+	     (string-append* initialize-roots)
              ;; Push callee saves at the bottom of the stack
              ;; frame because the current code for stack nodes
              ;; doesn't reason about them. -andre
@@ -483,14 +502,15 @@
 	     "\n"
              (format "\taddq\t$~a, %rsp\n" stack-adj)	     
              (string-append* restore-callee-reg)
+	     (format "\tsubq $~a, %~a\n" root-space rootstack-reg)
              (format "\tpopq\t%rbp\n")
 	     (format "\tretq\n")
 	     )]
-	   [`(program ,stack-space (type ,ty) (defines ,ds ...) ,ss ...)
+	   [`(program ,space (type ,ty) (defines ,ds ...) ,ss ...)
 	    (string-append
 	     (string-append* (for/list ([d ds]) ((print-x86) d)))
 	     "\n"
-	     ((super print-x86) `(program ,stack-space (type ,ty) ,@ss)))]
+	     ((super print-x86) `(program ,space (type ,ty) ,@ss)))]
 	   [else ((super print-x86) e)]
 	   )))
 
@@ -522,7 +542,7 @@
       ("liveness analysis" ,(send compiler uncover-live (void))
        ,(send interp interp-x86 '()))
       ("build interference" ,(send compiler build-interference
-                                   (void) (void))
+                                   (void) (void) (void))
        ,(send interp interp-x86 '()))
       ("build move graph" ,(send compiler
                                  build-move-graph (void))

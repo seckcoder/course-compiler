@@ -510,7 +510,7 @@
       ("liveness analysis" ,(send compiler uncover-live (void))
        ,(send interp interp-x86 '()))
       ("build interference" ,(send compiler build-interference
-                                   (void) (void))
+                                   (void) (void) (void))
        ,(send interp interp-x86 '()))
       ("build move graph" ,(send compiler
                                  build-move-graph (void))
@@ -548,7 +548,7 @@
       ("liveness analysis" ,(send compiler uncover-live (void))
        ,(send interp interp-x86 '()))
       ("build interference" ,(send compiler build-interference
-                                   (void) (void))
+                                   (void) (void) (void))
        ,(send interp interp-x86 '()))
       ("build move graph" ,(send compiler
                                  build-move-graph (void))

@@ -409,15 +409,15 @@
     ;; The simulated global state of the program 
     ;; define produces private fields
     (define memory (box '()))
-    (define uninitialized 'uninitialized-value-from-memory)
-    (define free_ptr        (box uninitialized))
-    (define fromspace_begin (box uninitialized))
-    (define fromspace_end   (box uninitialized))
-    (define rootstack_begin (box uninitialized))
-    (define rootstack_end   (box uninitialized))
     ;; field is like define but public
     (field [stack-size (runtime-config:rootstack-size)]
            [heap-size  (runtime-config:heap-size)]
+	   [uninitialized 'uninitialized-value-from-memory]
+	   [fromspace_begin (box uninitialized)]
+	   [rootstack_end   (box uninitialized)]
+	   [free_ptr        (box uninitialized)]
+	   [fromspace_end   (box uninitialized)]
+	   [rootstack_begin (box uninitialized)]
            [global-label-table
             (make-immutable-hash
              `((free_ptr         . ,free_ptr)
@@ -707,14 +707,20 @@
            (define op  (interp-x86-op unary-op))
            (define new-env ((interp-x86-store env) d (op dst)))
            ((interp-x86 new-env) ss)]
+	  ;; The below applies after register allocation -JGS
 	  [`(program (,stack-space ,root-space) (type ,ty) ,ss ...)
 	   #:when (and (integer? stack-space) (integer? root-space))
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
 	   (define env (cons (cons 'r15 (+ root-space (unbox rootstack_begin)))
 			     '()))
 	   (parameterize ([program ss])
 	      (let ([env^ ((interp-x86 env) ss)])
 		(display-by-type ty (lookup 'rax env^))))]
+	  ;; The below applies before register allocation
 	  [`(program ,xs (type ,ty) ,ss ...)
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
 	   (define env (cons (cons 'r15 (unbox rootstack_begin)) '()))
 	   (parameterize ([program ss])
 	      (let ([env^ ((interp-x86 env) ss)])
@@ -731,7 +737,8 @@
   (class interp-R2
     (super-new)
     (inherit primitives seq-C display-by-type interp-op initialize!)
-    (inherit-field result)
+    (inherit-field result rootstack_begin free_ptr fromspace_end
+		   uninitialized)
 
     (define/public (non-apply-ast)
       (set-union (primitives)
@@ -744,9 +751,12 @@
           [`(define (,f [,xs : ,ps] ...) : ,rt ,body)
            (cons f `(lambda ,xs ,body))]
           [`(program (type ,ty) ,ds ... ,body)
+	   ((interp-scheme '()) `(program ,@ds ,body))]
+          [`(program ,ds ... ,body)
 	   ((initialize!) runtime-config:rootstack-size 
 	    runtime-config:heap-size)
-	    ((interp-scheme env) `(program ,@ds ,body))]
+	   (let ([env (map  (interp-scheme '()) ds)])
+	     ((interp-scheme env) body))]
           [`(,fun ,args ...) #:when (not (set-member? (non-apply-ast) fun))
 	   (define new-args (map (interp-scheme env) args))
            (define fun-val ((interp-scheme env) fun))
@@ -782,6 +792,15 @@
            (let ([top-level (map  (interp-F '()) ds)])
 	      ((interp-F top-level) body))]
 	  ;; For R3
+	  [`(global-value free_ptr)
+	   (unbox free_ptr)]
+	  [`(global-value fromspace_end)
+	   (unbox fromspace_end)]
+          [`(allocate ,l ,ty) (build-vector l (lambda a uninitialized))]
+          [`(collect ,size)
+           (unless (exact-nonnegative-integer? size)
+             (error 'interp-F "invalid argument to collect in ~a" ast))
+           (void)]
           [`(void) (void)]
           ;; For R2
           [`(has-type ,e ,t) ((interp-F env) e)]
@@ -828,10 +847,14 @@
 		(define result-env ((seq-C new-env) ss))
 		(lookup result result-env)]
 	       [else (error "interp-C, expected a funnction, not" f-val)])]
-           [`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
-	   ((initialize!) runtime-config:rootstack-size 
-	    runtime-config:heap-size)
+           #;[`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
             ((interp-C env) `(program ,locals (defines ,@ds) ,@ss))]
+	   [`(program ,locals (type ,ty) (defines ,ds ...) ,ss ...)
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
+	    (define new-env (map (interp-C '()) ds))
+	    (define result-env ((seq-C new-env) ss))
+	    (lookup result result-env)]
 	   [else ((super interp-C env) ast)])))
 
     (define (stack-arg-name n)
@@ -847,7 +870,8 @@
 
     (define (call-function f-val ss env)
       (match f-val
-        [`(lambda ,n ,body-ss ...)
+        [`(lambda ,n ,extra ,body-ss ...)
+	 (debug "interp-x86 call-function" f-val)
          ;; copy some register and stack locations over to new-env
          (define passing-regs
            (filter (lambda (p) p)
@@ -861,7 +885,14 @@
 		      (define val (lookup name env))
 		      (define index (+ 16 (* i 8)))
 		      (cons index val)))
-	  (define new-env (append passing-regs passing-stack env))
+	  (define new-env
+	    (match extra
+	       [`(,stack-size ,root-size) 
+		#:when (and (integer? stack-size) (integer? root-size))
+		(cons (cons 'r15 (+ root-size (unbox rootstack_begin)))
+		      (append passing-regs passing-stack env))]
+	     [else
+	      (append passing-regs passing-stack env)]))
 	  (define result-env
 	    (parameterize ([program body-ss])
 			  ((interp-x86 new-env) body-ss)))
@@ -885,7 +916,7 @@
           (verbose "R3/interp-x86" (car ast)))
 	(match ast
 	   [`(define (,f) ,n ,extra ,ss ...)
-	    (cons f `(lambda ,n ,@ss))]
+	    (cons f `(lambda ,n ,extra ,@ss))]
 	   ;; Treat lea like mov -Jeremy
 	   [`((leaq ,s ,d) . ,ss)
 	    (define x (get-name d))
@@ -896,11 +927,28 @@
 	    (call-function f-val ss env)]
 	   [`((callq ,f) . ,ss) #:when (not (set-member? (builtin-funs) f))
 	    (call-function (lookup f env) ss env)]
+	   ;; The below applies after register allocation -JGS
+	   [`(program (,stack-space ,root-space) (type ,ty)
+		      (defines ,ds ...) ,ss ...)
+	    #:when (and (integer? stack-space) (integer? root-space))
+	    ((initialize!) runtime-config:rootstack-size 
+	     runtime-config:heap-size)
+            (parameterize ([program ss])
+	       (define env (map (interp-x86 '()) ds))
+	       (define env^ (cons (cons 'r15 (+ root-space
+						(unbox rootstack_begin))) env))
+	       (define result-env ((interp-x86 env^) ss))
+	       (display-by-type ty (lookup 'rax result-env)))]
+	  ;; The below applies before register allocation
            [`(program ,extra (type ,ty) (defines ,ds ...) ,ss ...)
 	    ((initialize!) runtime-config:rootstack-size 
 	     runtime-config:heap-size)
-            (display-by-type ty ((interp-x86 env)
-				 `(program ,extra (defines ,@ds) ,@ss)))]
+            (parameterize ([program ss])
+	       (define env (map (interp-x86 '()) ds))
+	       (define env^ (cons (cons 'r15 (unbox rootstack_begin)) env))
+	       (define result-env ((interp-x86 env^) ss))
+	       (display-by-type ty (lookup 'rax result-env)))]
+	   
 	   [else ((super interp-x86 env) ast)])))
 
     )) ;; end  interp-R3
