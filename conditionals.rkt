@@ -123,7 +123,7 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;; flatten : S1 -> C1-expr x (C1-stmt list)
 
-    (field [optimize-if #f])
+    (field [optimize-if #t])
 
     (define/public (flatten-if new-thn thn-ss new-els els-ss xs)
       (lambda (cnd)
@@ -143,7 +143,7 @@
                       (append e-ss
                               `((assign ,x ,new-e))
                               body-ss)
-		      (append xs1 xs2))]
+		      (cons x (append xs1 xs2)))]
              [`(not ,cnd) #:when optimize-if
               ((flatten-if new-els els-ss new-thn thn-ss xs) cnd)]
              [`(,cmp ,e1 ,e2) 
@@ -179,14 +179,7 @@
       (lambda (e)
         (verbose "flatten" e)
 	(match e
-	  ;; [`(has-type (void) ,t)
-	  ;;  (values `(void) '() '())]
-	  ;; [`(has-type ,e1 ,t)
-	  ;;  #:when (or (symbol? e1) (integer? e1) (boolean? e1))
-	  ;;  (values e1 '() '())]
-
 	  [(? boolean?) (values e '() '())]
-
 	  [`(and ,e1 ,e2)
 	   (define-values (new-e1 e1-ss xs1) ((flatten #t) e1))
 	   (define-values (new-e2 e2-ss xs2) ((flatten #f) e2))
@@ -198,37 +191,12 @@
 				 ((assign ,tmp #f)))))
 		   (cons tmp (append xs1 xs2))
 		   )]
-	  
-          ;; We override flattening for op's because we
-	  ;; need to put a has-type on the LHS of the assign. -Jeremy
-          ;; [`(has-type (,op ,es ...) ,t) #:when (set-member? (primitives) op)
-	  ;;  (define-values (new-es sss xss) (map3 (flatten #t) es))
-	  ;;  (define ss (append* sss))
-	  ;;  (define xs (append* xss))
-	  ;;  (define prim-apply `(,op ,@new-es))
-	  ;;  (cond
-	  ;;   [need-atomic
-	  ;;    (define tmp (gensym 'tmp))
-	  ;;    (values tmp
-	  ;; 	     (append ss `((assign ,tmp ,prim-apply)))
-	  ;; 	     (cons tmp xs) )]
-	  ;;   [else (values prim-apply ss xs)])]
-
-	  ;; For 'let' we just need to strip the enclosing has-type. -Jeremy
-          ;; [`(has-type (let ([,x ,rhs]) ,body) ,t)
-	  ;;  ((flatten need-atomic) `(let ([,x ,rhs]) ,body))]
-
 	  [`(if ,cnd ,thn ,els)
 	   (define-values (new-thn thn-ss xs1) ((flatten #t) thn))
 	   (define-values (new-els els-ss xs2) ((flatten #t) els))
 	   ((flatten-if new-thn thn-ss new-els els-ss (append xs1 xs2)) cnd)]
-
 	  [`(has-type ,e1 ,t)
 	   ((flatten need-atomic) e1)]
-
-          [`(program ,body)
-	   (define-values (new-body ss xs) ((flatten #t) body))
-	   `(program ,xs ,@(append ss `((return ,new-body))))]
           [`(program (type ,ty) ,body)
            (define-values (new-body ss xs) ((flatten #t) body))
            `(program ,xs (type ,ty)
@@ -291,11 +259,9 @@
            (define new-e2 ((select-instructions) e1))
            ;; second operand of cmpq can't be an immediate
            (define comparison
-             (cond [(and (immediate? new-e1) (immediate? new-e2))
+             (cond [(immediate? new-e2)
                     `((movq ,new-e2 (reg rax))
                       (cmpq ,new-e1 (reg rax)))]
-                   [(immediate? new-e2)
-                    `((cmpq ,new-e2 ,new-e1))]
                    [else 
                     `((cmpq ,new-e1 ,new-e2))]))
             ;; This works because movzbq %al, %rax is a valid instruction
@@ -311,9 +277,8 @@
                  [els-ss (append* (map (select-instructions)
                                        els-ss))])
              `((if ,cnd ,thn-ss ,els-ss)))]
-          [`(eq? ,a1 ,a2)
-           `(eq? ,((select-instructions) a1)
-                 ,((select-instructions) a2))]
+          [`(,cmp ,a1 ,a2) #:when (set-member? (comparison-ops) cmp)
+           `(,cmp ,((select-instructions) a1) ,((select-instructions) a2))]
           [`(program ,locals (type ,ty) ,ss ...)
 	    (let ([new-ss (map (select-instructions) ss)])
 	      `(program ,locals (type ,ty) ,@(append* new-ss)))]
@@ -326,8 +291,8 @@
     (define/override (free-vars a)
       (match a
 	 [`(byte-reg ,r) (set (byte-reg->full-reg r))]
-	 [`(eq? ,e1 ,e2) (set-union (free-vars e1)
-				    (free-vars e2))]
+	 [`(,cmp ,e1 ,e2) #:when (set-member? (comparison-ops) cmp)
+	  (set-union (free-vars e1) (free-vars e2))]
 	 [else (super free-vars a)]
 	 ))
     

@@ -159,7 +159,7 @@
                  (values new-thn thn-ss xs)]
              [#f #:when optimize-if
                  (values new-els els-ss xs)]
-             [`(let ([,x ,e]) ,body) #:when optimize-if
+             [`(let ([,x (has-type ,e ,e-type)]) ,body) #:when optimize-if
               (define-values (new-e e-ss xs1) ((flatten #f) e))
               (define-values (new-body body-ss xs2)
                 ((flatten-if if-type new-thn thn-ss new-els els-ss xs) body))
@@ -167,7 +167,7 @@
                       (append e-ss
                               `((assign ,x ,new-e))
                               body-ss)
-		      (append xs1 xs2))]
+		      (cons (cons x e-type) (append xs1 xs2)))]
              [`(not ,cnd) #:when optimize-if
               ((flatten-if if-type new-els els-ss new-thn thn-ss xs) cnd)]
              [`(,cmp ,e1 ,e2) 

@@ -363,13 +363,10 @@
            ((interp-x86 (cons (cons x v) env)) ss)]
           [`((jmp ,label) . ,ss)
            ((interp-x86 env) (goto-label label (program)))]
-          [`((jmp-if e ,label) . ,ss)
-           (let* ([eflags (lookup '__flag env)]
-                  [zero   (bitwise-and #b1000000 eflags)]
-                  [zero?  (i2b (arithmetic-shift zero -6))])
-             (cond [zero? 
-                    ((interp-x86 env) (goto-label label (program)))]
-                   [else ((interp-x86 env) ss)]))]
+          [`((jmp-if ,cc ,label) . ,ss)
+	   (cond [(eq? (eflags-status env cc) 1)
+		  ((interp-x86 env) (goto-label label (program)))]
+		 [else ((interp-x86 env) ss)])]
 	   [`(program ,xs (type ,ty) ,ss ...)
             (display-by-type ty ((interp-x86 env) `(program ,xs ,@ss)))]
 	   [`(program ,xs ,ss ...)
